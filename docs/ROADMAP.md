@@ -14,6 +14,5 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist).
 - [ ] **PipeWire (Deferred/Optional):** Needs SoC UCM2 profile + `libudev-zero`/`udev-virtual` integration before replacing direct ALSA (see `docs/RPC-PORT.md`).
 
 ## Later
-- [ ] Complete Chinese (`zh`) translation strings + build string extractor for new locales.
 - [x] RetroAchievements progress display on home shelf.
 - [ ] Save-state browser (browse, copy and delete a game's states from the menu).
