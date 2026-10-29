@@ -9,12 +9,12 @@
 # A55 cluster alone. Its own Makefile.libretro builds a fuse_libretro.so for
 # platform=unix; no TARGET_AS, the core has no assembly.
 #
-# Git rather than the GitHub tarball: the Makefile generates src/version.c with
-# `git rev-parse HEAD`, which a plain archive does not carry (Buildroot's git
-# method leaves the .git in the build directory).
+# The GitHub tarball, as the other Makefile.libretro cores here: the Makefile
+# generates src/version.c with `git rev-parse HEAD`, but Buildroot extracts the
+# source so there is no .git either way and the version string just comes out
+# empty. No submodules to fetch.
 LIBRETRO_FUSE_VERSION = e997e2bc32c888348f862f69f2c53babfedf7791
-LIBRETRO_FUSE_SITE = https://github.com/libretro/fuse-libretro.git
-LIBRETRO_FUSE_SITE_METHOD = git
+LIBRETRO_FUSE_SITE = $(call github,libretro,fuse-libretro,$(LIBRETRO_FUSE_VERSION))
 LIBRETRO_FUSE_LICENSE = GPL-3.0
 LIBRETRO_FUSE_LICENSE_FILES = LICENSE
 
