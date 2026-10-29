@@ -39,7 +39,6 @@ BR2_LINUX_KERNEL_INTREE_DTS_NAME="qcom/sm4450-retroid-pocket-classic-revq"
 BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
 BR2_LINUX_KERNEL_NEEDS_HOST_LIBELF=y
 # no U-Boot on the RPC: OpenABL (arm-efi) loads the kernel from the EFI stub
-# BR2_TARGET_UBOOT_FORMAT_BIN is not set
 # the root filesystem: squashfs, LZ4
 BR2_TARGET_ROOTFS_SQUASHFS=y
 BR2_TARGET_ROOTFS_SQUASHFS4_LZ4=y
@@ -57,6 +56,9 @@ BR2_PACKAGE_BANANA_UI=y
 BR2_PACKAGE_BANANAD=y
 # the other systems: RetroArch and its cores (all on by default under it)
 BR2_PACKAGE_RETROARCH=y
+# the udev provider the image uses (devtmpfs only, no udev daemon): RetroArch's and SDL2's input need libudev. Chosen
+# here rather than selected by retroarch, which is what closed a Kconfig cycle (see package/retroarch/Config.in).
+BR2_PACKAGE_LIBUDEV_ZERO=y
 # what the menu, sleep and the games need
 BR2_PACKAGE_ALSA_LIB=y
 BR2_PACKAGE_ALSA_UTILS=y
