@@ -2,6 +2,10 @@
 # banana-ui's headless test: a test library, then the menu's three views at both panel sizes, checked for what
 # must hold (the right view after each button, a game launched from the ready screen, frames rendered) and
 # timed. The PNGs are left in $OUT for a look.
+#
+# The key screens are also a golden test: each is compared to a committed baseline (ui/tests/golden), so a change
+# that moves or drops a theme element fails here rather than only on the handheld. UPDATE_GOLDEN=1 rewrites the
+# baselines; the comparison is coarse (32x24 grey) so a different freetype version does not fail it.
 set -e
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${OUT:-$HERE/tests/out}
@@ -14,6 +18,20 @@ fail=0
 ${CXX:-c++} -O2 -std=c++17 -Wno-unused-function -o "$OUT/turn-test" "$HERE/tests/turn-test.cpp" 2> "$OUT/turn-build.log" ||
     { echo "FAIL: can't build turn-test (see $OUT/turn-build.log)"; fail=1; }
 [ "$fail" = 1 ] || "$OUT/turn-test" > "$OUT/turn.log" 2>&1 || { echo "FAIL: turn-test"; cat "$OUT/turn.log"; fail=1; }
+# A golden theme test: the key screens compared to committed baselines, so a change that moves or drops an element
+# fails here instead of only being seen on the handheld. The comparison is at 32x24 grey -- a layout change is a big
+# difference (an added block scores ~0.06), while a freetype version's rasterization stays under 0.02 -- and
+# UPDATE_GOLDEN=1 rewrites the baselines. They live in ui/tests/golden (one 32x24 grey PNG per screen per size).
+GOLDEN=$HERE/tests/golden
+golden() {	# golden <name> <png>
+	f=$2
+	[ -s "$f" ] || return 0
+	g=$GOLDEN/$size-$1.png
+	convert "$f" -resize 32x24! -colorspace Gray "$OUT/golden-now.png" 2>/dev/null
+	if [ -n "$UPDATE_GOLDEN" ] || [ ! -s "$g" ]; then mkdir -p "$GOLDEN"; cp "$OUT/golden-now.png" "$g"; return 0; fi
+	d=$(compare -metric RMSE "$g" "$OUT/golden-now.png" null: 2>&1 | sed 's/.*(\(.*\))/\1/')
+	awk -v d="$d" 'BEGIN { if (d + 0 > 0.04) exit 1 }' || { echo "FAIL $size: golden $1 changed (RMSE $d)"; fail=1; }
+}
 for size in 640x480 1024x768; do
     log=$OUT/$size.log
     "$HERE/banana-ui" --headless "$OUT/$size-" --size $size --assets "$HERE/assets/rnds" \
@@ -52,6 +70,11 @@ for size in 640x480 1024x768; do
             # a frame that is one flat colour means nothing was drawn
             [ "$(convert "$f" -format '%[fx:standard_deviation>0.01]' info:)" = 1 ] || { echo "FAIL $size: $f is blank"; fail=1; }
         done
+    done
+    # golden: the key screens against the committed baselines
+    for s in home lib ready settings settings-system battery-low; do
+        golden "$s-top" "$OUT/$size-$s-top.png"
+        golden "$s-bot" "$OUT/$size-$s-bot.png"
     done
     # The achievement toasts: what a game unlocked (buildroot/patches/retroarch/0013) is drawn over home, not only
     # over Settings, one band per unlock with the badge RetroArch downloaded in the tile; and the plain /run/banana/toast
@@ -199,6 +222,8 @@ for size in 640x480 1024x768; do
         [ -s "$f" ] || { echo "FAIL $size: no $f"; fail=1; continue; }
         [ "$(convert "$f" -format '%[fx:standard_deviation>0.01]' info:)" = 1 ] || { echo "FAIL $size: $f is blank"; fail=1; }
     done
+    # golden: the layout theme's key screens too
+    for s in home lib launch; do golden "layout-$s-top" "$OUT/$size-layout-$s-top.png"; done
     grep 'bench:' "$log" | sed "s/^banana-ui: /$size /"
     grep 'boot-metrics:' "$log" | sed "s/^banana-ui: /$size /"
 done
