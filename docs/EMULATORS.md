@@ -154,3 +154,22 @@ and `[gamegear]`). Four things are Banana's rather than the core's:
   for this SoC: native 640x480, no texture upscaling, the fast alpha sorting, no anisotropic filtering, the renderer
   on its own thread, and **auto skip frame on** (`some`) so a frame the a613 cannot draw is dropped rather than
   stalling the emulation thread.
+
+## The ZX Spectrum
+
+**Fuse** is the core (`systems.conf`'s `[zxspectrum]`, run by `run-retroarch fuse`, with no per-core setup of its
+own). It is a software core, the lightest of the computers, so the system's
+`perf` is `powersave` -- the A55 cluster alone, no A78s woken for it. It loads tapes (`.tzx`, `.tap`), snapshots
+(`.z80`, `.sna`, `.szx`), disks (`.dsk`, `.trd`, `.scl`), `.rzx` recordings, and a `.zip` of any of them
+(libspectrum reads through libretro-common's VFS, so an archive is opened in place).
+
+The Spectrum expects a **keyboard**, which this handheld has not: the core maps the RetroPad to a Kempston-style pad
+for user 1 by default, so the d-pad and A/X/Y (fire) play the many joystick games, and **SELECT** raises the core's
+own on-screen keyboard for the ones that want a typed command (L1/R1 are RETURN and SPACE). RetroArch's own Controls
+and Core Options change all of it. The machine is a core option too (`fuse_machine`, 48K by default); the 48K, 128K,
++2 and +3 are built into the core, while the Pentagon and Scorpion clones need their ROMs in `banana/bios/fuse`
+(RetroArch's system directory, the core's `fuse/` subdirectory), which is what `systems.conf`'s comment above the
+system says.
+
+Fuse takes no RetroAchievements (its `.info` has memory monitoring off), so the only setting that touches it is the
+core pick, which is not offered: it is the one Spectrum core in the image.
