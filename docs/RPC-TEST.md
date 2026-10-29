@@ -60,7 +60,23 @@ internal Android is there.
 - [ ] Settings > System > Update lists a package put in `banana/updates` on the card, and
       applying it writes the other slot and restarts into it
 
-## When a game goes black
+## USB link (development)
+
+The handheld's own port is a USB **device**, and it runs an Ethernet (NCM) gadget with a DHCP server, so plugging it
+into a computer gives that computer a network interface **and an address** with nothing to configure -- no Wi-Fi.
+`ssh` has to be on for a shell (Settings > Network), and its key is the same one the Wi-Fi link uses.
+
+- [ ] Plugged into a computer, the handheld answers at `169.254.170.2` (the interface is named from the USB path:
+      `enp0s20f0u1` on a systemd host, `usb0`/`enx…` elsewhere), around 4 ms and 7 MB/s over `ssh`
+- [ ] If nothing enumerates, re-seat the cable: the port attaches when the cable is in a computer, and the gadget is
+      bound at boot whether or not one is there
+- [ ] A charge-only cable, or a charger, gives you this instead: the handheld charges, `/sys/class/udc/*/state` stays
+      `not attached` and no interface appears on the computer
+- [ ] With the menu showing, `tools/rpc-screen.sh` fetches a frame of it (`-w` streams them for a viewer); a game
+      running gives no frame -- that screen is RetroArch's, and its `SCREENSHOT` command is the way (on the command
+      FIFO bananad already writes `TOGGLE_ANALOG_DPAD` to)
+
+
 
 The panel going black a second after a game starts has two very different causes, and the handheld looks the same for
 both. Tell them apart before touching the kernel:

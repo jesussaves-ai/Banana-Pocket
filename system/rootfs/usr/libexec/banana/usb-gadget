@@ -1,0 +1,131 @@
+#!/bin/sh
+# The handheld's own USB-C port, as a USB device a computer can talk to: an NCM (USB Ethernet) gadget with a one-lease
+# DHCP server, so a development machine sees a network interface and an address with nothing to configure, and reaches
+# the handheld without Wi-Fi. rcS runs it in the background; it is not needed for the menu.
+#
+#   usb-gadget          bring it up (idempotent: a second run leaves a working gadget alone)
+#   usb-gadget down     tear it down
+#
+# The port is `dr_mode = "otg"` with `role-switch-default-mode = "peripheral"` (the device tree), so with an ordinary
+# cable to a computer it is a *device*, not a host -- which is exactly this. The kernel has the gadget stack and the
+# NCM/ECM/RNDIS functions built in (CONFIG_USB_GADGET, CONFIG_USB_CONFIGFS_NCM), so there is no module to load. An
+# OTG adapter with a gamepad turns the port into a host instead and the kernel unbinds this gadget: replug the cable
+# (or reboot) to get it back.
+#
+# The recipe (configfs layout, the Microsoft OS descriptor that makes Windows use its NCM driver, the fixed link and
+# the address scheme) follows ROCKNIX's usbgadget script for these handhelds, which uses it the same way.
+
+LOG=/data/banana/logs/usb-gadget.log
+G=/sys/kernel/config/usb_gadget/banana
+# The interface is named by the function; the address is the handheld's, the computer's is handed out by DHCP. Both in
+# 169.254.0.0/16 so the computer needs no particular subnet, and .1/.2 so the two ends cannot collide with a lease pool.
+IFACE=usb0
+ADDR=169.254.170.2
+HOSTADDR=169.254.170.1
+CONF=/run/banana/udhcpd-usb.conf
+
+# say <text>: one line to the log, which is on the card (the rootfs is read-only)
+say() {
+    [ -d "${LOG%/*}" ] || mkdir -p "${LOG%/*}" 2>/dev/null
+    echo "usb-gadget: $*" >> "$LOG" 2>/dev/null
+}
+
+down() {
+    if [ "$(cat $G/UDC 2>/dev/null)" ]; then
+        echo "" > $G/UDC 2>/dev/null
+    fi
+    # BusyBox's udhcpd writes no pid file (it ignores the conf's `pidfile` line), so find it by its config instead
+    pkill -f /run/banana/udhcpd-usb.conf 2>/dev/null
+    rm -f $CONF
+    # configfs refuses to remove a function while it is still linked into a configuration
+    rm -f $G/configs/c.1/ncm.usb0
+    rmdir $G/functions/ncm.usb0 2>/dev/null
+    rmdir $G/configs/c.1/strings/0x409 $G/configs/c.1 2>/dev/null
+    rmdir $G/strings/0x409 $G 2>/dev/null
+    say "taken down"
+}
+
+if [ "$1" = down ]; then
+    down
+    exit 0
+fi
+
+UDC=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+if [ -z "$UDC" ]; then
+    # a machine with no USB device controller (the QEMU test's virtio GPU): nothing to do, and not an error
+    say "no UDC on this machine, nothing to do"
+    exit 0
+fi
+
+if [ -d $G ] && [ -n "$(cat $G/UDC 2>/dev/null)" ]; then
+    say "already up on $UDC"
+else
+    # configfs is not mounted by anything at boot (there is no udev or systemd to do it)
+    grep -q ' /sys/kernel/config ' /proc/mounts 2>/dev/null || mount -t configfs none /sys/kernel/config 2>/dev/null
+    if [ ! -d /sys/kernel/config/usb_gadget ]; then
+        say "no configfs, cannot make a gadget"
+        exit 1
+    fi
+    [ -d $G ] && down          # a half-built one from an interrupted run
+
+    mkdir -p $G
+    # USB 2.0, Communications class; the Linux Foundation's vendor/product for a composite gadget
+    echo 0x0200 > $G/bcdUSB
+    echo 0x02   > $G/bDeviceClass
+    echo 0x1d6b > $G/idVendor
+    echo 0x0104 > $G/idProduct
+    mkdir -p $G/strings/0x409
+    echo "Banana"         > $G/strings/0x409/manufacturer
+    echo "Pocket Classic" > $G/strings/0x409/product
+    # a serial number is what Windows keys the network profile on; it must not be empty
+    echo 0123456789ab     > $G/strings/0x409/serialnumber
+
+    mkdir -p $G/configs/c.1/strings/0x409
+    echo 0xC0 > $G/configs/c.1/bmAttributes     # self-powered
+    echo 0xfe > $G/configs/c.1/MaxPower
+    echo "CDC" > $G/configs/c.1/strings/0x409/configuration
+
+    # The Microsoft OS descriptor: without it Windows asks for an RNDIS driver it has to be told to trust, and with
+    # it the host picks its own NCM driver. Linux and macOS use NCM natively.
+    mkdir -p $G/functions/ncm.usb0
+    echo WINNCM  > $G/functions/ncm.usb0/os_desc/interface.ncm/compatible_id
+    echo 1       > $G/os_desc/use
+    echo 0xcd    > $G/os_desc/b_vendor_code
+    echo MSFT100 > $G/os_desc/qw_sign
+    # fixed, locally administered (second nibble 2) and unicast addresses, so a computer that has seen one Banana
+    # keeps the same network profile for the next
+    echo 82:ba:1c:92:78:02 > $G/functions/ncm.usb0/dev_addr
+    echo 82:ba:1c:92:78:01 > $G/functions/ncm.usb0/host_addr
+
+    ln -sf $G/functions/ncm.usb0 $G/configs/c.1/
+    echo "$UDC" > $G/UDC || { say "the controller would not take the gadget"; exit 1; }
+    say "up on $UDC as $IFACE"
+fi
+
+# the kernel makes the interface when the function is bound, a moment after the UDC write
+i=0
+while [ ! -d /sys/class/net/$IFACE ] && [ $i -lt 40 ]; do sleep 0.1; i=$((i+1)); done
+if [ ! -d /sys/class/net/$IFACE ]; then
+    say "no $IFACE appeared (the port may be host: an OTG adapter with a device in it)"
+    exit 1
+fi
+
+ip address add $ADDR/16 dev $IFACE 2>/dev/null
+ip -6 address add fe80::2/64 dev $IFACE scope link 2>/dev/null
+ip link set $IFACE up
+
+# One lease, to the computer: it configures the interface itself (NetworkManager, systemd-networkd, dhclient), where a
+# static address at the other end would need the user to run something on the computer.
+mkdir -p /run/banana
+cat > $CONF <<EOF
+interface $IFACE
+start $HOSTADDR
+end $HOSTADDR
+opt subnet 255.255.0.0
+opt lease 86400
+max_leases 1
+lease_file /dev/null
+EOF
+# BusyBox's udhcpd writes no pid file, so ask the process list rather than a file that will never appear
+pgrep -f /run/banana/udhcpd-usb.conf >/dev/null 2>&1 || udhcpd $CONF >/dev/null 2>&1
+say "addressed $ADDR/16, handing $HOSTADDR to the computer (ssh root@$ADDR)"

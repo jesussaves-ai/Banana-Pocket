@@ -1325,6 +1325,7 @@ int main(int argc, char** argv)
 	// the launch file is looked at once at startup, then only when the watch fires (a pass otherwise ran a wasted
 	// access() on every animated frame); without a watch it is looked at every pass as before
 	bool launchSeen = true;
+	bool shotWanted = false;	// /run/banana/screen.req: write the frame to screen.jpg on this pass (below)
 	while (!quit)
 	{
 		double now = nowMs();
@@ -1552,8 +1553,19 @@ int main(int argc, char** argv)
 				roms.read(nowMs());
 			else if (p.fd == launchWatch)
 			{
+				// The watch is /run/banana, for the launch file -- and for screen.req, the screen dump below: one
+				// watch, nothing new polled.
 				alignas(inotify_event) char buf[1024];
-				while (read(launchWatch, buf, sizeof buf) > 0) {}
+				ssize_t len;
+				while ((len = read(launchWatch, buf, sizeof buf)) > 0)
+				{
+					for (char* e = buf; e < buf + len; )
+					{
+						auto* ev = (inotify_event*)e;
+						if (ev->len && !strcmp(ev->name, "screen.req")) shotWanted = true;
+						e += sizeof(inotify_event) + ev->len;
+					}
+				}
 				launchSeen = true;	// the loop's next pass reads the launch file
 			}
 			else if (p.fd == worker.wakeFd)
@@ -1566,6 +1578,30 @@ int main(int argc, char** argv)
 				disp.handleEvents();
 			else
 				input.read(p.fd, handle);
+		}
+		// A screen dump, asked for by writing /run/banana/screen.req (the launch watch above fires for it): the frame
+		// the menu has composed, which is what a person looking at the handheld sees -- Display turns it for the panel
+		// afterwards -- written as a JPEG to /run/banana/screen.jpg, with the request removed. For development over
+		// the USB link (tools/rpc-screen.sh asks for one and fetches it).
+		if (shotWanted)
+		{
+			shotWanted = false;
+			const int w = be.width(), h = be.height();
+			const uint32_t* px = be.pixels(0);
+			std::vector<uint8_t> rgb((size_t)w * h * 3);
+			for (size_t i = 0, n = (size_t)w * h; i < n; i++)
+			{
+				const uint32_t c = px[i];	// 0xAARRGGBB
+				rgb[i * 3 + 0] = (uint8_t)(c >> 16);
+				rgb[i * 3 + 1] = (uint8_t)(c >> 8);
+				rgb[i * 3 + 2] = (uint8_t)c;
+			}
+			const char* tmp = "/run/banana/screen.jpg.tmp";
+			if (stbi_write_jpg(tmp, w, h, 3, rgb.data(), 85) && !rename(tmp, "/run/banana/screen.jpg"))
+				logf("screen: /run/banana/screen.jpg (%dx%d)", w, h);
+			else
+				logf("screen: could not write the screen dump");
+			unlink("/run/banana/screen.req");
 		}
 	}
 	{

@@ -173,6 +173,10 @@ banana-perf ui
         n=${e##*/}
         ip link set $n up && udhcpc -b -q -t 5 -i $n -p /run/banana/udhcpc-$n.pid -s /usr/share/udhcpc/default.script >/dev/null 2>&1
     done
+    # the handheld's own USB-C port as a device a computer can reach: an NCM Ethernet gadget with a DHCP server, for
+    # development. Nothing needs it to boot, and a machine with no USB device controller (the QEMU test) just says so
+    # and returns. It is also what makes the update tars cheap to push over the cable instead of Wi-Fi.
+    /usr/libexec/banana/usb-gadget
     # file sharing, when switched on in the settings
     grep -q '^ *share *= *on' /data/banana/settings.conf 2>/dev/null && /usr/libexec/banana/share up
     grep -q '^ *ssh *= *on' /data/banana/settings.conf 2>/dev/null && /usr/libexec/banana/ssh up
