@@ -50,15 +50,22 @@ def parse_systems(path):
     return out
 
 
-def looks_ids(path):
-    # every token on a systems.cfg mapping line (comments skipped): the ES system names, their icon and accent
-    ids = set()
+def looks_map(path):
+    # every explicit mapping line: the comma-separated ES names -> the icon file beside the theme (last line wins,
+    # the way the theme's loader reads it). Kind/'@maker'/'*' fallback lines are not a system's own line.
+    m = {}
     with open(path, encoding="utf-8") as f:
         for line in f:
-            if line.lstrip().startswith("#"):
+            s = line.strip()
+            if not s or s.startswith("#"):
                 continue
-            ids.update(re.findall(r"[a-z0-9][a-z0-9-]*", line))
-    return ids
+            toks = s.split()
+            if len(toks) < 2 or not toks[1].endswith(".png"):
+                continue
+            for n in toks[0].split(","):
+                if n:
+                    m[n] = toks[1]
+    return m
 
 
 def core_packages():
@@ -94,7 +101,8 @@ def main():
     global CORE_PKG
     CORE_PKG = core_packages()
     systems = parse_systems(SYSTEMS)
-    listed = looks_ids(LOOKS)
+    looks = looks_map(LOOKS)
+    icons = os.path.join(os.path.dirname(LOOKS), "icons")
     for s in systems:
         sid, keys = s["id"], s["keys"]
         run = keys.get("run")
@@ -119,8 +127,10 @@ def main():
                 errors.append("%s: run-retroarch without a core: %s" % (sid, run))
             else:
                 check_core(core, sid)
-        if sid not in listed:
+        if sid not in looks:
             notes.append("%s: no explicit line in theme systems.cfg (the * fallback gives it an icon)" % sid)
+        elif not os.path.isfile(os.path.join(icons, looks[sid])):
+            errors.append("%s: theme icon missing: %s" % (sid, looks[sid]))
         print("  %-12s %s" % (sid, run))
 
     # a core a Settings row offers as a default must exist too (core.<system> in settings_defaults.cpp)
