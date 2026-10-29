@@ -16,7 +16,11 @@
 # The menu has to be showing: with a game running, cage owns the panel and banana-ui has no frame to give.
 set -e
 H=${RPC_HOST:-root@169.254.170.2}
-SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6"
+# Multiplexed: a stream is one process per frame otherwise, and a fresh handshake each time is most of the frame's
+# cost (each round trip is a request, a wait and a 147 KB JPEG back).
+CTL=${TMPDIR:-/tmp}/opencode
+mkdir -p "$CTL" 2>/dev/null || true
+SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 -o ControlMaster=auto -o ControlPersist=30 -o ControlPath=$CTL/.rpc-screen-%r@%h:%p"
 
 mode=one
 n=0
