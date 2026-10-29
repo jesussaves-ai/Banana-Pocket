@@ -35,6 +35,10 @@ YELLOW = (224, 192, 32, 255)
 GREEN = (61, 174, 82, 255)
 TEAL = (46, 125, 120, 255)
 CYAN = (68, 212, 202, 255)
+GOLD = (201, 162, 39, 255)
+LCD = (150, 170, 110, 255)
+PALE = (198, 224, 198, 255)
+SLATE = (54, 66, 98, 255)
 
 
 class Canvas:
@@ -174,6 +178,77 @@ def zxspectrum(c):
         c.rect(4 + i * 5, 22, 8 + i * 5, 23, col)
 
 
+def sega32x(c):
+    # the 32X: a black cartridge with a red label and the connector edge
+    c.box(9, 6, 22, 24, DARK)
+    c.rect(10, 7, 21, 23, BLACK)
+    c.rect(10, 7, 21, 8, MID)                       # a top highlight
+    c.rect(11, 12, 20, 18, RED)                     # its label
+    c.rect(12, 14, 19, 16, HI)
+    c.rect(10, 21, 21, 23, GOLD)                    # the connector
+    for x in range(10, 22, 2):
+        c.px(x, 21, BROWND)
+
+
+def segacd(c):
+    # the Sega CD: a black drive unit with a disc
+    c.box(2, 16, 29, 25, DARK)
+    c.rect(3, 17, 28, 24, BLACK)
+    c.rect(3, 17, 28, 18, MID)                      # the top edge
+    c.disc(15, 12, 8, OUT)                          # the disc
+    c.disc(15, 12, 7, LIGHT)
+    c.disc(15, 12, 2, OUT)
+    c.disc(15, 12, 1, RED)
+    c.rect(4, 20, 9, 22, GREY)                      # a button on the front
+
+
+def ngp(c):
+    # a compact handheld in the NGPC's blue shell: screen up top, the clicky stick and two buttons below
+    c.box(6, 8, 25, 24, SLATE)
+    c.rect(7, 9, 24, 23, SLATE)
+    c.rect(7, 9, 24, 10, (90, 104, 140, 255))       # a top highlight
+    c.box(9, 11, 22, 18, BLACK)                     # screen bezel
+    c.rect(10, 12, 21, 17, LCD)                     # the LCD
+    c.rect(10, 12, 21, 13, PALE)
+    c.disc(11, 21, 2, OUT)                          # the stick
+    c.disc(11, 21, 1, GREY)
+    c.disc(18, 21, 1, RED)                          # A
+    c.disc(22, 21, 1, BLUE)                         # B
+
+
+def wonderswan(c):
+    # a tall white handheld; its pad is a d-pad turned 45 degrees
+    c.box(10, 3, 21, 28, HI)
+    c.rect(11, 4, 20, 27, HI)
+    c.rect(11, 4, 20, 5, WHITE)
+    c.box(12, 6, 19, 15, DARK)                      # screen
+    c.rect(13, 7, 18, 14, LCD)
+    c.rect(13, 7, 18, 8, PALE)
+    c.px(13, 9, WHITE)
+    c.rect(12, 20, 15, 23, MID)                     # the rotated pad, as a diamond
+    c.px(12, 20, BG)
+    c.px(15, 20, BG)
+    c.px(12, 23, BG)
+    c.px(15, 23, BG)
+    c.disc(18, 21, 1, RED)                          # A
+    c.disc(18, 25, 1, BLUE)                         # B
+
+
+def atarilynx(c):
+    # the Lynx: a wide handheld, a d-pad left and two buttons right
+    c.box(1, 10, 30, 22, LIGHT)
+    c.rect(2, 11, 29, 21, GREY)
+    c.box(9, 12, 22, 20, BLACK)                     # screen
+    c.rect(10, 13, 21, 19, TEAL)
+    c.rect(10, 13, 21, 14, CYAN)
+    c.rect(4, 15, 7, 18, OUT)                       # d-pad
+    c.rect(5, 14, 6, 19, OUT)
+    c.rect(5, 15, 6, 18, MID)
+    c.rect(4, 16, 7, 17, MID)
+    c.disc(26, 14, 1, RED)                          # A
+    c.disc(26, 18, 1, BLUE)                         # B
+
+
 ICONS = {
     "gamegear": gamegear,
     "dreamcast": dreamcast,
@@ -181,6 +256,11 @@ ICONS = {
     "atari2600": atari2600,
     "c64": c64,
     "zxspectrum": zxspectrum,
+    "sega32x": sega32x,
+    "segacd": segacd,
+    "ngp": ngp,
+    "wonderswan": wonderswan,
+    "atarilynx": atarilynx,
 }
 
 

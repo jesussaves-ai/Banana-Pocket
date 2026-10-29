@@ -192,3 +192,20 @@ Three more systems run their libretro cores through `run-retroarch` with no per-
 
 All three are software cores, so their `perf` is `powersave` (the A55 cluster alone). None takes RetroAchievements,
 and none needs a Settings row: each is the one core the image ships for its system.
+
+## The handhelds and the Sega add-ons
+
+Five more shelves, all through `run-retroarch` with no per-system setup:
+
+- **Neo Geo Pocket** (`[ngp]`, `mednafen_ngp` -- Beetle NeoPop): the Pocket and the Color. One clicky stick, two
+  buttons and a menu button; no BIOS.
+- **WonderSwan** (`[wonderswan]`, `mednafen_wswan` -- Beetle WonderSwan): the WonderSwan and the Color. Its pad is a
+  d-pad turned 45 degrees, which the core maps from the RetroPad's; no BIOS.
+- **Atari Lynx** (`[atarilynx]`, `handy`): needs the Lynx boot ROM `lynxboot.img` in `banana/bios` (RetroArch's
+  system directory).
+- **Sega 32X** (`[sega32x]`) and **Sega CD** (`[segacd]`): no new core -- the 32X is the Mega Drive's PicoDrive and
+  the Sega CD is Genesis Plus GX (the more accurate Mega CD core, where the Mega Drive's own shelf is PicoDrive).
+  The Sega CD needs a BIOS in `banana/bios`: `bios_CD_U.bin`, `bios_CD_E.bin` or `bios_CD_J.bin` for the region.
+
+The three handheld cores are software and light (`powersave`); the 32X is the heavy one of the set (`performance`)
+and the Sega CD sits at `balanced`. None takes RetroAchievements.

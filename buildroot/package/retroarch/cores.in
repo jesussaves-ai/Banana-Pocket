@@ -120,6 +120,24 @@ config BR2_PACKAGE_LIBRETRO_VICE
 	help
 	  Commodore 64, with VICE (the x64 machine).
 
+config BR2_PACKAGE_LIBRETRO_BEETLE_NGP
+	bool "libretro-beetle-ngp"
+	default y
+	help
+	  Neo Geo Pocket and Neo Geo Pocket Color, with Beetle NeoPop.
+
+config BR2_PACKAGE_LIBRETRO_BEETLE_WSWAN
+	bool "libretro-beetle-wswan"
+	default y
+	help
+	  WonderSwan and WonderSwan Color, with Beetle WonderSwan.
+
+config BR2_PACKAGE_LIBRETRO_HANDY
+	bool "libretro-handy"
+	default y
+	help
+	  Atari Lynx, with Handy (it needs lynxboot.img in banana/bios).
+
 config BR2_PACKAGE_LIBRETRO_FAKE08
 	bool "libretro-fake08"
 	default y
