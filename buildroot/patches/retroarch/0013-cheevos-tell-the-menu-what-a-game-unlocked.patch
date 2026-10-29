@@ -1,0 +1,160 @@
+From: Banana <bananalinux@proton.me>
+Date: Thu, 29 Oct 2026 22:00:00 +0000
+Subject: [PATCH] cheevos: tell the handheld's menu what a game unlocked
+
+RetroArch's unlock path draws its own widget and stops there: nothing outside
+the process learns that an achievement was won, so Banana's profile could only
+show it the next time the game was opened -- and the per-game progress the menu
+already stores for its card had no writer at all: banana-ui exported
+BANANA_RA_PROGRESS for the game it started, and no emulator ever wrote it.
+
+This writes both, from where RetroArch already has them:
+
+  * on RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED, one tab-separated line per unlock
+    to BANANA_RA_CHEEVOS -- unlocked, total, title, description, points, rarity,
+    and the full path of the badge PNG RetroArch downloads -- which is what the
+    menu's toast is built from. It is written before rcheevos_award_achievement()
+    so that turning RetroArch's own in-game widget off (cheevos_visibility_unlock)
+    does not turn the menu's toast off with it;
+  * the game's "<unlocked> <total>" to BANANA_RA_PROGRESS, at each unlock and
+    once as the game loads, so the menu's card is right either way.
+
+The two paths come from the environment (the launcher sets them; the constants
+fall back to the handheld's usual /run/banana ones). Both files are only ever
+written here. A missing file, a full card or an unwritable /run writes nothing,
+and the game carries on: nothing about this may change the emulator's own
+behaviour.
+--- a/cheevos/cheevos.c
++++ b/cheevos/cheevos.c
+@@ -16,6 +16,8 @@
+ 
+ #include <string.h>
+ #include <ctype.h>
++#include <stdio.h>
++#include <stdlib.h>
+ 
+ #include <file/file_path.h>
+ #include <string/stdstring.h>
+@@ -287,6 +289,103 @@
+    }
+ }
+ 
++/* Banana: the achievements a game has won, told to the handheld's own menu.
++ *
++ * RetroArch's unlock path draws its own widget and stops there -- nothing outside this process learns that an
++ * achievement was won, so the handheld's profile could only ever show it the next time the game was opened. These
++ * write it where the menu looks, and keep the game's progress in the file the menu already reads for its card. Both
++ * files are in the handheld's runtime directory (a tmpfs: they do not outlive a boot, and they are written by every
++ * game, never read back here):
++ *
++ *   /run/banana/cheevos      one line per unlock, tab-separated:
++ *                            unlocked <TAB> total <TAB> title <TAB> description <TAB> points <TAB> rarity <TAB> badge
++ *   /run/banana/ra-progress  "<unlocked> <total>"
++ *
++ * The badge is the full path of the PNG RetroArch downloads it to, so that the menu does not have to work that path
++ * out from its own settings again; it may not be there yet when the line is written (the download is asynchronous),
++ * and an empty field means there is no badge. A tab or a newline in a title would break the line's shape, so they
++ * become spaces.
++ *
++ * None of this may change the emulator's behaviour: a missing file, a full card or an unwritable /run just means no
++ * line is written, and the game carries on. */
++#define BANANA_CHEEVOS_FILE  "/run/banana/cheevos"
++#define BANANA_PROGRESS_FILE "/run/banana/ra-progress"
++
++/* The launcher owns these paths and exports them for the game it started (banana-ui's BANANA_RA_PROGRESS, and
++ * BANANA_RA_CHEEVOS beside it), so that the handheld's layout stays in one place; the constants above are only what
++ * to use when nothing said. */
++static const char* banana_cheevos_path(const char* env, const char* fallback)
++{
++   const char* p = getenv(env);
++   return (p && *p) ? p : fallback;
++}
++
++static void banana_cheevos_clean(char* out, size_t len, const char* in)
++{
++   size_t i;
++
++   if (!out || !len)
++      return;
++   out[0] = '\0';
++   if (!in)
++      return;
++   for (i = 0; i + 1 < len && in[i]; i++)
++      out[i] = (in[i] == '\t' || in[i] == '\n' || in[i] == '\r') ? ' ' : in[i];
++   out[i] = '\0';
++}
++
++/* the game's progress, as the menu's card shows it ("<unlocked>/<total>") */
++static void banana_cheevos_progress(void)
++{
++   rc_client_user_game_summary_t summary;
++   FILE* f;
++
++   if (!rcheevos_locals.client)
++      return;
++
++   rc_client_get_user_game_summary(rcheevos_locals.client, &summary);
++   if (!(f = fopen(banana_cheevos_path("BANANA_RA_PROGRESS", BANANA_PROGRESS_FILE), "w")))
++      return;
++   fprintf(f, "%d %d\n", (int)summary.num_unlocked_achievements,
++         (int)summary.num_core_achievements);
++   fclose(f);
++}
++
++/* one unlock: the progress above, then the line the menu's toast is built from */
++static void banana_cheevos_awarded(const rc_client_achievement_t* cheevo)
++{
++   settings_t* settings = config_get_ptr();
++   rc_client_user_game_summary_t summary;
++   char title[256], description[512], badge[PATH_MAX_LENGTH];
++   FILE* f;
++
++   if (!cheevo || !rcheevos_locals.client || !settings)
++      return;
++
++   banana_cheevos_progress();
++
++   rc_client_get_user_game_summary(rcheevos_locals.client, &summary);
++
++   banana_cheevos_clean(title, sizeof(title), cheevo->title);
++   banana_cheevos_clean(description, sizeof(description), cheevo->description);
++
++   badge[0] = '\0';
++   if (!string_is_empty(settings->paths.directory_thumbnails)
++         && !string_is_empty(cheevo->badge_name))
++      snprintf(badge, sizeof(badge), "%s/cheevos/badges/%s.png",
++            settings->paths.directory_thumbnails, cheevo->badge_name);
++
++   if (!(f = fopen(banana_cheevos_path("BANANA_RA_CHEEVOS", BANANA_CHEEVOS_FILE), "a")))
++      return;
++   fprintf(f, "%d\t%d\t%s\t%s\t%u\t%.2f\t%s\n",
++         (int)summary.num_unlocked_achievements, (int)summary.num_core_achievements,
++         title, description, (unsigned)cheevo->points,
++         rc_client_get_hardcore_enabled(rcheevos_locals.client)
++               ? (double)cheevo->rarity_hardcore : (double)cheevo->rarity,
++         badge);
++   fclose(f);
++}
++
+ static void rcheevos_award_achievement(const rc_client_achievement_t* cheevo)
+ {
+    const settings_t* settings = config_get_ptr();
+@@ -568,6 +667,9 @@
+       break;
+ #endif
+    case RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED:
++      /* Banana: the handheld's menu hears about this whatever cheevos_visibility_unlock says -- that setting is
++       * RetroArch's own in-game widget, and the menu's toast is not gated by it. */
++      banana_cheevos_awarded(event->achievement);
+       rcheevos_award_achievement(event->achievement);
+       break;
+    case RC_CLIENT_EVENT_LEADERBOARD_STARTED:
+@@ -1424,6 +1526,8 @@
+ static void rcheevos_finalize_game_load_on_ui_thread(void)
+ {
+    rcheevos_show_game_placard();
++   /* Banana: the game's progress as it starts, so the menu's card is right for a play that unlocks nothing */
++   banana_cheevos_progress();
+ 
+ #if HAVE_REWIND
+    if (!rcheevos_hardcore_active())

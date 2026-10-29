@@ -2089,32 +2089,77 @@ namespace banana
 		}).detach();
 	}
 
-	void Settings::toast(const std::string& l1, const std::string& l2, uint32_t accent, int icon, double ms)
+	void Settings::toast(const std::string& l1, const std::string& l2, uint32_t accent, int icon, double ms,
+			const std::string& badge)
 	{
-		toast1 = l1; toast2 = l2; toastAccent = accent; toastIcon = icon;
-		toastUntil = now + ms;
+		// onto the queue rather than straight up: a game can unlock several achievements in a row, and the account
+		// check can land while one is still showing. drawToast runs them, one at a time.
+		toasts.push_back({ l1, l2, badge, accent, icon, ms });
+		if (toasts.size() > 24)
+			toasts.erase(toasts.begin());	// the oldest *waiting* one goes; never the one showing
+	}
+
+	void Settings::notify(const std::string& title, const std::string& body, int glyph, const std::string& badge)
+	{
+		// an achievement wears the theme's own accent and its badge; a plain message's accent says what it is
+		uint32_t accent;
+		if (!badge.empty())
+			accent = pal(light).accent.rgba8() >> 8;	// the palette's Color, as 0xRRGGBB
+		else
+			accent = glyph == 1 ? 0x6ad07a : glyph == 2 ? 0xff7a4a : 0x6ab0ff;
+		toast(title, body, accent, badge.empty() ? glyph : -1, 3000, badge);
 	}
 
 	// ROCKNIXDS's pop-up card (BN's in-game menu): across the top of the panel, a tile in the accent
 	// colour with its pixel sign, the first line in the accent colour and the second in light text
 	void Settings::drawToast(double t)
 	{
-		if (!mOpen || toastUntil <= t) return;
+		// the queue, one at a time, the next starting when the one showing runs out. Not gated on Settings being open:
+		// what a game unlocked is for whatever screen the player comes back to.
+		if (toastUntil <= t)
+		{
+			if (toasts.empty()) return;
+			toastNow = toasts.front();
+			toasts.erase(toasts.begin());
+			toastUntil = t + toastNow.ms;
+		}
 		static const char* const SIGN[3][9] = {
 			{ "...###...", "..#####..", "..##.##..", "....##...", "...##....", "...##....", ".........", "...##....", "...##...." },
 			{ ".........", "........#", ".......##", "......##.", "#....##..", "##..##...", ".####....", "..##.....", "........." },
 			{ "##.....##", ".##...##.", "..##.##..", "...###...", "...###...", "..##.##..", ".##...##.", "##.....##", "........." } };
-		const Color light = Color::hex(0xf1ede2), acc = Color::hex(toastAccent);
+		const Color light = Color::hex(0xf1ede2), acc = Color::hex(toastNow.accent);
 		box("osd", false, 8, 4, 624, 64);
 		float bs = 48, tx = 16, ty = 12;
-		be->fill(std::round(X(tx)), std::round(X(ty)), std::round(X(bs)), std::round(X(bs)), acc);
-		int k = std::max(1, (int)std::lround(X(bs) / 14));
-		float ox = std::round(X(tx + bs / 2)) - 9 * k / 2.0f, oy = std::round(X(ty + bs / 2)) - 9 * k / 2.0f;
-		for (int r = 0; r < 9; r++)
-			for (int c = 0; c < 9; c++)
-				if (SIGN[toastIcon][r][c] == '#') be->fill(std::round(ox + c * k), std::round(oy + r * k), (float)k, (float)k, Color::hex(0x12181f));
-		text(fit(toast1, true, 17, 540), true, 17, 78, 14, acc);
-		text(fit(toast2, false, 20, 540), false, 20, 78, 37, light);
+		float bx = std::round(X(tx)), by = std::round(X(ty)), bsz = std::round(X(bs));
+		be->fill(bx, by, bsz, bsz, acc);
+		// the tile is the achievement's badge when there is one (the PNG RetroArch downloaded: full colour, so it is
+		// drawn over the accent that fills what it leaves transparent), else the glyph's pixel sign
+		rnds::TexPtr badge;
+		if (!toastNow.badge.empty())
+		{
+			auto it = cache.find(toastNow.badge);
+			if (it == cache.end())
+			{
+				rnds::Bitmap b = rnds::decodeFile(toastNow.badge);
+				Cached c;
+				if (!b.empty()) c.tex = be->upload(b, true);	// smooth: a badge is a picture, not a pixel font
+				it = cache.emplace(toastNow.badge, c).first;
+			}
+			badge = it->second.tex;
+		}
+		if (badge)
+			be->draw(badge, bx, by, bsz, bsz, Color::hex(0xffffffff));
+		else
+		{
+			int k = std::max(1, (int)std::lround(X(bs) / 14));
+			float ox = std::round(X(tx + bs / 2)) - 9 * k / 2.0f, oy = std::round(X(ty + bs / 2)) - 9 * k / 2.0f;
+			int ic = std::max(0, std::min(2, toastNow.icon));
+			for (int r = 0; r < 9; r++)
+				for (int c = 0; c < 9; c++)
+					if (SIGN[ic][r][c] == '#') be->fill(std::round(ox + c * k), std::round(oy + r * k), (float)k, (float)k, Color::hex(0x12181f));
+		}
+		text(fit(toastNow.l1, true, 17, 540), true, 17, 78, 14, acc);
+		text(fit(toastNow.l2, false, 20, 540), false, 20, 78, 37, light);
 	}
 
 	// ---- the first-time setup ----------------------------------------------------------------------------------

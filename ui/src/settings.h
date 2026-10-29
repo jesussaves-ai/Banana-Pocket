@@ -62,9 +62,15 @@ namespace banana
 		// the volume or brightness keys' level: a small bubble near the bottom of the panel, its label, the percent and
 		// a bar (drawn like notice)
 		void level(const std::string& label, int percent);
-		// a pop-up along the top of the top panel in ROCKNIXDS's look (the RetroAchievements account check's result);
-		// the host draws it over the top panel while Settings is open
+		// A toast: a pop-up across the top of the panel in ROCKNIXDS's look, one at a time out of a queue, drawn by the
+		// host over whatever screen is up (the battery's notice and the volume's level share that overlay). An
+		// achievement passes the badge RetroArch downloaded, which is drawn in the tile; a plain message passes a glyph
+		// (0 "i", 1 a tick, 2 a cross) and the accent follows it.
+		void notify(const std::string& title, const std::string& body, int glyph = 0, const std::string& badge = std::string());
 		void drawToast(double nowMs);
+		// for the host's poll timeout: is anything showing or waiting, and how long the showing one has left
+		bool toasting() const { return toastUntil > now || !toasts.empty(); }
+		double toastLeftMs() const { return toastUntil - now; }
 
 	private:
 		struct Item
@@ -109,11 +115,15 @@ namespace banana
 		struct RaCheck { std::mutex mu; bool done = false; int kind = 0; std::string l2; };	// kind: 1 ok, 2 refused, 3 no network
 		std::shared_ptr<RaCheck> raCheck;
 		void startRaCheck(const std::string& user, const std::string& pass);
-		std::string toast1, toast2;
-		uint32_t toastAccent = 0;
-		int toastIcon = 0;			// 0 "i", 1 a tick, 2 a cross
+		// one toast, and the ones waiting behind it (an achievement per unlock, and whatever /run/banana/toast asked
+		// for). `badge` is the PNG RetroArch downloaded for an achievement: it is drawn in the tile, and `icon` is not
+		// used for it. Bounded: a session that unlocks half a list should not take over the menu.
+		struct Toast { std::string l1, l2, badge; uint32_t accent = 0; int icon = 0; double ms = 3000; };
+		std::vector<Toast> toasts;
+		Toast toastNow;
 		double toastUntil = 0;
-		void toast(const std::string& l1, const std::string& l2, uint32_t accent, int icon, double ms);
+		void toast(const std::string& l1, const std::string& l2, uint32_t accent, int icon, double ms = 3000,
+				const std::string& badge = std::string());
 		// the first-time setup: the steps (Wi-Fi, the time zone, RetroAchievements, ScreenScraper), run once after
 		// the installation (banana/setup-done is written at the end) and from Settings > System
 		bool wizard = false;

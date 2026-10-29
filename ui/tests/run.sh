@@ -52,6 +52,23 @@ for size in 640x480 1024x768; do
             [ "$(convert "$f" -format '%[fx:standard_deviation>0.01]' info:)" = 1 ] || { echo "FAIL $size: $f is blank"; fail=1; }
         done
     done
+    # The achievement toasts: what a game unlocked (buildroot/patches/retroarch/0013) is drawn over home, not only
+    # over Settings, one band per unlock with the badge RetroArch downloaded in the tile; and the plain /run/banana/toast
+    # hook. Two runs, since a toast holds the panel for seconds of real time and would hide the next one.
+    tlog=$OUT/$size-toast.log
+    "$HERE/banana-ui" --headless "$OUT/$size-" --size $size --assets "$HERE/assets/rnds" \
+        --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
+        --script "home 0; toast 1|Trophy won|By finding the sword|$FX/roms/nds/media/box/Peel Quest.png; wait 16; shot toast; wait 1" 2> "$tlog" ||
+        { echo "FAIL $size: banana-ui (toast, badge) exited $?"; fail=1; }
+    grep -q 'toast: queued "Trophy won" (badge yes)' "$tlog" || { echo "FAIL $size: the achievement toast wasn't queued"; fail=1; }
+    [ -s "$OUT/$size-toast-top.png" ] && [ "$(convert "$OUT/$size-toast-top.png" -format '%[fx:standard_deviation>0.01]' info:)" = 1 ] || { echo "FAIL $size: the toast frame is blank"; fail=1; }
+    plog=$OUT/$size-toast-plain.log
+    "$HERE/banana-ui" --headless "$OUT/$size-" --size $size --assets "$HERE/assets/rnds" \
+        --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
+        --script "home 0; toast 2|Something failed|A plain message; wait 16; shot toast-plain; wait 1" 2> "$plog" ||
+        { echo "FAIL $size: banana-ui (toast, plain) exited $?"; fail=1; }
+    grep -q 'toast: queued "Something failed" (badge none)' "$plog" || { echo "FAIL $size: the plain toast wasn't queued"; fail=1; }
+    [ -s "$OUT/$size-toast-plain-top.png" ] || { echo "FAIL $size: no plain toast frame"; fail=1; }
     # Wi-Fi: Settings > Network, the networks from a stand-in wifi script, a password typed by touch, joining,
     # forgetting, an open network and a WPA3-only one (Settings opens on its groups: R four times is Network)
     wlog=$OUT/$size-wifi.log

@@ -480,7 +480,18 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 	settings.searchCount = [&](const std::string& q) { return lib.countMatches(q); };
 	LowBattery low;
 	IdleGuard guard;	// the burn-in guard's logic, driven by the `guard`/`idle` script commands (test only)
-	be.overlay = [&](int screen) { if (screen == 0 && low.showing(now)) settings.notice(low.title, low.body, low.percent); };
+	// the overlay runs in endScreen, over whatever screen the menu drew: the battery's notice, the volume's level,
+	// and the achievement toasts. None of them is gated on a page being open -- what a game unlocked is for the screen
+	// the player comes back to, and the battery is the battery.
+	be.overlay = [&](int screen)
+	{
+		// endScreen runs inside the locked update, where the loop's own `now` is not in scope; the settings-view
+		// overlay took its own time for the same reason
+		if (screen != 0) return;
+		double t = nowMs();
+		if (low.showing(t)) settings.notice(low.title, low.body, low.percent);
+		else settings.drawToast(t);
+	};
 	// the menu's start-up, timed before any script command: its constructor (the theme's build) ran above, the first
 	// update lays out the home shelf, finishWork decodes its pictures, the first render draws the first frame
 	{
@@ -522,6 +533,26 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 			cs >> lib.testPower.percent >> ch;
 			lib.testPower.charging = ch == "charging";
 			if (low.check(lib.power(), shutdownPercent(o.data), now)) logf("battery %d%%: notice %s", lib.testPower.percent, low.showing(now) ? low.title.c_str() : "hidden");
+		}
+		else if (op == "toast")
+		{
+			// toast <glyph>|<title>|<body>|<badge>: queue a pop-up as an achievement (with the badge RetroArch
+			// downloads) or as /run/banana/toast would; test only, so the toast is exercised without a game. The
+			// fields are pipe-separated (a title holds spaces), `badge` empty for a plain message.
+			std::string rest; std::getline(cs >> std::ws, rest);
+			std::vector<std::string> f;
+			size_t s = 0;
+			while (f.size() < 3)
+			{
+				size_t bar = rest.find('|', s);
+				if (bar == std::string::npos) break;
+				f.push_back(rest.substr(s, bar - s));
+				s = bar + 1;
+			}
+			f.push_back(rest.substr(s));
+			while (f.size() < 4) f.push_back(std::string());
+			settings.notify(f[1], f[2], std::max(0, std::min(2, atoi(f[0].c_str()))), f[3]);
+			logf("toast: queued \"%s\" (badge %s)", f[1].c_str(), f[3].empty() ? "none" : "yes");
 		}
 		else if (op == "press")
 		{
@@ -905,6 +936,25 @@ struct FrameStats
 	}
 };
 
+// One tab-separated line, split into exactly n fields (empty ones when the line is short). What RetroArch's patch
+// writes for an achievement (buildroot/patches/retroarch/0013) is one such line, and a title can hold anything but a
+// tab, so splitting is all the parsing there is.
+static std::vector<std::string> tsv(const std::string& line, size_t n)
+{
+	std::vector<std::string> out;
+	size_t start = 0;
+	while (out.size() + 1 < n)
+	{
+		size_t tab = line.find('\t', start);
+		if (tab == std::string::npos) break;
+		out.push_back(line.substr(start, tab - start));
+		start = tab + 1;
+	}
+	out.push_back(line.substr(start));
+	while (out.size() < n) out.push_back(std::string());
+	return out;
+}
+
 int main(int argc, char** argv)
 {
 	Options o;
@@ -1085,7 +1135,7 @@ int main(int argc, char** argv)
 		double t = nowMs();
 		if (low.showing(t)) settingsView.notice(low.title, low.body, low.percent);
 		else if (osdUntil > t) settingsView.level(osdLabel, osdPercent);
-		else settingsView.drawToast(t);	// (only while Settings is open: the account check's result)
+		else settingsView.drawToast(t);	// the achievement toasts, over whatever page is up
 	};
 
 	// ---- AMOLED burn-in guard: the panel's backlight goes to a night level after 90 s idle and off after 180 s, and
@@ -1266,7 +1316,9 @@ int main(int argc, char** argv)
 		rep.key = Key::NONE;
 		if (system(("banana-perf " + shellQuote(sd.perf.empty() ? "balanced" : sd.perf)).c_str()) != 0) {}
 		const char* PROGRESS = "/run/banana/ra-progress";	// "<unlocked> <total>", from the emulator (docs/EMULATORS.md)
+		const char* CHEEVOS  = "/run/banana/cheevos";		// one line per unlock, from the same patch
 		unlink(PROGRESS);
+		unlink(CHEEVOS);	// last game's: this game's are written as they are won
 		double start = nowMs();
 		pid_t pid = fork();
 		if (pid < 0) logf("fork failed: %s", strerror(errno));
@@ -1280,6 +1332,7 @@ int main(int argc, char** argv)
 			setenv("BANANA_ROM", rom.c_str(), 1);
 			setenv("BANANA_SYSTEM", sd.id.c_str(), 1);
 			setenv("BANANA_RA_PROGRESS", PROGRESS, 1);
+			setenv("BANANA_RA_CHEEVOS", CHEEVOS, 1);	// RetroArch's patch writes both (buildroot/patches/retroarch/0013)
 			execl("/bin/sh", "sh", "-c", cmd.c_str(), (char*)nullptr);
 			_exit(127);
 		}
@@ -1301,6 +1354,17 @@ int main(int argc, char** argv)
 			int achA = -1, achB = 0;
 			std::ifstream(PROGRESS) >> achA >> achB;
 			lib.recordPlay(game, secs, achA, achB);	// (a start that failed straight away isn't a play)
+			// what the game unlocked, one line per achievement: the menu's toast is built from these, and the badge PNG
+			// is drawn in the tile. A game that unlocked nothing wrote nothing; a line that is short is a line that was
+			// not written at all (the patch always writes all seven fields), so the defaults stand.
+			std::ifstream ch(CHEEVOS);
+			std::string line;
+			while (std::getline(ch, line))
+			{
+				std::vector<std::string> f = tsv(line, 7);
+				if (f[0].empty() || f[1].empty()) continue;
+				settingsView.notify(f[2], f[3], 0, f[6]);
+			}
 		}
 		ui->dataChanged();
 		ui->setLibrary(lib.currentShelf(), game);
@@ -1325,6 +1389,7 @@ int main(int argc, char** argv)
 	// the launch file is looked at once at startup, then only when the watch fires (a pass otherwise ran a wasted
 	// access() on every animated frame); without a watch it is looked at every pass as before
 	bool launchSeen = true;
+	bool cheevosSeen = true;	// /run/banana/cheevos: the achievements a game just unlocked, read on this pass
 	bool shotWanted = false;	// /run/banana/screen.req: write the frame to screen.jpg on this pass (below)
 	while (!quit)
 	{
@@ -1363,6 +1428,25 @@ int main(int argc, char** argv)
 					for (int i = 0; i < (int)lib.shelf(s).games.size(); i++)
 						if (lib.shelf(s).games[i].path == want && !lib.shelf(s).favorites) { lib.openLibrary(s); lib.launch(i); found = true; break; }
 				if (!found) logf("launch file: no game at %s", want.c_str());
+			}
+		}
+		// a system-wide hook: anything that wants the menu to show a pop-up writes /run/banana/toast, one line
+		// "<glyph>\t<title>\t<body>" (glyph 0 "i", 1 a tick, 2 a cross), and this reads it. Updates, Wi-Fi, the
+		// account check -- whatever -- all write the same file; the achievements a game unlocked are read straight from
+		// /run/banana/cheevos after the game, with the badge RetroArch downloaded as its picture.
+		if (cheevosSeen || launchWatch < 0)
+		{
+			cheevosSeen = false;
+			if (access("/run/banana/toast", F_OK) == 0)
+			{
+				std::ifstream f("/run/banana/toast");
+				std::string line;
+				if (std::getline(f, line))
+				{
+					std::vector<std::string> g = tsv(line, 3);
+					settingsView.notify(g[1], g[2], std::max(0, std::min(2, atoi(g[0].c_str()))));
+				}
+				unlink("/run/banana/toast");
 			}
 		}
 		int g = lib.pendingLaunch();
@@ -1492,6 +1576,13 @@ int main(int argc, char** argv)
 			int left = (int)(osdUntil - now) + 1;
 			if (timeout < 0 || left < timeout) timeout = left;
 		}
+		if (settingsView.toasting())
+		{
+			// a queued achievement: the menu sleeps in poll() until a press otherwise, and the next toast waits on
+			// the one showing -- without this it would not come up until the player moved
+			int left = (int)settingsView.toastLeftMs() + 1;
+			if (timeout < 0 || left < timeout) timeout = left;
+		}
 		{
 			// ms until the burn-in guard's next step (dim at 90 s, blank at 180 s)
 			int g = guard.nextMs(now);
@@ -1553,8 +1644,8 @@ int main(int argc, char** argv)
 				roms.read(nowMs());
 			else if (p.fd == launchWatch)
 			{
-				// The watch is /run/banana, for the launch file -- and for screen.req, the screen dump below: one
-				// watch, nothing new polled.
+				// The watch is /run/banana, for the launch file -- and for screen.req, the screen dump below, and the cheevos and
+				// toast files, the pop-ups the loop reads on its next pass: one watch, nothing new polled.
 				alignas(inotify_event) char buf[1024];
 				ssize_t len;
 				while ((len = read(launchWatch, buf, sizeof buf)) > 0)
@@ -1563,6 +1654,8 @@ int main(int argc, char** argv)
 					{
 						auto* ev = (inotify_event*)e;
 						if (ev->len && !strcmp(ev->name, "screen.req")) shotWanted = true;
+						else if (ev->len && !strcmp(ev->name, "cheevos")) cheevosSeen = true;
+						else if (ev->len && !strcmp(ev->name, "toast")) cheevosSeen = true;
 						e += sizeof(inotify_event) + ev->len;
 					}
 				}

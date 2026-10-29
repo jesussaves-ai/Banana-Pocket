@@ -78,7 +78,30 @@ Vulkan, whose shader backend is Slang, and a GLSL preset under it crashes RetroA
 
 RetroAchievements: the account from the first-time setup (`banana/accounts.conf`) is written into `retroarch.cfg`
 as its name, but its password and the token RetroArch gets with it go in a config appended from `/run`, never in
-`retroarch.cfg`, which file sharing shows.
+`retroarch.cfg`, which file sharing shows. **Badges** are on (`cheevos_badges_enable`): the menu's achievement toast
+shows the PNG RetroArch downloads per achievement, in `thumbnails/cheevos/badges` on the card.
+
+### What the menu learns from a game
+
+RetroArch's unlock path draws its own widget and stops there -- nothing outside the process knows an achievement was
+won, so the menu could only show it the next time the game was opened. `buildroot/patches/retroarch/0013` writes two
+files from where RetroArch already has the information, both in the runtime directory the launcher names:
+
+* `BANANA_RA_CHEEVOS` (default `/run/banana/cheevos`), one tab-separated line per unlock: `unlocked`, `total`, `title`,
+  `description`, `points`, `rarity`, and the full path of the badge PNG. The menu's toast is built from these lines and
+  the badge is drawn in the tile. It is written before `rcheevos_award_achievement()`, so turning RetroArch's own
+  in-game widget off (`cheevos_visibility_unlock`) does not turn the menu's toast off with it.
+* `BANANA_RA_PROGRESS` (default `/run/banana/ra-progress`), the game's `"<unlocked> <total>"`, written at each unlock and
+  once as the game loads. The menu's per-game card reads it (`library.cpp`), and it used to have no writer at all.
+
+Both are only ever written by RetroArch. A missing file, a full card or an unwritable `/run` writes nothing, and the
+game carries on: nothing about this changes the emulator's own behaviour.
+
+`banana-ui` sets both environment variables for the game it starts (`run-retroarch` and RetroArch inherit them), unlinks
+the files before the game and reads `cheevos` after it, queuing one toast per line. A **system-wide hook** exists beside
+them:
+`/run/banana/toast`, one line `"<glyph>\t<title>\t<body>"` (glyph 0 "i", 1 a tick, 2 a cross), which anything can
+write -- an update, a Wi-Fi join, the account check -- and the menu reads on its next pass.
 
 ## The PlayStation
 

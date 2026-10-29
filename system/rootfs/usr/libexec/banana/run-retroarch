@@ -270,6 +270,10 @@ u=$(acct ra_user)
 (umask 077; : > $RA)
 if [ -n "$u" ]; then
     set_cfg cheevos_enable true; set_cfg cheevos_username "$u"
+    # the badges are the menu's achievement toast's picture: RetroArch downloads one PNG per achievement (for the ones
+    # already unlocked as the game loads, and for each one as it is won) into thumbnails/cheevos/badges on the card,
+    # and the patch that tells the menu about an unlock hands it that path. Off by default in RetroArch.
+    set_cfg cheevos_badges_enable true
     printf 'cheevos_password = "%s"\ncheevos_token = "%s"\n' "$(acct ra_password)" "$(acct ra_retroarch_token)" > $RA
 elif [ -f $A ]; then
     set_cfg cheevos_enable false
