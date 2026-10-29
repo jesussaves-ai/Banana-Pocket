@@ -1382,22 +1382,35 @@ int main(int argc, char** argv)
 		time_t wall = time(nullptr);
 		int minute = (int)(wall / 60);
 		if (minute != lastMinute) { lastMinute = minute; dirty = true; batteryDue = true; }
-		if (roms.due > 0 && now >= roms.due && !settingsView.isOpen())
+		if (roms.due > 0 && now >= roms.due && !settingsView.isOpen() &&
+		    (ui->view() == rnds::UI::HOME || ui->view() == rnds::UI::LIBRARY))
 		{
 			std::lock_guard<std::mutex> l(worker.uiLock);
-			if (ui->view() == rnds::UI::HOME)
+			// A scan re-arranges the shelves (favourites first), so the system the menu shows is found again by its
+			// id, and in the library the game by its path -- not by the index each had. On the library too, not only
+			// home: a port (or a game) installed while PortMaster ran is only on the card when the menu comes back,
+			// and the Ports shelf it comes back to is exactly where the new port has to appear.
+			const bool home = ui->view() == rnds::UI::HOME;
+			std::string id = lib.systemCount() ? lib.shelf(home ? ui->systemIndex() : lib.currentShelf()).def.id : "";
+			std::string gpath;
+			if (!home && lib.gameCount() && ui->gameIndex() >= 0 && ui->gameIndex() < lib.gameCount())
+				gpath = lib.gameAt(ui->gameIndex()).path;
+			roms.due = 0;
+			lib.scan();
+			int at = 0;
+			for (int i = 0; i < lib.systemCount(); i++) if (lib.shelf(i).def.id == id) at = i;
+			ui->dataChanged();
+			if (home) ui->setHome(at);
+			else
 			{
-				roms.due = 0;
-				std::string id = lib.systemCount() ? lib.shelf(ui->systemIndex()).def.id : "";
-				lib.scan();
-				int at = 0;
-				for (int i = 0; i < lib.systemCount(); i++) if (lib.shelf(i).def.id == id) at = i;
-				ui->dataChanged();
-				ui->setHome(at);
-				roms.watch(lib.watchDirs());
-				logf("the games on the card changed: %d systems", lib.systemCount());
-				dirty = true;
+				lib.openLibrary(at);
+				int gi = 0;
+				for (int i = 0; i < lib.gameCount(); i++) if (lib.shelf(at).games[i].path == gpath) gi = i;
+				ui->setLibrary(at, gi);
 			}
+			roms.watch(lib.watchDirs());
+			logf("the games on the card changed: %d systems", lib.systemCount());
+			dirty = true;
 		}
 		if (batteryDue)
 		{

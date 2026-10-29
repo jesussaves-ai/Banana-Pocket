@@ -1,29 +1,97 @@
 #!/bin/sh
 # Ports: a port's script (PortMaster's, or any .sh in roms/ports) with bash, as ROCKNIX runs them. PortMaster itself
 # is the "PortMaster" entry: its release (kept in the image) is put on the card the first time, and it updates itself
-# there. Ports draw on the KMS/DRM display; their files and settings go under /data/home, not the read-only root.
+# there.
+#
+# The port runs under **cage** (a kiosk Wayland compositor: one application, fullscreen), exactly as a game runs under
+# RetroArch: cage turns the output with the panel's own "panel orientation" property, so the port's SDL window comes
+# out upright on this handheld's portrait-native panel (1080x1240) instead of a quarter turn off. That is why SDL2 is
+# built with its Wayland driver; the KMSDRM driver renders in the panel's own shape and has no way to turn (kept only
+# for a card without cage). Ports' files and settings go under /data/home, not the read-only root.
 #   run-port <script>
 P=/data/roms/ports
 if [ ! -f $P/PortMaster/PortMaster.sh ] && [ -f /usr/share/banana/portmaster/PortMaster.zip ]; then
     mkdir -p $P && unzip -q -o /usr/share/banana/portmaster/PortMaster.zip -d $P && echo "PortMaster put on the card"
 fi
-export HOME=/data/home XDG_DATA_HOME=/data/home/.local/share XDG_CONFIG_HOME=/data/home/.config XDG_RUNTIME_DIR=/run
+# The RPC's pad, mapped for SDL (see the export below): this handheld's buttons are the Nintendo order (A is the east
+# button as banana-ui's own menu reads them), not SDL's Xbox order.
+SDL_MAP="0300f3f7242f00000100000001000000,Retroid Pocket Classic Gamepad,a:b1,b:b0,x:b2,y:b3,back:b8,guide:b10,start:b9,leftstick:b11,rightstick:b12,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,dpup:b13,dpdown:b14,dpleft:b15,dpright:b16,platform:Linux,"
+# PortMaster's own get_controls (control.txt) finds a pad by its /dev/input/by-path name; this handheld's rsinput
+# gamepad is none of the names it knows, so it leaves DEVICE empty and copies the *whole* gamecontrollerdb.txt into
+# SDL_GAMECONTROLLERCONFIG -- hundreds of KB, past ARG_MAX, so every exec in a port's script dies with "Argument list
+# too long" and the port lands straight back in the menu. A port sources mod_${CFW_NAME}.txt after control.txt and
+# before it calls get_controls, so this file's get_controls replaces the stock one and sets that variable to this
+# pad's single line. Written here (not shipped in the card image) so PortMaster updating itself cannot lose it.
+MOD=$P/PortMaster/mod_BananaOS.txt
+if [ -d "$P/PortMaster" ] && ! grep -qF "$SDL_MAP" "$MOD" 2>/dev/null; then
+    cat > "$MOD" <<EOF
+# BananaOS (written by run-port): override get_controls so SDL_GAMECONTROLLERCONFIG is this pad's one line, not the
+# whole gamecontrollerdb.txt (which is past ARG_MAX and makes every exec in a port fail with "Argument list too long").
+get_controls() {
+  ANALOGSTICKS=0
+  LOWRES="N"
+  DEVICE="0300f3f7242f00000100000001000000"
+  param_device="bananaos"
+  sdl_controllerconfig="$SDL_MAP"
+  export SDL_GAMECONTROLLERCONFIG_FILE=/tmp/gamecontrollerdb.txt
+  printf '%s\n' "\$sdl_controllerconfig" > /tmp/gamecontrollerdb.txt
+}
+EOF
+fi
+# Celeste Classic's port ships ccleste-input-cfg.txt with only its header line; ccleste reads a config file that has no
+# mapping lines as "no buttons bound at all", so the game ignores every press. With no file, ccleste writes the
+# defaults (jump=a, dash=b, ...) on its first run. Remove a config that is only comments/blank lines -- and only ever
+# that one file, so a config a player has edited (it has mapping lines) is left alone. Reinstalling the port puts the
+# empty one back; this drops it again.
+CC=$P/ccleste/ccleste-input-cfg.txt
+if [ -f "$CC" ] && ! grep -qvE '^[[:space:]]*(#|$)' "$CC" 2>/dev/null; then rm -f "$CC"; fi
+export HOME=/data/home XDG_DATA_HOME=/data/home/.local/share XDG_CONFIG_HOME=/data/home/.config
 mkdir -p $XDG_DATA_HOME $XDG_CONFIG_HOME
 export TERM=linux
 # PortMaster's menu is Python with PySDL2, which finds SDL2 through ctypes.util.find_library: no ldconfig cache or
 # compiler here, so it found nothing and PortMaster quit a second after starting. Its own folder says where.
 export PYSDL2_DLL_PATH=/usr/lib
-# PortMaster starts its splash (a LÖVE app on KMSDRM, holding DRM master) and then its menu, which stops the splash
-# only after SDL is up. SDL's KMSDRM skips a device it can't be master of (SDL_KMSDRM_REQUIRE_DRM_MASTER, on by
-# default), so the menu's SDL fell back to a black screen. Master is taken when the window is made, once the splash
-# has gone.
-export SDL_KMSDRM_REQUIRE_DRM_MASTER=0
+# SDL's controller map for this handheld's own pad (the rsinput MCU gamepad, GUID 0300f3f7242f0000...). SDL2 auto-maps
+# an evdev gamepad, and its order is the Xbox one: A = the *south* button (BTN_A), B = the east one, X = north, Y =
+# west. The RPC's buttons are the Nintendo order -- **A is the east button**, as banana-ui's own menu reads them
+# (ui/src/input.cpp: BTN_EAST -> A) and as RetroArch's autoconfig for this pad has it -- so A and B are swapped here.
+# Everything else SDL already has right (X = north, Y = west, the d-pad at 13..16, the shoulders/triggers, SELECT
+# 8 / START 9 / MODE 10). The button numbers are evdev code order (SDL_sysjoystick.c: BTN_JOYSTICK..KEY_MAX first):
+# 0 SOUTH, 1 EAST, 2 NORTH, 3 WEST, 4 TL, 5 TR, 6 TL2, 7 TR2, 8 SELECT, 9 START, 10 MODE, 11/12 THUMBL/R, 13..16 D-pad.
+export SDL_GAMECONTROLLERCONFIG="0300f3f7242f00000100000001000000,Retroid Pocket Classic Gamepad,a:b1,b:b0,x:b2,y:b3,back:b8,guide:b10,start:b9,leftstick:b11,rightstick:b12,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,dpup:b13,dpdown:b14,dpleft:b15,dpright:b16,platform:Linux,"
 cd "$(dirname "$1")"
+CAGE=
+if [ -x /usr/bin/cage ]; then
+    CAGE=1
+    # cage puts its socket here: a private, 0700 runtime dir on tmpfs.
+    export XDG_RUNTIME_DIR=/run/banana/wayland
+    mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null
+    # cage's seat (libseat's builtin backend, seatd, in this process) must not be VT-bound: this kernel has no virtual
+    # terminals, and the kernel's own VT switch on suspend would wait for cage to release a VT that does not exist
+    # while bananad has the port's whole process group SIGSTOPped -- the suspend would never return.
+    export SEATD_VTBOUND=0
+    # SDL2 under cage draws through the Wayland video driver (KMSDRM would fight cage for DRM master). SDL picks
+    # Wayland when WAYLAND_DISPLAY is set, but a port's own script may set SDL_VIDEODRIVER: set here as the default,
+    # so a port that insists on KMSDRM by hand keeps its own. Audio stays ALSA "default" (bananad's asound.conf);
+    # there is no PulseAudio/PipeWire here.
+    : "${SDL_VIDEODRIVER:=wayland}"; export SDL_VIDEODRIVER
+    : "${SDL_AUDIODRIVER:=alsa}"; export SDL_AUDIODRIVER
+else
+    # no cage (a card without it): the port takes the panel itself, as ROCKNIX runs it. SDL's KMSDRM must be told it
+    # need not be DRM master: PortMaster starts its splash (a LOVE app on KMSDRM, holding master) and then its menu,
+    # which stops the splash only after SDL is up.
+    export XDG_RUNTIME_DIR=/run
+    export SDL_KMSDRM_REQUIRE_DRM_MASTER=0
+fi
 # the port in its own session (its process group = $C): a quit from the menu, and the port's end, reach everything it
 # started. PortMaster's script runs its menu (python3 pugwash) as a child: a TERM to the script alone left that
 # running, holding the display, and the menu's next game got no panel
-setsid bash "$1" &
+if [ -n "$CAGE" ]; then setsid cage -- bash "$1" & else setsid bash "$1" & fi
 C=$!
+# bananad's SIGUSR1 on the way out of a sleep goes here (bananad reads the file): cage re-modesets its output, because
+# a panel its driver turned off on the way down comes back dark and only a modeset clears it. With no cage there is
+# nothing to re-modeset, and the file goes away.
+if [ -n "$CAGE" ]; then echo $C > /run/banana/cage.pid; else rm -f /run/banana/cage.pid; fi
 trap 'kill -TERM -$C 2>/dev/null' TERM INT HUP
 wait $C; S=$?
 while kill -0 $C 2>/dev/null; do wait $C; S=$?; done
@@ -33,4 +101,5 @@ if kill -0 -$C 2>/dev/null; then
     for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 -$C 2>/dev/null || break; sleep 0.2; done
     kill -KILL -$C 2>/dev/null
 fi
+rm -f /run/banana/cage.pid
 exit $S

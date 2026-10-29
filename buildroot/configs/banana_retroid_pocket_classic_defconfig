@@ -80,6 +80,14 @@ BR2_PACKAGE_SDL2=y
 BR2_PACKAGE_CAGE=y
 BR2_PACKAGE_SDL2_KMSDRM=y
 BR2_PACKAGE_SDL2_OPENGLES=y
+# SDL2 on Wayland too: the ports (PortMaster's menu and the games) run under cage, like a game under RetroArch, so
+# cage turns the output with the panel's "panel orientation" -- the KMSDRM driver (kept for a card with no cage)
+# renders in the panel's own portrait shape and cannot be turned.
+BR2_PACKAGE_SDL2_WAYLAND=y
+# SDL2's Wayland driver builds an XKB context (xkbcommon) to translate keycodes; without the XKB data files it fails
+# with "Failed to create XKB context" and the app gets a black screen (PortMaster did). xkeyboard-config is that data
+# (XORG7 is off: nothing else from x11r7 comes with it).
+BR2_PACKAGE_XKEYBOARD_CONFIG=y
 BR2_PACKAGE_LIBCURL=y
 BR2_PACKAGE_ZLIB=y
 BR2_PACKAGE_EXFATPROGS=y
