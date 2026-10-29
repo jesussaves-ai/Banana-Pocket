@@ -28,6 +28,7 @@ DEFAULTS = os.path.join(ROOT, "ui", "src", "settings_defaults.cpp")
 
 errors = []
 notes = []
+CORE_PKG = {}
 
 
 def parse_systems(path):
@@ -60,32 +61,38 @@ def looks_ids(path):
     return ids
 
 
-def core_for(package):
-    # a libretro package installs <core>_libretro.so; recover <core> from the install line
-    mk = os.path.join(PKG, "libretro-" + package, "libretro-" + package + ".mk")
-    if not os.path.isfile(mk):
-        return None
-    with open(mk, encoding="utf-8") as f:
-        m = re.search(r"/([a-z0-9_]+)_libretro\.so", f.read())
-    return m.group(1) if m else None
+def core_packages():
+    # map <core>_libretro.so -> the package that installs it, over every libretro-* package. Keyed on the installed
+    # soname, not the package name: a core's repo/package and its core name disagree (mednafen_pce_fast is built by
+    # libretro-beetle-pce-fast), and only the install line is authoritative.
+    m = {}
+    for name in sorted(os.listdir(PKG)):
+        d = os.path.join(PKG, name)
+        if not name.startswith("libretro-") or not os.path.isdir(d):
+            continue
+        for f in os.listdir(d):
+            if not f.endswith(".mk"):
+                continue
+            with open(os.path.join(d, f), encoding="utf-8") as fh:
+                for core in re.findall(r"/([a-z0-9_]+)_libretro\.so", fh.read()):
+                    m[core] = name
+    return m
 
 
 def check_core(core, where):
-    package = core.replace("_", "-")
-    d = os.path.join(PKG, "libretro-" + package)
-    if not os.path.isdir(d):
-        errors.append("%s: core %s has no buildroot/package/libretro-%s" % (where, core, package))
+    package = CORE_PKG.get(core)
+    if not package:
+        errors.append("%s: no buildroot package installs %s_libretro.so" % (where, core))
         return
-    got = core_for(package)
-    if got != core:
-        errors.append("%s: libretro-%s installs %s_libretro.so, not %s_libretro.so" % (where, package, got, core))
-    symbol = "BR2_PACKAGE_LIBRETRO_" + core.upper()
+    symbol = "BR2_PACKAGE_" + package.replace("-", "_").upper()
     with open(CORES_IN, encoding="utf-8") as f:
         if not re.search(r"^config\s+%s\b" % re.escape(symbol), f.read(), re.M):
-            errors.append("%s: core %s is not enabled in cores.in (%s)" % (where, core, symbol))
+            errors.append("%s: core %s (%s) is not enabled in cores.in (%s)" % (where, core, package, symbol))
 
 
 def main():
+    global CORE_PKG
+    CORE_PKG = core_packages()
     systems = parse_systems(SYSTEMS)
     listed = looks_ids(LOOKS)
     for s in systems:
