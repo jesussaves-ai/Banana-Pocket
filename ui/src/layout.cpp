@@ -352,6 +352,10 @@ namespace banana
 			else if (f == "games") out = EV((double)si.games);
 			else if (f == "played") out = EV((double)si.played);
 			else if (f == "time") out = EV(si.time);
+			else if (f == "achA" || f == "achievements") out = EV((double)si.achA);
+			else if (f == "achB" || f == "achievementsTotal") out = EV((double)si.achB);
+			else if (f == "achLabel") out = EV(si.achLabel);
+			else if (f == "achProgress") out = EV(si.achB > 0 ? (double)si.achA / si.achB : 0.0);
 			else if (f == "fav") out = EV(si.fav ? 1.0 : 0.0);
 			else if (f == "app") out = EV(si.app ? 1.0 : 0.0);
 			else if (f == "hasResume") out = EV(si.hasResume ? 1.0 : 0.0);

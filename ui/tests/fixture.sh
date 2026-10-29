@@ -42,7 +42,7 @@ for g in "Super Smoothie World"; do head -c 1024 /dev/zero > "$D/roms/snes/$g.sf
 box "$D/roms/snes/media/box/Super Smoothie World.png" '#8060c0' 'Smoothie World'
 head -c 1024 /dev/zero > "$D/roms/gb/Pocket Peel.gb"
 now=$(date +%s)
-printf 'nds/Banana Kart DS.nds\t14\t79920\t%s\nnds/Peel Quest.nds\t3\t5400\t%s\ngba/Orchard Tactics.gba\t1\t900\t%s\n' \
+printf 'nds/Banana Kart DS.nds\t14\t79920\t%s\t12\t40\nnds/Peel Quest.nds\t3\t5400\t%s\t5\t40\ngba/Orchard Tactics.gba\t1\t900\t%s\n' \
     $((now - 3600)) $((now - 90000)) $((now - 900000)) > "$D/data/playstats.tsv"
 echo "nds/Peel Quest.nds" > "$D/data/favorites.txt"
 echo "fixture in $D"

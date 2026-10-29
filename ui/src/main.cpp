@@ -554,6 +554,15 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 			settings.notify(f[1], f[2], std::max(0, std::min(2, atoi(f[0].c_str()))), f[3]);
 			logf("toast: queued \"%s\" (badge %s)", f[1].c_str(), f[3].empty() ? "none" : "yes");
 		}
+		else if (op == "sysinfo")
+		{
+			// sysinfo <index>: the system as the shelf sees it (its games, plays and RetroAchievements totals); the
+			// theme draws the label, and the test reads it here rather than by reading a rendered string
+			int s = 0; cs >> s;
+			rnds::SysInfo si = lib.system(s);
+			logf("sysinfo %s: %d games, %d played, %s, achievements %d/%d", si.id.c_str(), si.games, si.played,
+				si.time.c_str(), si.achA, si.achB);
+		}
 		else if (op == "press")
 		{
 			std::string b; cs >> b;

@@ -93,7 +93,9 @@ files from where RetroArch already has the information, both in the runtime dire
   the badge is drawn in the tile. It is written before `rcheevos_award_achievement()`, so turning RetroArch's own
   in-game widget off (`cheevos_visibility_unlock`) does not turn the menu's toast off with it.
 * `BANANA_RA_PROGRESS` (default `/run/banana/ra-progress`), the game's `"<unlocked> <total>"`, written at each unlock and
-  once as the game loads. The menu's per-game card reads it (`library.cpp`), and it used to have no writer at all.
+  once as the game loads. The menu's per-game card reads it (`library.cpp`), and it used to have no writer at all. The
+  home shelf sums it over a system's games (only the games the emulator has said a total for) and shows the total on
+  the system's card (`sys.achLabel`; a system with none reads as no block, not 0%).
 
 Both are only ever written by RetroArch. A missing file, a full card or an unwritable `/run` writes nothing, and the
 game carries on: nothing about this changes the emulator's own behaviour.

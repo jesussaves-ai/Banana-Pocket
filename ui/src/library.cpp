@@ -725,6 +725,10 @@ namespace banana
 		long secs = 0;
 		for (auto& g : s.games) { if (g.plays > 0) r.played++; secs += g.seconds; }
 		r.time = fmtTime(secs);
+		// RetroAchievements across the system's games: only the games the emulator has said a total for count, so an
+		// unscraped system reads as no block rather than 0% (the per-game card does the same, library.cpp).
+		for (auto& g : s.games) if (g.achB > 0) { r.achA += std::max(0, g.achA); r.achB += g.achB; }
+		if (r.achB > 0) r.achLabel = std::to_string(r.achA) + " / " + std::to_string(r.achB) + " achievements";
 		r.fav = favSystems.count(s.def.id) > 0;
 		int res = resumeIndex(s);
 		if (res >= 0)

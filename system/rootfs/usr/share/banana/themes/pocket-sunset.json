@@ -105,6 +105,8 @@
         { "type": "text", "x": 0, "w": "100%", "y": 118, "align": "center", "text": "{sys.name}", "font": "pixel-medium", "size": 28, "color": "=ink",
           "opacity": "=easeOut(progress(moved, 200))", "scale": "=0.94 + 0.06 * easeOutBack(progress(moved, 300))" },
         { "type": "text", "x": 0, "w": "100%", "y": 153, "align": "center", "text": "{upper(sys.maker)}", "font": "pixel", "size": 13, "spacing": 1, "color": "=soft" },
+        { "type": "text", "x": 0, "w": "100%", "y": 170, "align": "center", "visible": "=sys.achB > 0",
+          "text": "{sys.achLabel}", "font": "pixel", "size": 12, "spacing": 1, "color": "=soft" },
         { "type": "rect", "x": 316, "y": 186, "w": 10, "h": 10, "radius": 2, "fill": "=card", "border": 2, "borderColor": "=cardEdge" },
         { "type": "rect", "x": 316, "y": 184, "w": 10, "h": 9, "radius": 2, "fill": "=card" },
 

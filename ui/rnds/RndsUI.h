@@ -27,6 +27,8 @@ namespace rnds
 		std::string icon;		// 32x32 pixel icon (PNG path)
 		int games = 0, played = 0;
 		std::string time;		// "86h 12m"
+		int achA = 0, achB = 0;	// RetroAchievements across its games: unlocked / total (achB 0: none known)
+		std::string achLabel;	// "28 / 50 achievements" (empty when none known)
 		bool fav = false;
 		bool app = false;			// the system is one app (the theme's systems.cfg says "[app]"): A on its tile starts it
 		bool hasResume = false;		// a game to show on the "last played" chip

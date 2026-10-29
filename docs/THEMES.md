@@ -92,7 +92,7 @@ Colours are `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb(...)`, `rgba(...)`, `t
 | `launch.progress`, `launch.t` | 0..1 and ms through the launch view |
 | `empty`, `empty.title`, `empty.hint` | a library with no games, and what to say about it |
 | `systems.count`, `games.count` | |
-| `sys.*` | the selected system: `id name maker color icon games played time fav app hasResume resumeTitle resumeEyebrow resumeArt resumeBox resumeCart resumeLabel index` |
+| `sys.*` | the selected system: `id name maker color icon games played time achA achB achLabel achProgress fav app hasResume resumeTitle resumeEyebrow resumeArt resumeBox resumeCart resumeLabel index` |
 | `game.*` | the selected game (library and launch): `title sub plays last time art box cart label icon rom romIcon achA achB achLabel achProgress fav index systemId systemName` |
 | `item.*`, `i`, `n`, `sel`, `rel`, `pos`, `first`, `last`, `ix`, `iy` | inside a list item: its own system's or game's fields (as above; `key label` for hints), its index, the count, whether it is selected, its distance from the selection (`rel` whole, `pos` eased), and where the list put it |
 | your `vars`, a component's `with` | |
