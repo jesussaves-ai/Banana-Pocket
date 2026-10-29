@@ -222,8 +222,10 @@ image turns 90 CW) and the menu is upright.
 orientation property says something else: edit both `APPEND` lines in `extlinux/extlinux.conf` on the card's FAT
 partition and reboot.
 
-Touch is still mapped as if the panel's axes were the screen's: the FT5452 reports 1080x1240 (the panel's own axes),
-so the touch coordinates need the same rotation once the direction is confirmed.
+Touch works: the FT5452 reports the panel's own axes (1080x1240), and `Input` turns them into the composed screen's
+with the *exact inverse* of what `Display::turn()` does -- the quarter turn maps composed (x, y) to the panel's
+(row x, column 1079-y), which for rot 90 is `o.x = py; o.y = w - 1 - px`. The layout theme's hit boxes are in device
+px too (`Hit`), so a tap lands where the finger is (verified on the unit by injecting a tap at the selected tile).
 
 ## Audio: the bind chain, and what is still missing (2026-10-27)
 
