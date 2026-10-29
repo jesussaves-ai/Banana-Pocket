@@ -15,5 +15,5 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist).
 
 ## Later
 - [ ] Complete Chinese (`zh`) translation strings + build string extractor for new locales.
-- [ ] Optional EmulationStation frontend support.
 - [x] RetroAchievements progress display on home shelf.
+- [ ] Save-state browser (browse, copy and delete a game's states from the menu).
