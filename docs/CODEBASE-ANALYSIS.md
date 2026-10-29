@@ -53,7 +53,7 @@ verifies, writes the *inactive* slot, reads back, then rewrites `DEFAULT` (`Prev
   for the device tree's `rotation = <90>` (a 4×4 register transpose, unit-tested in `ui/tests/turn-test.cpp`).
   Two KMS dumb buffers, page flips on vblank; damage-only copies into the uncached scanout buffer.
 - **Input**: the MCU's `rsinput` gamepad (`ui/src/input.cpp` reads it, never grabs it; bananad reads it too) and
-  the FT5452 touchscreen, routed by the sysfs path containing `BANANA_TOUCH`.
+  the FT5452 touchscreen (the one panel, so its events are screen 0; nothing to route).
 - **Audio**: no sound server. `bananad` publishes the route to `/run/banana/audio-route` and writes
   `/run/banana/asound.conf`; the AudioReach DSP (the `sc8280xp`/q6apm stack) takes the mixer route at each open,
   so banana-ui and `run-retroarch` re-assert it before opening the frontend. WCD937x + 2×AW88166.

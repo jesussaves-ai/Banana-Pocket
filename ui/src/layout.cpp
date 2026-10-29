@@ -80,6 +80,7 @@ namespace banana
 		std::vector<rnds::SysInfo> systems;
 		std::vector<rnds::GameInfo> games;
 		std::string clock, date;
+		long clockMinute = -1;			// the wall minute clock/date were built for (see update(): once a minute, not a pass)
 		double now = 0, last = 0, start = -1;
 		double movedAt = -1e9, enteredAt = -1e9;
 		int moveDir = 1;
@@ -1482,8 +1483,10 @@ namespace banana
 		d->now = t;
 		if (d->start < 0) d->start = t;
 		d->take();
-		d->clock = src->clockText();
-		d->date = src->dateText();
+		// the clock and the date change once a minute, but update() runs every pass (60/s while the menu animates):
+		// build the top screen's text only when the minute turns
+		long minute = (long)(time(nullptr) / 60);
+		if (minute != d->clockMinute) { d->clockMinute = minute; d->clock = src->clockText(); d->date = src->dateText(); }
 		float to = (float)d->cursor();
 		float k = 1 - (float)std::exp(-dt / std::max(1.0, d->scrollMs));
 		d->scroll += (to - d->scroll) * k;

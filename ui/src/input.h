@@ -3,6 +3,7 @@
 // buttons are mapped to the UI's (Nintendo layout, as the RPC's MCU gamepad reports them), and the touchscreen
 // becomes taps and drags on the screen.
 #include <functional>
+#include <poll.h>
 #include <string>
 #include <vector>
 
@@ -14,7 +15,7 @@ namespace banana
 	{
 		enum Type { PRESS, RELEASE, TOUCH_DOWN, TOUCH_MOVE, TOUCH_UP } type;
 		Key key = Key::NONE;
-		int screen = 1;
+		int screen = 0;			// the RPC has one panel, so every event belongs to screen 0
 		float x = 0, y = 0;		// panel px
 	};
 
@@ -22,16 +23,14 @@ namespace banana
 	{
 	public:
 		~Input() { close(); }
-		// bottomTouch: a fragment of the bottom touchscreen's device path ("fe5e0000.i2c").
 		// rot: the panel is mounted turned (the RPC's 90); panelW/panelH: its own size (1080x1240 there), which the
 		// touchscreen reports, while the menu draws in another size (1240x1080) -- taps are turned to match
-		void open(const std::string& bottomTouch, int panelW, int panelH, int rot = 0, int scanoutW = 0, int scanoutH = 0);
+		void open(int panelW, int panelH, int rot = 0, int scanoutW = 0, int scanoutH = 0);
 		void close();
 		// a device came or went in /dev/input (watched with inotify): open() again to take it
 		bool rescanDue() { bool r = rescan; rescan = false; return r; }
-		std::vector<int> fds() const;
-		// a touchscreen on that screen (0 the only one)
-		bool hasTouch(int screen) const;
+		// append this input's fds (devices, then the inotify watch) to out[at...], up to cap; the new count
+		int fillFds(struct pollfd* out, int at, int cap) const;
 		// read what is waiting on fd; events go to sink
 		void read(int fd, const std::function<void(const InputEvent&)>& sink);
 
@@ -40,7 +39,6 @@ namespace banana
 		{
 			int fd = -1;
 			bool touch = false, pointer = false;	// pointer: an absolute pointer whose button is BTN_LEFT
-			int screen = 1;
 			int minX = 0, maxX = 0, minY = 0, maxY = 0;
 			int x = 0, y = 0;
 			bool down = false, wasDown = false, moved = false;

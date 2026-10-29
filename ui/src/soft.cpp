@@ -64,6 +64,42 @@ namespace banana
 	}
 #endif
 
+	// a constant translucent fill, d[i] = p + mul255(d[i], k), four words a step (the lanes of blendOver, with the
+	// source word and 255 - alpha both constant: a rectangle of one colour over each pixel)
+#if defined(__SSE2__) || defined(__ARM_NEON) || defined(__aarch64__)
+	static void fillOver(uint32_t* d, uint32_t p, uint32_t k, int n)
+	{
+		typedef uint32_t F4u32 __attribute__((vector_size(16)));
+		typedef uint16_t F8u16 __attribute__((vector_size(16)));
+		const F4u32 vp = { p, p, p, p }, ff00ff = { 0x00ff00ffu, 0x00ff00ffu, 0x00ff00ffu, 0x00ff00ffu };
+		const F8u16 v80 = { 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80 };
+		const F8u16 v0ff = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+		const F8u16 vf00 = { 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00 };
+		const F4u32 kv = { k, k, k, k };
+		const F8u16 k16 = (F8u16)(kv | (kv << 16));	// k in both 16-bit lanes of each word
+		int i = 0;
+		for (; i + 4 <= n; i += 4)
+		{
+			F4u32 dv;
+			memcpy(&dv, d + i, sizeof dv);
+			F8u16 rb = (F8u16)(dv & ff00ff);
+			rb = rb * k16 + v80;
+			rb = ((rb + ((rb >> 8) & v0ff)) >> 8) & v0ff;
+			F8u16 ag = (F8u16)((dv >> 8) & ff00ff);
+			ag = ag * k16 + v80;
+			ag = (ag + ((ag >> 8) & v0ff)) & vf00;
+			F4u32 out = vp + (F4u32)(rb | ag);
+			memcpy(d + i, &out, sizeof out);
+		}
+		for (; i < n; i++) d[i] = p + mul255(d[i], k);
+	}
+#else
+	static void fillOver(uint32_t* d, uint32_t p, uint32_t k, int n)
+	{
+		for (int i = 0; i < n; i++) d[i] = p + mul255(d[i], k);
+	}
+#endif
+
 	static inline uint32_t premul(const rnds::Color& c)
 	{
 		float a = std::min(1.0f, std::max(0.0f, c.a));
@@ -315,7 +351,7 @@ namespace banana
 			{
 				// the same colour over each pixel: the source's share is a constant
 				uint32_t k = 255 - (p >> 24);
-				for (int xx = x0; xx < x1; xx++) d[xx] = p + mul255(d[xx], k);
+				fillOver(d + x0, p, k, x1 - x0);
 			}
 		}
 	}
@@ -432,15 +468,19 @@ namespace banana
 	// a texture at its own size with its top-left at (bx0, by0), over the pixels [x0, x1) x [y0, y1): its rows' runs
 	void SoftBackend::blitRuns(const SoftTex* t, int bx0, int by0, int x0, int y0, int x1, int y1, uint32_t tr, uint32_t tg, uint32_t tb, uint32_t ta, uint32_t tintWord)
 	{
-		bool plain = tr == 255 && tg == 255 && tb == 255 && ta == 255;
+		const bool plain = tr == 255 && tg == 255 && tb == 255 && ta == 255;
 		// the visible columns [cx0, cx1) of the texture
 		int cx0 = x0 - bx0, cx1 = x1 - bx0;
-		bool solidTint = (tintWord >> 24) == 255;
+		const bool solidTint = (tintWord >> 24) == 255;
+		const bool alpha = t->alpha;
 		const uint32_t* runs = t->runs.data();
 		for (int yy = y0; yy < y1; yy++)
 		{
 			uint32_t* d = &scr[cur][(size_t)yy * W + bx0];
 			int sy = yy - by0;
+			// the row's source pointer once per row, not per run of it (a row is often many runs)
+			const uint8_t* sa = alpha ? &t->a8[(size_t)sy * t->w] : nullptr;
+			const uint32_t* sp = alpha ? nullptr : &t->px[(size_t)sy * t->w];
 			int x = 0;
 			uint32_t r = t->rowAt[sy], rEnd = t->rowAt[sy + 1];
 			// runs wholly left of the visible columns
@@ -456,23 +496,17 @@ namespace banana
 				int a = std::max(x, cx0), e = std::min(x + len, cx1);
 				x += len;
 				if (kind == SoftTex::CLEAR) continue;
-				if (t->alpha)
+				if (alpha)
 				{
-					const uint8_t* s = &t->a8[(size_t)sy * t->w];
 					if (kind == SoftTex::SOLID && solidTint) std::fill(d + a, d + e, tintWord);
-					else for (int i = a; i < e; i++) d[i] = over(mul255(tintWord, s[i]), d[i]);
+					else for (int i = a; i < e; i++) d[i] = over(mul255(tintWord, sa[i]), d[i]);
 				}
-				else
+				else if (plain)
 				{
-					const uint32_t* s = &t->px[(size_t)sy * t->w];
-					if (plain && kind == SoftTex::SOLID) memcpy(d + a, s + a, (size_t)(e - a) * 4);
-					else if (plain)
-					{
-						// a mixed run has no clear or solid pixels: always a blend
-						blendOver(s + a, d + a, e - a);
-					}
-					else for (int i = a; i < e; i++) d[i] = over(tinted(s[i], tr, tg, tb, ta), d[i]);
+					if (kind == SoftTex::SOLID) memcpy(d + a, sp + a, (size_t)(e - a) * 4);
+					else blendOver(sp + a, d + a, e - a);	// a mixed run has no clear or solid pixels: always a blend
 				}
+				else for (int i = a; i < e; i++) d[i] = over(tinted(sp[i], tr, tg, tb, ta), d[i]);
 			}
 		}
 	}

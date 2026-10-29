@@ -417,6 +417,26 @@ What the branch does instead:
   pointing it at the RPC's trimmed list tested a UI with half its screens missing and failed on 5 checks. `make test`
   is green again.
 
+## Vulkan for every core, Slang shaders, settings that stick (2026-10-29)
+
+Three reports from the unit turned out to share one root: Banana was driving RetroArch's **GL** frontend while the
+GPU's real path is Turnip.
+
+- **Shaders crashed RetroArch.** `video_driver` was `glcore` for every core but SwanStation, so RetroArch's shader
+  backend was GLSL -- but `video_shader_dir` pointed at the image's GLSL presets while the *Vulkan* driver (the one
+  SwanStation used) uses the Slang backend. Picking a preset in that folder under the Vulkan path was a backend
+  mismatch, and it took RetroArch down (a core dump on the card). Fixed by running **every** core on Vulkan and
+  shipping libretro's **Slang** shader set (`retroarch-slang-shaders`, `/usr/share/libretro/shaders/slang`; the GLSL
+  package is gone). A core that asks for OpenGL -- N64's GLideN64 -- still gets `glcore`: RetroArch forces the driver
+  its core's context wants, so nothing is lost. `run-retroarch` falls back to GL when the SoC isn't there (the QEMU
+  test's virtio GPU has no Vulkan device); it reads the device tree's `qcom,sm4450`.
+- **Core options appeared not to save.** RetroArch *does* flush a core's options to its per-core `.opt` as the core
+  unloads (the log shows `Saved core options file to …/Gambatte.opt` on every close), but Banana's config hid the
+  manual *Save Core Options* item (`quick_menu_show_core_options_flush = "false"`), so a card with no auto-save had no
+  way to save one by hand. The item is shown now, alongside `config_save_on_exit`.
+- **Quick resume.** `savestate_auto_save`/`savestate_auto_load` (Settings > Other systems > Quick resume) are on by
+  default now, and turned on once for a card that had them off (a marker keeps a later menu change).
+
 ## Turnip: SwanStation's Vulkan renderer (2026-10-28)
 
 The a613 is an `a6xx gen1 low` part: it has no hardware multiview, so Turnip reports Vulkan **1.0** (Mesa's

@@ -302,7 +302,7 @@ namespace banana
 		add(O, "gamepad", "RetroAchievements", "Softcore: achievements unlock with save states, rewind and cheats still there. Hardcore: those are locked for the game, and the unlocks count as hardcore on retroachievements.org. RetroArch's own menu changes the same setting.",
 			"/data/retroarch/retroarch.cfg", "cheevos_hardcore_mode_enable", { "Softcore", "Hardcore" }, { "false", "true" });
 		add(O, "gamepad", "Quick resume", "On: quitting keeps where you are, and the game goes on from there next time (RetroArch's automatic save state; not in Hardcore). Off: a game starts from its title.", "/data/retroarch/retroarch.cfg", "savestate_auto_save", { "Off", "On" }, { "false", "true" });
-		add(O, "picture", "Shader", "A look for the systems RetroArch runs: a handheld's LCD grid, a CRT's scanlines, or sharp pixels at any size. RetroArch's own Shaders menu still picks any of libretro's presets.",
+		add(O, "picture", "Shader", "A look for the systems RetroArch runs: a handheld's LCD grid, a CRT's scanlines, or sharp pixels at any size. RetroArch's own Shaders menu still picks any of libretro's Slang presets.",
 			menu, "ra_shader", { "Off", "LCD", "CRT", "Sharp pixels" }, { "off", "lcd", "crt", "sharp" });
 		add(O, "music", "Audio latency", "RetroArch's audio buffer. Low is the quickest to react and can crackle on a busy game; Default is the safe choice. (The RPC's DSP will not accept a larger buffer, so there is no Safe option.)",
 			menu, "ra_audio_latency", { "Low (32 ms)", "Default (64 ms)" }, { "32", "64" });
@@ -578,6 +578,10 @@ namespace banana
 		}
 		else
 			setConfValue(it.file, it.key, v);
+		// the Shader row: run-retroarch applies the setting (writes or removes RetroArch's global preset) when it
+		// changes, so dropping the marker here has the next game start put this value in place. Between changes a
+		// preset loaded, saved or removed in RetroArch's own menu is left alone.
+		if (it.key == "ra_shader") unlink("/data/retroarch/.banana-shader-setting");
 		if (it.file == data + "/bananad.conf") poke("bananad");
 		if (it.key == "timezone") { setenv("TZ", v.c_str(), 1); tzset(); poke("bananad"); }	// bananad's logs too
 		if (it.key == "wifi") spawn("/usr/libexec/banana/wifi", v == "on" ? "up" : "down");

@@ -1,0 +1,29 @@
+#!/bin/sh
+# Wi-Fi around a sleep. If Wi-Fi is up (its supplicant running), the link and the supplicant are brought down before
+# the SoC suspends and back up after the wake: nothing scans (wpa_supplicant's autoscan is a periodic wakeup in
+# s2idle) and the radio has nothing to keep alive, which is what the sleep wants. If Wi-Fi is off, the hook does
+# nothing -- and does not switch it on at the wake either.
+#
+# A marker in /run/banana remembers that *this* hook took Wi-Fi down, so the post only brings back what the pre took
+# (a handheld with Wi-Fi off stays off). /run is tmpfs, so the marker is gone after a reboot.
+#
+# The WCN3990's driver itself stays loaded: reloading its firmware (ath10k_snoc + the WPSS remoteproc) costs a second
+# or two on the way back, and the post hook runs in the background precisely so Wi-Fi catching up is invisible --
+# unloading it would put that cost in front of the user instead.
+#
+# Named 10- so it runs before 90-timing (the hooks run in name order).
+[ -x /usr/libexec/banana/wifi ] || exit 0
+[ -e /sys/class/net/wlan0 ] || exit 0
+case $1 in
+pre)
+    [ -f /run/banana/wpa.pid ] || exit 0	# Wi-Fi is off: nothing to take down
+    : > /run/banana/wifi-was-up
+    /usr/libexec/banana/wifi down
+    ;;
+post)
+    [ -f /run/banana/wifi-was-up ] || exit 0
+    rm -f /run/banana/wifi-was-up
+    /usr/libexec/banana/wifi up
+    ;;
+esac
+exit 0

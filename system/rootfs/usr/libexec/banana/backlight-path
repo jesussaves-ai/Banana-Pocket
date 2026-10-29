@@ -1,7 +1,7 @@
 #!/bin/sh
 # The sysfs backlight of the panel, on one line, or nothing when there is none (QEMU's virtio GPU has none).
 # bananad reads it once to know which backlight to dim.
-#   backlight-path <top|bottom>
+#   backlight-path <panel>
 # The RPC has one panel and one backlight, so the answer is that backlight whatever name it is asked for.
 n=$(ls -d /sys/class/backlight/* 2>/dev/null | wc -l)
 [ "$n" = 1 ] && ls -d /sys/class/backlight/*

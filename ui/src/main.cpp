@@ -255,7 +255,7 @@ struct Options
 {
 	std::string assets = "/usr/share/banana/rnds", splash = "/usr/share/banana/splash", banana = "/usr/share/banana/banana";
 	std::string systems = "/etc/banana/systems.conf", roms = "/data/roms", data = "/data/banana";
-	std::string top = "DSI-1", touch = "";
+	std::string top = "DSI-1";
 	std::string headless, script;
 	std::string theme;		// --theme FILE: that theme's .json instead of the settings' (a theme being made)
 	bool single = false;	// --single: one panel (the RPC's 1240x1080), for headless renders of that layout
@@ -913,7 +913,6 @@ int main(int argc, char** argv)
 	o.roms = envOr("BANANA_ROMS", o.roms);
 	o.data = envOr("BANANA_DATA", o.data);
 	o.top = envOr("BANANA_TOP", o.top);
-	o.touch = envOr("BANANA_TOUCH", o.touch);
 	for (int i = 1; i < argc; i++)
 	{
 		std::string a = argv[i];
@@ -1054,13 +1053,13 @@ int main(int argc, char** argv)
 	bool firstSetup = access((o.data + "/setup-done").c_str(), F_OK) != 0;
 
 	Input input;
-	input.open(o.touch, disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());
+	input.open(disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());
 
 	Repeat rep;
 	bool dirty = true, quit = false, drawn = false;	// drawn: a frame on the canvas waiting for the flips
 	double quietUntil = 0;	// no frame before this: the last one flipped nothing (see present below)
 	// the AMOLED burn-in guard: the panel's backlight, owned here while the menu runs (bananad's own idle dim leaves
-	// it to us while /run/banana/bottom-ui is there). IdleGuard does the dim/blank/wake; attached just below.
+	// it to us while /run/banana/panel-ui is there). IdleGuard does the dim/blank/wake; attached just below.
 	IdleGuard guard;
 	std::string panelBl, panelBlMax;
 	bool swallowTouch = false;	// the press that woke the panel: its touch-up must not land either
@@ -1093,7 +1092,7 @@ int main(int argc, char** argv)
 	// the first press or touch restores it and is swallowed (so it can't launch a game or change a setting) ----
 	{
 		std::string path;
-		{ std::ifstream f("/run/banana/backlight-bottom"); std::getline(f, path); }
+		{ std::ifstream f("/run/banana/backlight-panel"); std::getline(f, path); }
 		if (path.empty() || access(path.c_str(), F_OK) != 0)
 		{
 			if (DIR* d = opendir("/sys/class/backlight"))
@@ -1104,7 +1103,7 @@ int main(int argc, char** argv)
 		}
 		if (!path.empty()) { panelBl = path + "/brightness"; panelBlMax = path + "/max_brightness"; }
 		// tell bananad the menu owns the panel's idle dim; its own dim then leaves this backlight to us
-		if (!panelBl.empty()) { std::ofstream o("/run/banana/bottom-ui"); o << "\n"; }
+		if (!panelBl.empty()) { std::ofstream o("/run/banana/panel-ui"); o << "\n"; }
 	}
 	guard.attach(panelBl, panelBlMax);
 	guard.input(nowMs());
@@ -1183,7 +1182,7 @@ int main(int argc, char** argv)
 		if (settingsView.isOpen())
 		{
 			std::lock_guard<std::mutex> l(worker.uiLock);
-			// the page's list is on the DS's bottom screen, and on the only screen when there is one
+			// the page's list is on the one panel (listScreen is 0 there; the two-screen layout returned 1)
 			const int listScreen = single ? 0 : 1;
 			if (ev.type == InputEvent::TOUCH_DOWN && ev.screen == listScreen) settingsView.touch(ev.x, ev.y, true);
 			else if (ev.type == InputEvent::TOUCH_UP && ev.screen == listScreen) applySettings(settingsView.touch(ev.x, ev.y, false));
@@ -1296,7 +1295,7 @@ int main(int argc, char** argv)
 		logf("game ended after %ld s (status %d)", secs, status);
 		for (int tries = 0; !disp.openSingle(o.top, err) && tries < 100; tries++) usleep(50000);
 		be.invalidate();
-		input.open(o.touch, disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());
+		input.open(disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());
 		std::lock_guard<std::mutex> l(worker.uiLock);
 		{
 			int achA = -1, achB = 0;
@@ -1323,6 +1322,9 @@ int main(int argc, char** argv)
 		close(launchWatch);
 		launchWatch = -1;
 	}
+	// the launch file is looked at once at startup, then only when the watch fires (a pass otherwise ran a wasted
+	// access() on every animated frame); without a watch it is looked at every pass as before
+	bool launchSeen = true;
 	while (!quit)
 	{
 		double now = nowMs();
@@ -1336,7 +1338,7 @@ int main(int argc, char** argv)
 			std::lock_guard<std::mutex> l(worker.uiLock);
 			if (rearrange(lib, *ui)) dirty = true;
 		}
-		if (input.rescanDue()) input.open(o.touch, disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());	// a pad came or went
+		if (input.rescanDue()) input.open(disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());	// a pad came or went
 		if (settingsView.isOpen())
 		{
 			std::lock_guard<std::mutex> l(worker.uiLock);
@@ -1344,19 +1346,23 @@ int main(int argc, char** argv)
 			if (settingsView.takeLibraryChanged()) roms.due = now;	// box art fetched: the library again, at home
 		}
 		// for testing over SSH: a game's path written to /run/banana/launch starts it, as A on it in the library would
-		if (access("/run/banana/launch", F_OK) == 0)
+		if (launchSeen || launchWatch < 0)
 		{
-			std::string want;
+			launchSeen = false;
+			if (access("/run/banana/launch", F_OK) == 0)
 			{
-				std::ifstream f("/run/banana/launch");
-				std::getline(f, want);
+				std::string want;
+				{
+					std::ifstream f("/run/banana/launch");
+					std::getline(f, want);
+				}
+				unlink("/run/banana/launch");
+				bool found = false;
+				for (int s = 0; s < lib.systemCount() && !found; s++)
+					for (int i = 0; i < (int)lib.shelf(s).games.size(); i++)
+						if (lib.shelf(s).games[i].path == want && !lib.shelf(s).favorites) { lib.openLibrary(s); lib.launch(i); found = true; break; }
+				if (!found) logf("launch file: no game at %s", want.c_str());
 			}
-			unlink("/run/banana/launch");
-			bool found = false;
-			for (int s = 0; s < lib.systemCount() && !found; s++)
-				for (int i = 0; i < (int)lib.shelf(s).games.size(); i++)
-					if (lib.shelf(s).games[i].path == want && !lib.shelf(s).favorites) { lib.openLibrary(s); lib.launch(i); found = true; break; }
-			if (!found) logf("launch file: no game at %s", want.c_str());
 		}
 		int g = lib.pendingLaunch();
 		if (g >= 0)
@@ -1478,18 +1484,20 @@ int main(int argc, char** argv)
 			if (g >= 0 && (timeout < 0 || g < timeout)) timeout = g;
 		}
 
-		std::vector<pollfd> fds;
-		fds.push_back({ sigPipe[0], POLLIN, 0 });
-		fds.push_back({ worker.wakeFd, POLLIN, 0 });
-		if (roms.fd >= 0) fds.push_back({ roms.fd, POLLIN, 0 });
-		if (launchWatch >= 0) fds.push_back({ launchWatch, POLLIN, 0 });
-		if (disp.isOpen()) fds.push_back({ disp.pollFd(), POLLIN, 0 });
-		for (int fd : input.fds()) fds.push_back({ fd, POLLIN, 0 });
-		int n = poll(fds.data(), fds.size(), timeout);
+		// a fixed array, not a vector: this runs every pass (60/s while the menu animates) and the poll set is at
+		// most a handful of fds, so an allocation here was pure churn
+		struct pollfd fds[40];
+		int nf = 0;
+		auto addFd = [&](int fd) { if (fd >= 0 && nf < (int)(sizeof fds / sizeof fds[0])) { fds[nf].fd = fd; fds[nf].events = POLLIN; fds[nf].revents = 0; nf++; } };
+		addFd(sigPipe[0]); addFd(worker.wakeFd); addFd(roms.fd); addFd(launchWatch);
+		if (disp.isOpen()) addFd(disp.pollFd());
+		nf = input.fillFds(fds, nf, (int)(sizeof fds / sizeof fds[0]));
+		int n = poll(fds, nf, timeout);
 		if (n == 0 && !want) dirty = true;	// the engine's next step is due
 		if (n <= 0) continue;
-		for (auto& p : fds)
+		for (int fi = 0; fi < nf; fi++)
 		{
+			const pollfd& p = fds[fi];
 			if (!(p.revents & POLLIN)) continue;
 			if (p.fd == sigPipe[0])
 			{
@@ -1532,7 +1540,8 @@ int main(int argc, char** argv)
 			else if (p.fd == launchWatch)
 			{
 				alignas(inotify_event) char buf[1024];
-				while (read(launchWatch, buf, sizeof buf) > 0) {}	// (the loop's next pass looks for the launch file)
+				while (read(launchWatch, buf, sizeof buf) > 0) {}
+				launchSeen = true;	// the loop's next pass reads the launch file
 			}
 			else if (p.fd == worker.wakeFd)
 			{

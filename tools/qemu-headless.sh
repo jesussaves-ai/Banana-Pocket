@@ -38,7 +38,7 @@ ROOT=$(awk -v l="$LABEL" '$1 == "LABEL" { cur = $2 } $1 == "APPEND" && cur == l 
 mcopy -o -i "$CARD@@$BOOT_AT" "::$KERNEL" "$OUT/Image"
 # the command line, for the virtual panel QEMU reports (the RPC's single 1240x1080 output)
 GPU="virtio-gpu-pci,id=gpu,max_outputs=1,xres=1240,yres=1080"
-APPEND="$ROOT rootfstype=squashfs ro rootwait quiet loglevel=3 console=ttyAMA0 video=Virtual-1:1240x1080 banana.console=1 banana.top=Virtual-1 banana.touch=virtio $APPEND_EXTRA"
+APPEND="$ROOT rootfstype=squashfs ro rootwait quiet loglevel=3 console=ttyAMA0 video=Virtual-1:1240x1080 banana.console=1 banana.top=Virtual-1 $APPEND_EXTRA"
 echo "booting label $LABEL: $KERNEL, $ROOT"
 
 SOCK=$OUT/monitor.sock

@@ -46,7 +46,7 @@ namespace banana
 		std::string searchText;
 		std::function<int(const std::string&)> searchCount;	// the games the text typed so far finds (the host's library)
 		Result press(Key k);
-		Result touch(float x, float y, bool down);	// bottom panel, device px
+		Result touch(float x, float y, bool down);	// the panel, device px
 		void render();
 		// background work (the Wi-Fi scan, joining a network): true when something changed and wants a frame
 		bool update(double nowMs);

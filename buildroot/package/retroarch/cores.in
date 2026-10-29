@@ -99,9 +99,10 @@ config BR2_PACKAGE_LIBRETRO_FAKE08
 	help
 	  PICO-8 carts (.p8 and .p8.png), when the official PICO-8 isn't on the card.
 
-config BR2_PACKAGE_RETROARCH_GLSL_SHADERS
-	bool "retroarch-glsl-shaders"
+config BR2_PACKAGE_RETROARCH_SLANG_SHADERS
+	bool "retroarch-slang-shaders"
 	default y
 	help
-	  libretro's GLSL shader presets for RetroArch's GL driver.
+	  libretro's Slang shader presets for RetroArch's Vulkan driver (the
+	  driver Banana runs the games on, so the only presets it can load).
 

@@ -69,8 +69,8 @@ static void leds_update(void);
 static void audio_route(void);
 static int headphones_in_settled(void);
 static void undim(void);
-static void find_bottom_bl(void);
-static char bottom_bl[64];	/* the panel's backlight name; banana-ui's idle dim owns it while it runs */
+static void find_panel_bl(void);
+static char panel_bl[64];	/* the panel's backlight name; banana-ui's idle dim owns it while it runs */
 static int headphones;
 static int fn_held, select_held, power_down;
 static int panel_blanked;	/* bananad blanked the panel (a suspend it could not do): the next key brings it back */
@@ -236,11 +236,14 @@ static pid_t pid_of(const char *pidfile)
 	return p > 0 && kill(p, 0) == 0 ? p : 0;
 }
 
-/* banana-ui's pid, by its name in /proc */
+/* banana-ui's pid, by its name in /proc. Cached: the scan ran on every wake and on every volume/brightness key's
+ * OSD; it is repeated only when the cached pid has gone (banana-ui restarted) */
+static pid_t ui_pid_cache;
 static pid_t ui_pid(void)
 {
+	if (ui_pid_cache > 0 && kill(ui_pid_cache, 0) == 0) return ui_pid_cache;
 	DIR *d = opendir("/proc");
-	if (!d) return 0;
+	if (!d) return ui_pid_cache;
 	struct dirent *e;
 	pid_t r = 0;
 	while (!r && (e = readdir(d))) {
@@ -251,6 +254,7 @@ static pid_t ui_pid(void)
 		if (!strcmp(comm, "banana-ui")) r = atoi(e->d_name);
 	}
 	closedir(d);
+	if (r > 0) ui_pid_cache = r;
 	return r;
 }
 
@@ -289,8 +293,9 @@ static void drain_inputs(void)
 }
 
 /* ---- sleep ------------------------------------------------------------------------------------------------------
- * Pressing power (or an idle timer): the game is paused, the pre-sleep hooks run (Wi-Fi down), the card is flushed
- * (this kernel skips its own sync), an RTC alarm is set for the battery check, and the SoC suspends to RAM. On waking,
+ * Pressing power (or an idle timer): the game is paused, the pre-sleep hooks run (Wi-Fi down, 10-wifi), the card is
+ * flushed (the kernel syncs too: this config does not set SUSPEND_SKIP_SYNC, so it is a belt-and-braces), an RTC alarm
+ * is set for the battery check, and the SoC suspends to RAM. On waking,
  * the game and the menu go on first, then the post-sleep hooks in the background. Woken by the battery check:
  * straight back to sleep, without running anything again. */
 static void shutdown_now(const char *why);
@@ -400,6 +405,9 @@ static void suspend_now(const char *why)
 			if (pg > 0) kill(-pg, SIGCONT);
 			sleep_quiet_end();
 			backlights_power(0);
+			/* the pre hooks have run (10-wifi took Wi-Fi down): run the post ones too, or a failed suspend would
+			 * leave the handheld with no network until the next sleep succeeds */
+			hooks("post", 1);
 			panel_blanked = 1;
 			sleep_log("could not suspend after %d tries: the panel is dark until the next press", failures);
 			last_input = mono();
@@ -468,7 +476,7 @@ static void shutdown_now(const char *why)
 static double save_volume_at, save_backlight_at;	/* debounced: written a moment after the last key */
 
 /* ---- sound: the card that plays ----------------------------------------------------------------------------------- */
-static int card_play = 0;	/* the card sound plays on */
+static int card_play = -1;	/* the card sound plays on; -1: none yet (or none at all) */
 static int card_ar = -1;	/* the audioreach card (the RPC): its DSP graph is routed by mixer controls, no UCM */
 
 /* the card, from /proc/asound/cards (" 0 [sm8450 ]: simple-card - ...") */
@@ -701,16 +709,35 @@ static void audio_route(void)
 	say("sound: playback on card %d (%s), 48 kHz", card_play, headphones ? "headphones" : "speakers");
 }
 
+/* Is this the Retroid Pocket Classic? Its AudioReach card is the only one whose mixer controls (the frontends'
+ * "SENARY_..." switches) appear a moment after the card binds; on any other machine there is nothing to wait for and
+ * waiting would only stall the start. Read once. */
+static int on_rpc(void)
+{
+	static int r = -1;
+	if (r < 0) {
+		r = 0;
+		FILE *f = fopen("/proc/device-tree/compatible", "rb");
+		if (f) {
+			char b[256];
+			size_t n = fread(b, 1, sizeof b - 1, f);
+			fclose(f);
+			b[n] = 0;
+			for (char *p = b; p < b + n; p++) if (!*p) *p = ' ';
+			if (strstr(b, "sm4450") || strstr(b, "sm8450")) r = 1;
+		}
+	}
+	return r;
+}
+
 static void audio_setup(void)
 {
 	audio_find_cards();
-	/* The DSP builds this card's mixer controls a moment after the card itself binds (the frontends' "SENARY_..."
-	 * switches are what audio_find_cards looks for), and rcS starts us right after the card appears -- so they may
-	 * not be there yet. Everything below is gated on having found the card (the route, and the "PCM" the volume
-	 * keys and Settings > Volume drive), so look again for a few seconds rather than give the whole session up on
-	 * the first look. */
-	for (int i = 0; card_play >= 0 && card_ar < 0 && i < 40; i++) { usleep(100000); audio_find_cards(); }
-	if (card_play < 0) { audio_route(); return; }	/* no sound card at all (QEMU): nothing to set */
+	/* rcS starts us right after the card appears and the DSP makes its audioreach controls a moment later, so on the
+	 * RPC look again for a few seconds rather than give the route and the "PCM" level up on the first look. On any
+	 * other machine there is no such control to wait for, and waiting would only stall the start. */
+	for (int i = 0; on_rpc() && card_ar < 0 && i < 40; i++) { usleep(100000); audio_find_cards(); }
+	if (card_play < 0) { audio_route(); return; }	/* no sound card at all (QEMU, a host with none): nothing to set */
 	if (card_ar < 0) say("sound: no audioreach card (the volume keys and the route have nothing to drive)");
 	else say("sound: the audioreach card is %d", card_ar);
 	audio_route();
@@ -873,12 +900,13 @@ static int backlight_permille(void)
 	return r;
 }
 
-/* the panel's backlight, from the backlight-path script. While banana-ui is managing its own idle dim (it writes
- * /run/banana/bottom-ui, see ui/src/main.cpp), the menu's own dim leaves that backlight to it: it would otherwise
+/* the panel's backlight, from the backlight-path script. The RPC has one panel and one backlight, and the script
+ * returns it whatever name it is asked for ("panel" here). While banana-ui is managing its own idle dim (it writes
+ * /run/banana/panel-ui, see ui/src/main.cpp), the menu's own dim leaves that backlight to it: it would otherwise
  * dim twice and undo banana-ui's restore. Only the name is kept: the empty string means nothing to single out. */
-static void find_bottom_bl(void)
+static void find_panel_bl(void)
 {
-	FILE *p = popen("/usr/libexec/banana/backlight-path bottom 2>/dev/null", "r");
+	FILE *p = popen("/usr/libexec/banana/backlight-path panel 2>/dev/null", "r");
 	if (!p) return;
 	char path[256] = "";
 	if (fgets(path, sizeof path, p)) path[strcspn(path, "\n")] = 0;
@@ -886,15 +914,15 @@ static void find_bottom_bl(void)
 	if (!path[0] || strncmp(path, "/sys/class/backlight/", 21)) return;
 	const char *s = strrchr(path, '/');
 	if (!s || !s[1]) return;
-	snprintf(bottom_bl, sizeof bottom_bl, "%s", s + 1);
+	snprintf(panel_bl, sizeof panel_bl, "%s", s + 1);
 	/* published for banana-ui, whose idle timer dims the panel itself (ui/src/main.cpp) */
-	FILE *f = fopen("/run/banana/backlight-bottom.new", "w");
+	FILE *f = fopen("/run/banana/backlight-panel.new", "w");
 	if (f) {
 		fprintf(f, "%s\n", path);
 		fclose(f);
-		rename("/run/banana/backlight-bottom.new", "/run/banana/backlight-bottom");
+		rename("/run/banana/backlight-panel.new", "/run/banana/backlight-panel");
 	}
-	say("panel backlight: %s", bottom_bl);
+	say("panel backlight: %s", panel_bl);
 }
 
 /* idle in the menu: the panel down to dim_percent of what it was, back at the first press (the level is
@@ -910,7 +938,7 @@ static void dim(void)
 	dim_count = 0;
 	while ((e = readdir(d)) && dim_count < 4) {
 		if (e->d_name[0] == '.' || strlen(e->d_name) >= sizeof dim_name[0]) continue;
-		if (bottom_bl[0] && !strcmp(e->d_name, bottom_bl) && !access("/run/banana/bottom-ui", F_OK)) continue;
+		if (panel_bl[0] && !strcmp(e->d_name, panel_bl) && !access("/run/banana/panel-ui", F_OK)) continue;
 		char p[600], v[32];
 		snprintf(dim_name[dim_count], sizeof dim_name[0], "%s", e->d_name);
 		snprintf(p, sizeof p, "/sys/class/backlight/%.255s/brightness", dim_name[dim_count]);
@@ -1296,7 +1324,7 @@ int main(int argc, char **argv)
 	sa.sa_handler = on_hup;		/* no SA_RESTART: poll() returns, and the loop reloads */
 	sigaction(SIGHUP, &sa, NULL);
 	mkdir("/run/banana", 0755);
-	find_bottom_bl();	/* which backlight banana-ui's idle dim owns */
+	find_panel_bl();	/* which backlight banana-ui's idle dim owns */
 
 	int ino = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 	if (ino >= 0) inotify_add_watch(ino, "/dev/input", IN_CREATE | IN_DELETE);

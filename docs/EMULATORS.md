@@ -17,7 +17,7 @@ Before the launcher runs, banana-ui has:
 - set the system's clock profile (`banana-perf`, the `perf` in `systems.conf`);
 - written the game's pid to `/run/banana/game.pid`;
 - exported `BANANA_ROM` and `BANANA_SYSTEM` (the system's id, what `run-retroarch` reads for its per-system core),
-  and, where set by the kernel command line (`banana.top=`, `banana.touch=`), `BANANA_TOP` and `BANANA_TOUCH`.
+  and, where set by the kernel command line (`banana.top=`), `BANANA_TOP`.
 
 The launcher runs in its own session (`setsid`), with signals at their defaults and `/data` as the card.
 
@@ -27,7 +27,7 @@ The launcher runs in its own session (`setsid`), with signals at their defaults 
 |---|---|
 | The panel | Through **cage** (a kiosk Wayland compositor: one application, fullscreen). cage takes DRM master on the `msm` card (`/dev/dri/card1`), sets the panel's mode as it is (never the timing) and page-flips on vblank, and it turns the output with the panel: the device tree's `rotation = <90>` becomes the connector's "panel orientation", which wlroots reads. RetroArch is a Wayland client, so **everything** it draws -- the game, its menu, the OSD, the widgets -- is composed in the landscape shape the user is looking at and turned once, by cage, on the way to the panel. `run-retroarch` therefore forces `video_rotation 0`; there is nothing above cage that wants a rotation. |
 | GPU | The Adreno a613 through Mesa's freedreno (A6xx), EGL on GBM, OpenGL ES 3.2, and **Turnip** (Mesa's freedreno Vulkan; Vulkan 1.0 on this part, the a6xx gen1 low block having no hardware multiview). SwanStation's Vulkan renderer runs at 60 fps at 5x through it. Software rendering is fine for the lighter cores. |
-| Touch | evdev; the panel's touchscreen is the FT5452, whose device is the one whose sysfs path contains `BANANA_TOUCH`. It reports the panel's own (unrotated) axes, so coordinates need the same turn as the picture. |
+| Touch | evdev; the panel's touchscreen is the FT5452, the only one, so its events are screen 0. It reports the panel's own (unrotated) axes, so coordinates need the same turn as the picture. |
 | Buttons | evdev, one device: the MCU's `rsinput` gamepad. A = `BTN_EAST`, B = `BTN_SOUTH`, X = `BTN_NORTH`, Y = `BTN_WEST`, d-pad = `BTN_DPAD_*`, L/R = `BTN_TL`/`BTN_TR`, L2/R2 = `BTN_TL2`/`BTN_TR2`, Start/Select = `BTN_START`/`BTN_SELECT`, F = `BTN_MODE`. Read it, never grab it (`EVIOCGRAB`): bananad reads the same device for the power button and the volume keys. The volume keys (`KEY_VOLUMEUP/DOWN`) and F + volume (brightness) are bananad's; ignore them. In a game a volume press is handed to RetroArch through `/run/banana/retroarch.cmd` (`VOLUME_UP`/`VOLUME_DOWN`) so it changes its own volume live and shows its OSD; only the menu edits the card's mixer. |
 | Sound | ALSA, device `default` (bananad routes it and writes `/run/banana/asound.conf`; the card is the WCD937x codec with the two AW88166 amplifiers through the AudioReach DSP). Three rules on this platform: the route must be set **before** the stream opens (the DSP takes the mixer values at the open), only the first frontend makes sound (so `run-retroarch` re-asserts the route and waits for the menu's stream to be released first), and the device can abort (`SIGABRT`, exit 134) if the DSP is still tearing the menu's graph down — `run-retroarch` reads the substreams' status and waits, and retries the start if it aborts anyway. |
 | CPU | Six Cortex-A55 (`policy0`) and two Cortex-A78 (`policy6`); `banana-perf` sets every policy before the game starts. An emulator that lowers a policy's `scaling_max_freq` must put it back on exit. |
@@ -57,8 +57,13 @@ The launcher runs in its own session (`setsid`), with signals at their defaults 
 
 Everything under `/usr` is read-only. `run-retroarch` forces the keys a picture and a sound depend on at every
 start (`video_driver`, `video_context_driver`, `input_driver`, `audio_driver`, `audio_device`, `video_monitor_index`
-on a one-panel handheld, `midi_driver = null`), because RetroArch writes `retroarch.cfg` back when it quits and one
-trip through its own menus otherwise leaves a value the handheld cannot use.
+on a one-panel handheld, `midi_driver = null`, `config_save_on_exit`, `quick_menu_show_core_options_flush`), because
+RetroArch writes `retroarch.cfg` back when it quits and one trip through its own menus otherwise leaves a value the
+handheld cannot use. What the user changes in RetroArch's own menu is kept: RetroArch saves `retroarch.cfg` on quit
+and flushes a core's options to its `.opt` as the core unloads (on their own; the manual *Save Core Options* item is
+also shown, where Banana used to hide it). **Quick resume** (Settings > Other systems) is on by default: RetroArch
+saves an automatic state when a game quits and loads it when the game starts again (`savestate_auto_save` and
+`savestate_auto_load`, which `run-retroarch` keeps in step).
 
 ## Settings
 
@@ -67,8 +72,9 @@ core instead of `systems.conf`'s, e.g. mGBA for the Game Boy Advance for its Ret
 (`ra_shader`), audio latency (`ra_audio_latency`) and VSync (`ra_vsync`) RetroArch runs with, plus integer scaling
 (`ra_scale`). `run-retroarch` writes them into `retroarch.cfg` before each start; a change made in RetroArch's own
 menu afterwards is kept until the setting changes here again. The shader is RetroArch's global preset, a reference
-to one of the image's GLSL presets in `/usr/share/libretro/shaders/glsl` (copied to the card they were 238 MB of
-small files in exFAT's large clusters and a long first start).
+to one of the image's **Slang** presets in `/usr/share/libretro/shaders/slang` (copied to the card they were hundreds
+of MB of small files in exFAT's large clusters and a long first start). Slang, not GLSL: the game's video driver is
+Vulkan, whose shader backend is Slang, and a GLSL preset under it crashes RetroArch (a backend mismatch).
 
 RetroAchievements: the account from the first-time setup (`banana/accounts.conf`) is written into `retroarch.cfg`
 as its name, but its password and the token RetroArch gets with it go in a config appended from `/run`, never in
@@ -83,10 +89,14 @@ PCSX-ReArmed is the ari64 dynarec with its NEON rasterizer, the lighter of the t
 off for SwanStation, which fills its own 4:3 viewport. A core override saved from RetroArch's own menu can't take
 the panel settings away: `run-ps1` drops `video_monitor_index` and `stdin_cmd_enable` from it.
 
-`run-retroarch` gives a core the video driver its renderer needs: a libretro core's hardware context comes from the
-video driver, so SwanStation-on-Vulkan gets `video_driver = vulkan`, and every other core keeps `gl`. The *context*
-driver is the Wayland one, because the game runs under cage: `vk_wayland` for Vulkan (the Wayland surface Turnip's
-`VK_KHR_wayland_surface`) and `wayland` for GL, in place of the `khr_display`/`kms` pair it used when it took the
-panel itself. That also means the vulkan-loader must be built with Wayland WSI (`BUILD_WSI_WAYLAND_SUPPORT`) and
-Mesa with the `wayland` platform, or the instance has no `VK_KHR_wayland_surface` and RetroArch gives up on the
-video driver and exits -- the game is back in the menu before it starts.
+`run-retroarch` runs **every** core on Vulkan (the a613 through Mesa's Turnip): the games and their shaders share
+one driver, whose shader backend is Slang. A core that asks for OpenGL -- the N64 core's GLideN64 -- is no problem:
+RetroArch forces `glcore` for that core by itself (a libretro core's hardware context comes from the video driver,
+and `gfx/video_driver.c` switches to the one the core's context asks for), so N64 keeps its GL and the rest run on
+Vulkan. A machine with no Turnip (the QEMU test's virtio GPU) has no Vulkan device, so `run-retroarch` falls back to
+GL there (it checks the device tree's `qcom,sm4450`). The *context* driver is the Wayland one, because the game runs
+under cage: `vk_wayland` for Vulkan (the Wayland surface Turnip's `VK_KHR_wayland_surface`) and `wayland` for GL, in
+place of the `khr_display`/`kms` pair it used when it took the panel itself. That also means the vulkan-loader must
+be built with Wayland WSI (`BUILD_WSI_WAYLAND_SUPPORT`) and Mesa with the `wayland` platform, or the instance has no
+`VK_KHR_wayland_surface` and RetroArch gives up on the video driver and exits -- the game is back in the menu before
+it starts.

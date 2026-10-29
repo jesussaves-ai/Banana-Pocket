@@ -90,29 +90,30 @@ set_cfg() {
 # behind it and nothing on screen to fix it with. A card written by another build drifts the same way. None of these
 # are settings Banana shows (the screen, the shader, the latency and VSync come from settings.conf below); they are
 # the frame the whole product is built on.
-# The video driver follows the core: a libretro core's hardware context comes from RetroArch's video driver, so
-# SwanStation's Vulkan renderer needs the Vulkan driver. Every other core keeps GL. The *context* driver and
-# video_rotation follow the compositor: the game runs under cage (below), so RetroArch is a Wayland client
-# (vk_wayland -- the Wayland surface, Turnip's VK_KHR_wayland_surface -- or wayland) and cage turns the output
-# with the panel's "panel orientation", which leaves video_rotation at 0. A card with no cage falls back to
-# RetroArch taking the panel itself: the khr_display/kms pair, and the RPC's 270 degrees, the turn the menu
-# rotation patches (buildroot/patches/retroarch) are there to cover.
+# The video driver is Vulkan everywhere: the games and their shaders share one driver, and its shader backend is
+# Slang, so every preset in the image (Shaders > Load Preset, and Settings > Other systems > Shader) is one it can
+# actually run. A core that wants OpenGL -- the N64 core's GLideN64 -- is no problem: RetroArch forces glcore for
+# that core itself (gfx/video_driver.c, video_driver_find_driver), so the software cores and the Vulkan ones run on
+# Vulkan and GLideN64 keeps its GL. The *context* driver and video_rotation follow the compositor: the game runs
+# under cage (below), so RetroArch is a Wayland client (vk_wayland -- the Wayland surface, Turnip's
+# VK_KHR_wayland_surface) and cage turns the output with the panel's "panel orientation", which leaves
+# video_rotation at 0. A card with no cage falls back to RetroArch taking the panel itself: the khr_display pair,
+# and the RPC's 270 degrees, the turn the menu rotation patches (buildroot/patches/retroarch) cover.
+#
+# Vulkan is the a613 through Mesa's Turnip, which only exists on the handheld: a machine without the SoC (the QEMU
+# test's virtio GPU) has no Vulkan device and RetroArch would come up with no picture, so it falls back to GL. The
+# device tree's compatible says which; the *context* driver is glcore's pairing then (wayland, and kms with no cage).
+vk=
+grep -qa 'qcom,sm4450' /proc/device-tree/compatible 2>/dev/null && vk=1
 if [ -x /usr/bin/cage ]; then
-	# glcore (GL3), not gl (GL2): under a Wayland compositor the GL2 driver dies with SIGSEGV and a corrupted
-	# stack the moment it comes up (measured on the unit, every non-SwanStation core; the endpoint of the log is
-	# the Wayland interface list, so it never gets as far as a frame). GL3 is the pairing the wayland context
-	# driver is written for, and it comes up with GLES 3.2 on the Adreno through Mesa.
-	vk_ctx=vk_wayland; gl_ctx=wayland; gl_drv=glcore; rot=0
+	if [ -n "$vk" ]; then drv=vulkan; ctx=vk_wayland; else drv=glcore; ctx=wayland; fi
+	rot=0
 else
-	vk_ctx=khr_display; gl_ctx=kms; gl_drv=gl; rot=3
+	if [ -n "$vk" ]; then drv=vulkan; ctx=khr_display; else drv=gl; ctx=kms; fi
+	rot=3
 fi
-if [ "$1" = swanstation ] && grep -q '^swanstation_GPU_Renderer = "Vulkan"' /data/retroarch/config/SwanStation/SwanStation.opt 2>/dev/null; then
-	set_cfg video_driver vulkan
-	set_cfg video_context_driver $vk_ctx
-else
-	set_cfg video_driver $gl_drv
-	set_cfg video_context_driver $gl_ctx
-fi
+set_cfg video_driver $drv
+set_cfg video_context_driver $ctx
 set_cfg video_rotation $rot
 # the display server's own turn (Android, KMS): the same value, so a card left on the other path is consistent
 set_cfg screen_orientation $rot
@@ -126,6 +127,13 @@ set_cfg audio_device default
 # the ALSA sequencer: no /dev/snd/seq on this image (no sequencer built), and RetroArch's MIDI driver failing is two
 # error lines in the log on every start and one more driver to go wrong
 set_cfg midi_driver null
+# What the user changes in RetroArch's own menu has to still be there next time: RetroArch writes retroarch.cfg when
+# it quits (config_save_on_exit), and its core options are flushed to the per-core .opt as the core unloads (that is
+# automatic -- RetroArch's runloop saves them on every content close). The one thing RetroArch does *not* do on its
+# own is show the manual "Save Core Options" item, so a card that had it hidden has no way to save an option by hand;
+# shown here, and in the template for a fresh card.
+set_cfg config_save_on_exit true
+set_cfg quick_menu_show_core_options_flush true
 # RetroArch's own pop-ups, off where they are noise (ROCKNIX turns these off on this SoC too): the per-core
 # override Banana keeps makes RetroArch say "Configuration override loaded" on every launch, the pad is configured
 # by Banana so "No autoconfig profiles found" never means anything, and the remap/screenshot lines are the same.
@@ -161,36 +169,49 @@ if [ ! -f $M ]; then
     grep -q '^mupen64plus-ThreadedRenderer = ' $O 2>/dev/null && sed -i 's|^mupen64plus-ThreadedRenderer = .*|mupen64plus-ThreadedRenderer = "True"|' $O || echo 'mupen64plus-ThreadedRenderer = "True"' >> $O
     touch $M
 fi
-# Shaders: Shaders > Load Preset opens the image's libretro GLSL presets (/usr/share/libretro/shaders/glsl), read
-# where they are: copied to the card they took 238 MB (a few thousand small files in exFAT's large clusters) and a long
-# first start. The Online Updater is shown (the core downloader not: cores come with the image).
-S=/data/retroarch/.banana-shaders-1
+# Shaders: Shaders > Load Preset opens the image's libretro Slang presets (/usr/share/libretro/shaders/slang), read
+# where they are: copied to the card they took hundreds of MB (a few thousand small files in exFAT's large clusters)
+# and a long first start. Slang, not GLSL: the video driver is Vulkan (above) and its shader backend is Slang, so the
+# GLSL presets earlier cards pointed at would crash RetroArch when one was applied (a backend mismatch). The Online
+# Updater is shown (the core downloader not: cores come with the image).
+S=/data/retroarch/.banana-shaders-2
 if [ ! -f $S ]; then
-    set_cfg video_shader_dir /usr/share/libretro/shaders/glsl
+    set_cfg video_shader_dir /usr/share/libretro/shaders/slang
     set_cfg menu_show_online_updater true
     set_cfg menu_show_core_updater false
     touch $S
 fi
-# Settings > Other systems > Shader: RetroArch's global preset, a reference to one of the image's presets. Only a
-# global.glslp Banana wrote (its first line) is changed or removed: one saved from RetroArch's own menu stays.
-GP=/data/retroarch/config/global.glslp
+# Settings > Other systems > Shader: RetroArch's global preset, a reference to one of the image's presets. It is
+# applied when the *setting changes*, not on every launch (a marker holds the value Banana last applied and banana-ui
+# deletes it when the Shader row is changed): a preset loaded, saved -- or removed -- in RetroArch's own menu is then
+# left alone, instead of being put back on the next start. Only a global.slangp Banana wrote (its first line) is
+# removed when the setting is Off; one saved from RetroArch's own menu stays, just disabled. The old global.glslp a
+# card before this change carries is Banana's own (its first line) and goes: under Vulkan it is a preset RetroArch
+# cannot load.
+GP=/data/retroarch/config/global.slangp
+OLD=/data/retroarch/config/global.glslp
+MARK=/data/retroarch/.banana-shader-setting
+ours() { head -n 1 $1 2>/dev/null | grep -q '^# Banana'; }
+ours $OLD && rm -f $OLD
 look=$(setting ra_shader)
 case $look in
-lcd) SP=handheld/zfast-lcd.glslp ;;
-crt) SP=crt/zfast-crt.glslp ;;
-sharp) SP=interpolation/sharp-bilinear-simple.glslp ;;
+lcd) SP=handheld/zfast-lcd.slangp ;;
+crt) SP=crt/zfast-crt.slangp ;;
+sharp) SP=pixel-art-scaling/sharp-bilinear-simple.slangp ;;
 *) SP= ;;
 esac
-ours() { head -n 1 $GP 2>/dev/null | grep -q '^# Banana'; }
-if [ -n "$SP" ]; then
-    if [ ! -f $GP ] || ours; then
+if [ "$(cat $MARK 2>/dev/null)" != "$look" ]; then
+    if [ -n "$SP" ]; then
         mkdir -p ${GP%/*}
-        printf '# Banana: Settings > Other systems > Shader (%s)\n#reference "/usr/share/libretro/shaders/glsl/%s"\n' "$look" "$SP" > $GP
+        printf '# Banana: Settings > Other systems > Shader (%s)\n#reference "/usr/share/libretro/shaders/slang/%s"\n' "$look" "$SP" > $GP
         set_cfg video_shader_enable true
+    else
+        # Off: remove Banana's own preset; a user's own is left (video_shader_enable false turns it off without
+        # destroying the file)
+        ours $GP && rm -f $GP
+        set_cfg video_shader_enable false
     fi
-elif ours; then
-    rm -f $GP
-    set_cfg video_shader_enable false
+    printf '%s' "$look" > $MARK
 fi
 # Settings > Other systems > Audio latency and VSync: Banana's values written into RetroArch's config before it starts
 # (a change made in RetroArch's own menu afterwards is kept until the setting is changed here again)
@@ -212,7 +233,15 @@ set_cfg audio_volume 1.0
 case $vs in on) set_cfg video_vsync true ;; off) set_cfg video_vsync false ;; esac
 sc=$(setting ra_scale)
 case $sc in on) set_cfg video_scale_integer true ;; off) set_cfg video_scale_integer false ;; esac
-# Quick resume: the setting writes savestate_auto_save; loading the state at the start follows it
+# Quick resume (Settings > Other systems > Quick resume): RetroArch saves an automatic state when a game quits and
+# loads it when the game starts again. On by default -- a handheld should pick up where it was left -- and turned on
+# once for a card that had it off. Written once (the marker): a change made in RetroArch's or Banana's own menu
+# afterwards is kept. The setting writes savestate_auto_save; loading the state at the start follows it.
+QR=/data/retroarch/.banana-quickresume-1
+if [ ! -f $QR ]; then
+    set_cfg savestate_auto_save true
+    touch $QR
+fi
 q=$(sed -n 's/^savestate_auto_save = "\(.*\)"/\1/p' $CFG | tail -n 1)
 set_cfg savestate_auto_load ${q:-false}
 # the RetroAchievements account from the setup (banana/accounts.conf) for RetroArch: its name in retroarch.cfg, but its

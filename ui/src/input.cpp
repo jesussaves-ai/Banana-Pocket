@@ -40,16 +40,7 @@ namespace banana
 		}
 	}
 
-	// the device's path in sysfs (to match a touchscreen's device)
-	static std::string sysPath(const char* node)
-	{
-		char link[512], real[PATH_MAX];
-		snprintf(link, sizeof link, "/sys/class/input/%s/device", node);
-		if (!realpath(link, real)) return "";
-		return real;
-	}
-
-	void Input::open(const std::string& bottomTouch, int panelW, int panelH, int turn, int scanoutW, int scanoutH)
+	void Input::open(int panelW, int panelH, int turn, int scanoutW, int scanoutH)
 	{
 		close();
 		pw = panelW; ph = panelH;
@@ -87,9 +78,6 @@ namespace banana
 				if (testBit(abs, ABS_X) && testBit(abs, ABS_Y) && ioctl(fd, EVIOCGABS(ABS_X), &px) == 0 && ioctl(fd, EVIOCGABS(ABS_Y), &py) == 0)
 				{ dv.x = px.value; dv.y = py.value; }
 				else { dv.x = ax.value; dv.y = ay.value; }
-				// the panel the touchscreen belongs to: the device named by banana.touch is the screen's touchscreen; a
-				// machine with a single touchscreen (the RPC, QEMU) has no second, and the pass below forces screen 0 anyway
-				dv.screen = !bottomTouch.empty() && sysPath(e->d_name).find(bottomTouch) != std::string::npos ? 1 : 0;
 			}
 			else
 			{
@@ -101,10 +89,6 @@ namespace banana
 			devs.push_back(dv);
 		}
 		closedir(d);
-		// a machine with one touchscreen (the RPC's single panel, QEMU's tablet): it belongs to the only screen
-		int touchDevs = 0;
-		for (auto& dv : devs) if (dv.touch) touchDevs++;
-		if (touchDevs == 1) for (auto& dv : devs) if (dv.touch) dv.screen = 0;
 	}
 
 	void Input::close()
@@ -115,18 +99,15 @@ namespace banana
 		watch = -1;
 	}
 
-	std::vector<int> Input::fds() const
+	int Input::fillFds(struct pollfd* out, int at, int cap) const
 	{
-		std::vector<int> r;
-		for (auto& d : devs) r.push_back(d.fd);
-		if (watch >= 0) r.push_back(watch);
-		return r;
-	}
-
-	bool Input::hasTouch(int screen) const
-	{
-		for (auto& d : devs) if (d.touch && d.screen == screen) return true;
-		return false;
+		for (auto& d : devs)
+		{
+			if (at >= cap) break;
+			out[at].fd = d.fd; out[at].events = POLLIN; out[at].revents = 0; at++;
+		}
+		if (watch >= 0 && at < cap) { out[at].fd = watch; out[at].events = POLLIN; out[at].revents = 0; at++; }
+		return at;
 	}
 
 	void Input::read(int fd, const std::function<void(const InputEvent&)>& sink)
@@ -157,8 +138,7 @@ namespace banana
 					else if (e.type == EV_KEY && (e.code == BTN_TOUCH || (dv->pointer && e.code == BTN_LEFT))) dv->down = e.value != 0;
 					else if (e.type == EV_SYN && e.code == SYN_REPORT)
 					{
-						InputEvent o;
-						o.screen = dv->screen;
+						InputEvent o;	// o.screen is 0: the one panel
 						// the touchscreen reports the panel's own axes: map to those, then turn them the way the menu
 						// was turned for the panel
 						const int w = sw ? sw : pw, h = sh ? sh : ph;

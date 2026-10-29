@@ -1,6 +1,6 @@
 #pragma once
 // banana-ui: the AMOLED burn-in guard. While the menu runs it owns the panel's backlight (bananad's own idle dim
-// leaves this backlight to us while /run/banana/bottom-ui is there): after 90 s with no button or touch it drops to a
+// leaves this backlight to us while /run/banana/panel-ui is there): after 90 s with no button or touch it drops to a
 // night level, after 180 s it turns the panel off, and the first press or touch restores it and is *swallowed*, so
 // waking the screen can never launch a game or change a setting. The backlight paths are passed in, so the headless
 // test can point them at files instead of /sys.

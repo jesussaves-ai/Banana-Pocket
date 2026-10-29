@@ -45,7 +45,7 @@ pick_kernel() {
     KERNEL=$(awk -v l="$LABEL" '$1 == "LABEL" { cur = $2 } $1 == "LINUX" && cur == l { print $2 }' "$OUT/extlinux.conf")
     ROOT=$(awk -v l="$LABEL" '$1 == "LABEL" { cur = $2 } $1 == "APPEND" && cur == l { for (i = 2; i <= NF; i++) if ($i ~ /^root=/) print $i }' "$OUT/extlinux.conf")
     mcopy -o -i "$CARD@@$BOOT_AT" "::$KERNEL" "$OUT/Image"
-    APPEND="$ROOT rootfstype=squashfs ro rootwait quiet loglevel=3 console=ttyAMA0 video=Virtual-1:1240x1080 banana.console=1 banana.top=Virtual-1 banana.touch=virtio"
+    APPEND="$ROOT rootfstype=squashfs ro rootwait quiet loglevel=3 console=ttyAMA0 video=Virtual-1:1240x1080 banana.console=1 banana.top=Virtual-1"
     echo "booting label $LABEL: $KERNEL, $ROOT"
 }
 pick_kernel

@@ -3,7 +3,6 @@
   "model": "deepseek/deepseek-v4.1-flash",
   "instructions": [
     "docs/ARCHITECTURE.md",
-    "docs/ROADMAP.md",
     ".opencode/AGENTS.md"
   ],
   "permission": {
@@ -12,5 +11,15 @@
     "git": {
       "push": "ask"
     }
+  },
+  "compaction": {
+    "auto": true,
+    "keep": {
+      "tokens": 12000
+    },
+    "buffer": 20000
+  },
+  "experimental": {
+    "background_compaction": true
   }
 }
