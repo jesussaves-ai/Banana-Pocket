@@ -108,7 +108,9 @@ bench`).
 
 ## License
 
-See `LICENSE`. The `ui/rnds` engine is imported unchanged from ROCKNIXDS.---
+See `LICENSE`. The `ui/rnds` engine is imported unchanged from ROCKNIXDS.
+
+---
 
 ## Support
 
