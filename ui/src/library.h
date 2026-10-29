@@ -82,6 +82,11 @@ namespace banana
 		// after a game ran: one more play, its time, now as its last play; and its RetroAchievements progress when the
 		// emulator wrote it (unlocked total in /run/banana/ra-progress, docs/EMULATORS.md), achB 0 when it didn't
 		void recordPlay(int game, long seconds, int achA = -1, int achB = 0);
+		// A game's own RetroArch overrides (its Game options): the core and shader this one game runs with, empty
+		// when it follows the system's core.<system> and the global Settings > Shader. Kept in banana/pergame.conf,
+		// applied by the launcher (run-retroarch reads BANANA_CORE / BANANA_SHADER, docs/EMULATORS.md).
+		std::pair<std::string, std::string> overrideOf(const std::string& system, const std::string& rel) const;
+		void setOverride(const std::string& system, const std::string& rel, const std::string& core, const std::string& shader);
 		std::function<void(const std::string&)> onCue;
 		bool twelveHour = false;
 
@@ -124,6 +129,8 @@ namespace banana
 		std::set<std::string> favGames, favSystems;	// "<system>/<rel>", system ids
 		struct Stat { int plays = 0; long seconds = 0; time_t last = 0; int achA = -1, achB = 0; };
 		std::map<std::string, Stat> stats;			// "<system>/<rel>"
+		std::map<std::string, std::pair<std::string, std::string>> overrides;	// "<system>/<rel>" -> (core, shader)
+		void saveOverrides();
 		int lib = 0, home = 0, launchGame = -1;
 		bool changed = false;
 		std::string query;

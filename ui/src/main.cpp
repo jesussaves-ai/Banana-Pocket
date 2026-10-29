@@ -478,6 +478,8 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 	settings.setSingle(o.single, canvasH);
 	settings.setSync(true);
 	settings.searchCount = [&](const std::string& q) { return lib.countMatches(q); };
+	settings.setOverride = [&](const std::string& s, const std::string& r, const std::string& c, const std::string& sh)
+		{ lib.setOverride(s, r, c, sh); };
 	LowBattery low;
 	IdleGuard guard;	// the burn-in guard's logic, driven by the `guard`/`idle` script commands (test only)
 	// the overlay runs in endScreen, over whatever screen the menu drew: the battery's notice, the volume's level,
@@ -576,6 +578,17 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 			if (it == keys.end()) { logf("unknown button %s", b.c_str()); return 2; }
 			if (low.hide(now)) logf("press %s: notice hidden", b.c_str());
 			if (!settings.isOpen() && it->second == Key::SELECT) { settings.openSearch(lib.searchQuery()); logf("press select: search open"); continue; }
+			if (!settings.isOpen() && it->second == Key::X && ui.view() == rnds::UI::LIBRARY)
+			{
+				// X on a game: its own options (the core and shader it runs with), over the library
+				int g = ui.gameIndex();
+				const SystemDef& sd = lib.systemOf(g);
+				std::string rel = lib.gameAt(g).rel;
+				auto ov = lib.overrideOf(sd.id, rel);
+				settings.openGame(sd.id, rel, lib.gameAt(g).title, ov.first, ov.second);
+				logf("press x: game options open (%s/%s)", sd.id.c_str(), rel.c_str());
+				continue;
+			}
 			if (settings.isOpen() || it->second == Key::START)
 			{
 				if (!settings.isOpen()) { settings.open(); logf("press %s: settings open", b.c_str()); continue; }
@@ -1129,6 +1142,8 @@ int main(int argc, char** argv)
 	settingsView.setSingle(single, canvasH);
 	settingsView.searchCount = [&](const std::string& q) { return lib.countMatches(q); };
 	settingsView.setVariant(settings["theme"]);	// (Carts: Inter)
+	settingsView.setOverride = [&](const std::string& s, const std::string& r, const std::string& c, const std::string& sh)
+		{ lib.setOverride(s, r, c, sh); };
 	LowBattery low;
 	bool batteryDue = true;
 	if (firstSetup) { settingsView.setup(); logf("first-time setup"); }
@@ -1281,6 +1296,21 @@ int main(int argc, char** argv)
 			dirty = true;
 			return;
 		}
+		if (ev.type == InputEvent::PRESS && ev.key == Key::X && ui->view() == rnds::UI::LIBRARY)
+		{
+			// X on a game: its own options (the core and shader it runs with), over the library
+			std::lock_guard<std::mutex> l(worker.uiLock);
+			int g = ui->gameIndex();
+			const SystemDef& sd = lib.systemOf(g);
+			std::string rel = lib.gameAt(g).rel;
+			auto ov = lib.overrideOf(sd.id, rel);
+			settingsView.setVariant(settings["theme"]);
+			settingsView.openGame(sd.id, rel, lib.gameAt(g).title, ov.first, ov.second);
+			rep.key = Key::NONE;
+			sound.play("select");
+			dirty = true;
+			return;
+		}
 		if (ev.type == InputEvent::TOUCH_DOWN) { std::lock_guard<std::mutex> l(worker.uiLock); dirty |= ui->touch(ev.screen, ev.x, ev.y, true); return; }
 		if (ev.type == InputEvent::TOUCH_MOVE) { std::lock_guard<std::mutex> l(worker.uiLock); dirty |= ui->touchMove(ev.screen, ev.x, ev.y); return; }
 		if (ev.type == InputEvent::TOUCH_UP) { std::lock_guard<std::mutex> l(worker.uiLock); dirty |= ui->touch(ev.screen, ev.x, ev.y, false); return; }
@@ -1342,6 +1372,10 @@ int main(int argc, char** argv)
 			setenv("BANANA_SYSTEM", sd.id.c_str(), 1);
 			setenv("BANANA_RA_PROGRESS", PROGRESS, 1);
 			setenv("BANANA_RA_CHEEVOS", CHEEVOS, 1);	// RetroArch's patch writes both (buildroot/patches/retroarch/0013)
+			// a game's own Game options (Settings' X): the core and shader this one game runs with, when it has any
+			auto ov = lib.overrideOf(sd.id, lib.gameAt(game).rel);
+			if (!ov.first.empty()) setenv("BANANA_CORE", ov.first.c_str(), 1);
+			if (!ov.second.empty()) setenv("BANANA_SHADER", ov.second.c_str(), 1);
 			execl("/bin/sh", "sh", "-c", cmd.c_str(), (char*)nullptr);
 			_exit(127);
 		}

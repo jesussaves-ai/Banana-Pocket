@@ -116,13 +116,18 @@ for size in 640x480 1024x768; do
         --script "lib 0 0; press a; wait 3000; wait 1" 2> "$flog" || { echo "FAIL $size: banana-ui (favorites) exited $?"; fail=1; }
     grep -q "launch 0: .*Orchard Tactics.gba (system gba)" "$flog" || { echo "FAIL $size: the favourite: $(grep launch "$flog")"; fail=1; }
     mv "$OUT/favorites.txt.keep" "$FX/data/favorites.txt"; rm -f "$FX/data/favorite-systems.txt"
-    # X on a game in the library: no per-game page any more (it opened Settings' DS emulator/shader page)
+    # X on a game in the library: the game's own options (its emulator and shader) over the library. Changing the
+    # shader writes it to banana/pergame.conf for the launcher (run-retroarch's BANANA_SHADER).
     xlog=$OUT/$size-xgame.log
+    rm -f "$FX/data/pergame.conf"
     "$HERE/banana-ui" --headless "$OUT/$size-" --size $size --assets "$HERE/assets/rnds" \
         --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
-        --script "lib 0 0; press x; wait 300; shot xgame; wait 1" 2> "$xlog" ||
+        --script "lib 0 0; press x; wait 300; shot xgame; press down; press right; wait 100; shot xgame2; press b; wait 200; wait 1" 2> "$xlog" ||
         { echo "FAIL $size: banana-ui (x on a game) exited $?"; fail=1; }
-    grep -q "settings open" "$xlog" && { echo "FAIL $size: X opened a settings page"; fail=1; }
+    grep -q "press x: game options open" "$xlog" || { echo "FAIL $size: X did not open the game options"; fail=1; }
+    grep -q "settings open" "$xlog" && { echo "FAIL $size: X opened the settings list"; fail=1; }
+    { grep -q "^nds/" "$FX/data/pergame.conf" && grep -q "$(printf '\t')off$" "$FX/data/pergame.conf"; } ||
+        { echo "FAIL $size: the per-game shader was not saved: $(cat "$FX/data/pergame.conf" 2>/dev/null)"; fail=1; }
     [ -s "$OUT/$size-xgame-top.png" ] && [ -s "$OUT/$size-xgame-bot.png" ] || { echo "FAIL $size: no xgame shot"; fail=1; }
     # Background Music: the Display & sound row (the seventh) toggles settings.conf's bgm, off then back on
     grep -q '^bgm = ' "$FX/data/settings.conf" && sed -i 's/^bgm = .*/bgm = on/' "$FX/data/settings.conf" || printf 'bgm = on\n' >> "$FX/data/settings.conf"

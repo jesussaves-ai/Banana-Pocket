@@ -543,8 +543,69 @@ namespace banana
 		mOpen = true;
 	}
 
+	void Settings::openGame(const std::string& system, const std::string& rel, const std::string& title,
+			const std::string& core, const std::string& shader)
+	{
+		// the main list is held aside and put back on close(); the game's page is the LIST machinery with a flat
+		// two-row list (there is no group grid behind it, so B and Start both close back to the menu)
+		savedItems = items; savedGroups = groups;
+		gamePage = true; gameSys = system; gameRel = rel; gameTitle = title;
+		items.clear();
+		auto opt = [&](const std::string& label, const std::string& help, const std::string& cur,
+				const std::vector<std::pair<std::string, std::string>>& opts)
+		{
+			Item it;
+			it.section = title; it.icon = "gear"; it.label = label; it.help = help; it.kind = Item::CHOICE;
+			it.names.push_back("Default (system)"); it.values.push_back("");
+			for (auto& o : opts) { it.names.push_back(o.first); it.values.push_back(o.second); }
+			for (size_t i = 0; i < it.values.size(); i++) if (!it.values[i].empty() && it.values[i] == cur) it.at = (int)i;
+			items.push_back(it);
+		};
+		// every core installed, under the friendly name the per-system rows use where there is one
+		static const std::map<std::string, std::string> FRIENDLY = {
+			{ "gpsp", "gpSP" }, { "mgba", "mGBA" }, { "gambatte", "Gambatte" }, { "sameboy", "SameBoy" },
+			{ "fceumm", "FCEUmm" }, { "nestopia", "NEStopia" }, { "snes9x", "Snes9x" }, { "bsnes", "bsnes" },
+			{ "picodrive", "PicoDrive" }, { "genesis_plus_gx", "Genesis Plus GX" }, { "swanstation", "SwanStation" },
+			{ "pcsx_rearmed", "PCSX-ReARMed" }, { "mupen64plus_next", "Mupen64Plus-Next" }, { "parallel_n64", "ParaLLEl N64" },
+			{ "flycast", "Flycast" }, { "fuse", "Fuse" }, { "mednafen_pce_fast", "Beetle PCE Fast" },
+			{ "stella2014", "Stella 2014" }, { "vice_x64", "VICE x64" }, { "mednafen_ngp", "Beetle NeoPop" },
+			{ "mednafen_wswan", "Beetle WonderSwan" }, { "handy", "Handy" }, { "fake08", "Fake-08" },
+		};
+		std::vector<std::pair<std::string, std::string>> cores;
+		const char* env = getenv("BANANA_LIBRETRO");	// (another directory, for testing)
+		std::string ldir = env && *env ? env : "/usr/lib/libretro";
+		if (DIR* d = opendir(ldir.c_str()))
+		{
+			while (dirent* e = readdir(d))
+			{
+				std::string n = e->d_name, suf = "_libretro.so";
+				if (n.size() <= suf.size() || n.compare(n.size() - suf.size(), suf.size(), suf) != 0) continue;
+				std::string c = n.substr(0, n.size() - suf.size());
+				auto f = FRIENDLY.find(c);
+				cores.push_back({ f != FRIENDLY.end() ? f->second : c, c });
+			}
+			closedir(d);
+		}
+		std::sort(cores.begin(), cores.end());
+		opt("Emulator", "The core this one game runs with. Default follows the system's own emulator (Settings > Other systems).", core, cores);
+		opt("Shader", "The look for this one game. Default follows Settings > Other systems > Shader.", shader,
+			{ { "Off", "off" }, { "LCD", "lcd" }, { "CRT", "crt" }, { "Sharp pixels", "sharp" } });
+		groups = { title };
+		inGroups = false;
+		sel = top = 0;
+		armed = -1;
+		message.clear();
+		mOpen = true;
+	}
+
 	void Settings::save(const Item& it)
 	{
+		if (gamePage)
+		{
+			// a game's own options: the two rows are its core and its shader ("" follows the system)
+			if (setOverride) setOverride(gameSys, gameRel, items[0].values[items[0].at], items[1].values[items[1].at]);
+			return;
+		}
 		const std::string& v = it.values[it.at];
 		if (it.kind == Item::BRIGHTNESS)
 		{
@@ -709,6 +770,24 @@ namespace banana
 		if (page == KEYBOARD) return pressKeyboard(k);
 		if (page == UPDATES) return pressUpdates(k);
 		if (page == SETUP) return pressSetup(k);
+		if (gamePage)
+		{
+			// a game's own page: a flat two-row list; B and Start close back to the menu (there is no grid behind it)
+			switch (k)
+			{
+			case Key::UP: case Key::DOWN:
+			{
+				int n = (int)items.size();
+				sel = (sel + (k == Key::UP ? -1 : 1) + n) % n;
+				armed = -1;
+				return MOVED;
+			}
+			case Key::LEFT: return change(-1);
+			case Key::RIGHT: case Key::A: return change(1);
+			case Key::B: case Key::START: close(); return CLOSED;
+			default: return NONE;
+			}
+		}
 		if (inGroups) return pressGroups(k);
 		int g = groupOf(sel), b = groupStart(g), e = groupEnd(g);
 		switch (k)

@@ -72,7 +72,12 @@ Settings > Other systems holds, per system, the core (`core.<system>` in `banana
 core instead of `systems.conf`'s, e.g. mGBA for the Game Boy Advance for its RetroAchievements), and the shader
 (`ra_shader`), audio latency (`ra_audio_latency`) and VSync (`ra_vsync`) RetroArch runs with, plus integer scaling
 (`ra_scale`). `run-retroarch` writes them into `retroarch.cfg` before each start; a change made in RetroArch's own
-menu afterwards is kept until the setting changes here again. The shader is RetroArch's global preset, a reference
+menu afterwards is kept until the setting changes here again.
+
+A single **game** overrides both: **X** on a game in the library opens its own Game options (the emulator and the
+shader), kept in `banana/pergame.conf`. `banana-ui` exports the pair for the game it starts (`BANANA_CORE`,
+`BANANA_SHADER`) and `run-retroarch` prefers them over the system's `core.<system>` and the global shader; a game
+with neither follows the system, exactly as before. The shader is RetroArch's global preset, a reference
 to one of the image's **Slang** presets in `/usr/share/libretro/shaders/slang` (copied to the card they were hundreds
 of MB of small files in exFAT's large clusters and a long first start). Slang, not GLSL: the game's video driver is
 Vulkan, whose shader backend is Slang, and a GLSL preset under it crashes RetroArch (a backend mismatch).

@@ -131,6 +131,13 @@ run psx swanstation
 has "$W/retroarch.args" pcsx_rearmed_libretro.so && ok "fell back to PCSX-ReARMed" || bad "no fallback"
 has "$W/data/retroarch/config/PCSX-ReARMed/PCSX-ReARMed.opt" 'pcsx_rearmed_drc' && ok "PCSX defaults written" || bad "PCSX defaults"
 
+echo "8. a game's own Game options win (BANANA_CORE / BANANA_SHADER)"
+fresh
+PATH="$W:$PATH" BANANA_SYSTEM=gba BANANA_CORE=gambatte BANANA_SHADER=crt "$W/libexec/run-retroarch" gpsp /g.gba 2>"$W/err" || true
+has "$W/retroarch.args" gambatte_libretro.so && ok "the game's own core ran, not the system's" || bad "BANANA_CORE ignored"
+[ "$(cfg video_shader_enable)" = true ] && ok "the game's own shader is on" || bad "BANANA_SHADER ignored"
+has "$W/data/retroarch/config/global.slangp" crt && ok "the CRT preset was written" || bad "no preset for the game's shader"
+
 echo
 echo "run-retroarch: $pass passed, $fail failed"
 [ "$fail" = 0 ]

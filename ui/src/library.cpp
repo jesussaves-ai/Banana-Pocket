@@ -330,6 +330,20 @@ namespace banana
 				stats[c[0]] = s;
 			}
 		}
+		{
+			// a game's own overrides: <system>/<rel> TAB core TAB shader (empty follows the system / the global shader)
+			std::ifstream f(dataDir + "/pergame.conf");
+			std::string ln;
+			while (std::getline(f, ln))
+			{
+				std::vector<std::string> c;
+				std::stringstream ls(ln);
+				std::string part;
+				while (std::getline(ls, part, '\t')) c.push_back(part);
+				if (c.size() < 3 || c[0].empty()) continue;
+				if (!c[1].empty() || !c[2].empty()) overrides[c[0]] = { c[1], c[2] };
+			}
+		}
 	}
 
 	// written beside and renamed over, so a power cut leaves the old file or the new one (and a full card, a write
@@ -364,6 +378,29 @@ namespace banana
 			out += "\n";
 		}
 		writeAtomic(dataDir + "/playstats.tsv", out);
+	}
+
+	// a game's own overrides (its Game options): the core and shader this one game runs with. A game with neither
+	// keeps no line; one with a core but the system's shader keeps a line with an empty shader field.
+	std::pair<std::string, std::string> Library::overrideOf(const std::string& system, const std::string& rel) const
+	{
+		auto it = overrides.find(system + "/" + rel);
+		return it == overrides.end() ? std::make_pair(std::string(), std::string()) : it->second;
+	}
+
+	void Library::setOverride(const std::string& system, const std::string& rel, const std::string& core, const std::string& shader)
+	{
+		std::string k = system + "/" + rel;
+		if (core.empty() && shader.empty()) overrides.erase(k);
+		else overrides[k] = { core, shader };
+		saveOverrides();
+	}
+
+	void Library::saveOverrides()
+	{
+		std::string out;
+		for (auto& kv : overrides) out += kv.first + "\t" + kv.second.first + "\t" + kv.second.second + "\n";
+		writeAtomic(dataDir + "/pergame.conf", out);
 	}
 
 	static void listRoms(const std::string& dir, const std::string& relDir, const std::vector<std::string>& exts, std::vector<std::string>& out, int depth, int maxDepth = 2)

@@ -23,6 +23,11 @@ if [ -n "$BANANA_SYSTEM" ]; then
     c=$(setting "core.$BANANA_SYSTEM")
     [ -n "$c" ] && [ -f /usr/lib/libretro/${c}_libretro.so ] && CORE=/usr/lib/libretro/${c}_libretro.so
 fi
+# a game's own Game options (Settings' X on a game, banana-ui's BANANA_CORE): the core this one game runs with,
+# over both systems.conf's and core.<system>, when it names an installed core.
+if [ -n "$BANANA_CORE" ] && [ -f /usr/lib/libretro/${BANANA_CORE}_libretro.so ]; then
+    CORE=/usr/lib/libretro/${BANANA_CORE}_libretro.so
+fi
 # PlayStation's fall back: systems.conf names SwanStation (the accurate one), Settings may pick PCSX-ReARMed, and a
 # card missing SwanStation still plays on PCSX-ReARMed rather than failing to start.
 if [ "$BANANA_SYSTEM" = psx ] && [ ! -f "$CORE" ] && [ -f /usr/lib/libretro/pcsx_rearmed_libretro.so ]; then
@@ -348,6 +353,10 @@ MARK=/data/retroarch/.banana-shader-setting
 ours() { head -n 1 $1 2>/dev/null | grep -q '^# Banana'; }
 ours $OLD && rm -f $OLD
 look=$(setting ra_shader)
+# a game's own shader (Settings' X on a game, banana-ui's BANANA_SHADER): the look this one game runs with, over
+# Settings > Other systems > Shader. The marker below holds whichever was applied last, so a game with its own and
+# one without rewrite the preset as they alternate -- only when the value actually changes.
+if [ -n "$BANANA_SHADER" ]; then look=$BANANA_SHADER; fi
 case $look in
 lcd) SP=handheld/zfast-lcd.slangp ;;
 crt) SP=crt/zfast-crt.slangp ;;

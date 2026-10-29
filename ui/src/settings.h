@@ -30,8 +30,18 @@ namespace banana
 		void setSingle(bool v, float canvasHeight) { single = v; canvasH = canvasHeight; }
 		void setFontDir(const std::string& dir) { fontDir = dir; }
 		void open();
-		void close() { mOpen = false; page = LIST; wizard = false; }
+		void close()
+		{
+			mOpen = false; page = LIST; wizard = false;
+			if (gamePage) { items.swap(savedItems); groups.swap(savedGroups); gamePage = false; }
+			savedItems.clear(); savedGroups.clear();
+		}
 		void setup() { mOpen = true; openSetup(); }	// the first-time setup, from the host
+		// a game's own options (the library's X): the core and shader this one game runs with instead of the
+		// system's and the global ones; `core` and `shader` are the game's present overrides ("" for neither)
+		void openGame(const std::string& system, const std::string& rel, const std::string& title,
+				const std::string& core, const std::string& shader);
+		std::function<void(const std::string& system, const std::string& rel, const std::string& core, const std::string& shader)> setOverride;
 		bool isOpen() const { return mOpen; }
 		bool animating() const;	// the highlight or the list still easing into place: frames wanted
 
@@ -103,6 +113,12 @@ namespace banana
 
 		// the Wi-Fi pages: the networks around, and the keyboard for a password (settings-wifi.cpp)
 		enum Page { LIST, NETWORKS, KEYBOARD, UPDATES, SETUP } page = LIST;
+		// a game's own options: the LIST machinery, but a flat two-row list (Emulator, Shader) for one game, opened
+		// from the library and closed back to the menu (there is no group grid behind it)
+		bool gamePage = false;
+		std::string gameSys, gameRel, gameTitle;
+		std::vector<Item> savedItems;		// the main list, while a game's page holds items instead
+		std::vector<std::string> savedGroups;
 		// the keyboard types a text for a purpose: a Wi-Fi password, or an account's name or password
 		// (banana/accounts.conf: RetroAchievements for RetroArch, ScreenScraper for the scraper to come)
 		enum Entry { ENTRY_WIFI, ENTRY_RA_USER, ENTRY_RA_PASS, ENTRY_SS_USER, ENTRY_SS_PASS, ENTRY_SEARCH } entry = ENTRY_WIFI;
