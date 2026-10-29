@@ -1,8 +1,11 @@
 #!/bin/sh
-# The other systems: RetroArch with one libretro core, as a Wayland client in cage (a kiosk compositor: one
-# application, fullscreen, and it turns the output with the panel's "panel orientation"), configuration and saves
-# on the data partition.
+# RetroArch with one libretro core, as a Wayland client in cage (a kiosk compositor: one application, fullscreen, and
+# it turns the output with the panel's "panel orientation"), configuration and saves on the data partition. This one
+# script owns the emulator contract for every RetroArch system: the panel, the shader, the saves, RetroAchievements,
+# and the cores' own per-system defaults (the PlayStation's SwanStation/PCSX-ReARMed and the Dreamcast's Flycast are
+# set up below, keyed on the core that runs, so there is no separate run-ps1/run-dreamcast to keep in step).
 #   run-retroarch <core> <rom>       e.g. run-retroarch gpsp /data/roms/gba/game.gba
+#                                    run-retroarch swanstation /data/roms/psx/game.cue
 # Turnip (the a613's Vulkan driver): ROCKNIX exports TU_DEBUG=noconform on this SoC to expose the Vulkan 1.3 the
 # Adreno a6xx driver implements but does not advertise as conformant; SwanStation's Vulkan renderer asks for it.
 TU_DEBUG=noconform
@@ -19,6 +22,11 @@ setting() {
 if [ -n "$BANANA_SYSTEM" ]; then
     c=$(setting "core.$BANANA_SYSTEM")
     [ -n "$c" ] && [ -f /usr/lib/libretro/${c}_libretro.so ] && CORE=/usr/lib/libretro/${c}_libretro.so
+fi
+# PlayStation's fall back: systems.conf names SwanStation (the accurate one), Settings may pick PCSX-ReARMed, and a
+# card missing SwanStation still plays on PCSX-ReARMed rather than failing to start.
+if [ "$BANANA_SYSTEM" = psx ] && [ ! -f "$CORE" ] && [ -f /usr/lib/libretro/pcsx_rearmed_libretro.so ]; then
+    CORE=/usr/lib/libretro/pcsx_rearmed_libretro.so
 fi
 [ -f "$CORE" ] || { echo "no core $1" >&2; exit 1; }
 # the core that really runs, in banana-ui's log (its "starting" line names systems.conf's)
@@ -84,6 +92,140 @@ set_cfg() {
     sed -i "/^$1 = /d" $CFG
     printf '%s = "%s"\n' "$1" "$2" >> $CFG
 }
+# ---- the core's own defaults --------------------------------------------------------------------------------------
+# The PlayStation's SwanStation/PCSX-ReARMed and the Dreamcast's Flycast need settings of their own (a renderer, a
+# scale, a remap). They used to be separate launchers (run-ps1, run-dreamcast) that wrote these and exec'd here; the
+# blocks sit in this one script now, keyed on the core that actually runs, so a card picks them up whichever way
+# Settings chose the core. Each is written once (a marker), so a change made in RetroArch's own menu afterwards is
+# kept; delete the marker to have Banana's defaults written again.
+R=/data/retroarch
+case $c in
+swanstation)
+    C=SwanStation
+    mkdir -p "$R/config/$C"
+    M=$R/.banana-swans-9
+    if [ ! -f "$M" ]; then
+        # SwanStation draws its own output; RetroArch's integer scaler is off so the core fills the viewport with its
+        # own (4:3) aspect.
+        printf 'video_scale_integer = "false"\n' > "$R/config/$C/$C.cfg"
+        {
+            printf '%s\n' '# Banana: the RPC defaults (run-retroarch, written once)'
+            # Vulkan on the a613 through Mesa's Turnip (the ICD ships in the image): full speed at 60 fps where the
+            # freedreno OpenGL path dropped frames, and the renderer to upscale with. run-retroarch hands the core a
+            # Vulkan video driver to match. 4x is the right scale for this panel, not 5x: the game is shown 4:3 at
+            # ~1240x930 on the 1240x1080 panel, and 4x (1280x960) is already past that, so 5x (1600x1200) only adds
+            # a downscale pass. Measured on the unit through the BIOS intro (Gouraud polygons, the heaviest scene):
+            # at 5x the emulation thread waits on the GPU's fence 59 of 500 samples (~12%, the GPU is the critical
+            # path and the choppiness), at 4x 2 of 500, at 3x 2, at 2x 0. ROCKNIX renders the PS1 at *1x* on this SoC
+            # (software, the display plane scaling it up) for the same reason.
+            printf 'swanstation_GPU_Renderer = "Vulkan"\n'
+            printf 'swanstation_GPU_ResolutionScale = "4"\n'
+            # Compile the renderer's shaders up front: on a background thread (the default) they compile during
+            # the first seconds of play, which is the hitching the BIOS intro showed.
+            printf 'swanstation_GPU_ShaderPrecompile = "Enabled"\n'
+            printf 'swanstation_GPU_UseThread = "true"\n'
+            # RetroArch's on-screen-message widget layer is not turned with the panel (only the menu texture and the
+            # game are), so core OSD lines would read sideways; keep them off.
+            printf 'swanstation_Display_ShowOSDMessages = "false"\n'
+            # Straight into the game: the BIOS shell's intro (the Sony logo and the boot sequence) is skipped, as
+            # ROCKNIX sets PatchFastBoot for this device. A couple of games need the real boot, and RetroArch's own
+            # core options can put it back (this file is written once).
+            printf 'swanstation_BIOS_PatchFastBoot = "true"\n'
+            # (CDROM_LoadImageToRAM was tried here and is deliberately not: it reads the whole disc into RAM at
+            # startup -- 15 s of black screen for a 464 MB CHD -- and the stutter it was meant to cure turned out
+            # to be frame pacing, not CD reads. The core's own reader thread (ReadaheadSectors, ReadThread) keeps
+            # the decompression off the emulation thread.)
+        } > "$R/config/$C/$C.opt"
+        touch "$M"
+    fi
+    ;;
+pcsx_rearmed)
+    C=PCSX-ReARMed
+    mkdir -p "$R/config/$C"
+    M=$R/.banana-psx-1
+    if [ ! -f "$M" ]; then
+        # Scaling: a 320x240 PS1 frame is an exact 3x on the RPC's 720-tall drawing area (integer keeps the pixels
+        # square); a card that reports nothing falls back to integer scaling.
+        H=$(cat /sys/class/drm/card*-*/modes 2>/dev/null | sed -n '1s/^[0-9]*x\([0-9]*\).*/\1/p' | tr -d ' \r')
+        case ${H:-480} in
+        7[0-9][0-9]) INT=false ;;      # 768p: fill the panel
+        *)             INT=true  ;;   # 480p / 1240 (the RPC's turned panel): a clean integer scale
+        esac
+        printf 'video_scale_integer = "%s"\n' "$INT" > "$R/config/$C/$C.cfg"
+        # Core options (config/<core>/<core>.opt, RetroArch's per-core override): the ari64 dynarec runs at full
+        # speed, so frameskip is 'auto' only as an audio safety net (a late frame is dropped rather than crackling);
+        # GPU commands run on a second core, the SPU on the main one (the threaded SPU glitches in some games). The
+        # values are the strings the core lists, not the labels.
+        O=$R/config/$C/$C.opt
+        {
+            printf '%s\n' '# Banana: the RPC defaults (run-retroarch, written once)'
+            printf 'pcsx_rearmed_drc = "enabled"\n'
+            printf 'pcsx_rearmed_region = "auto"\n'
+            printf 'pcsx_rearmed_psxclock = "auto"\n'
+            printf 'pcsx_rearmed_frameskip_type = "auto"\n'
+            printf 'pcsx_rearmed_gpu_thread_rendering = "enabled"\n'
+            printf 'pcsx_rearmed_spu_thread = "disabled"\n'
+            printf 'pcsx_rearmed_spu_interpolation = "simple"\n'
+            # CD-DA and XA decoding: the PS1's only audio sources. Both must stay enabled or every game is silent.
+            printf 'pcsx_rearmed_nocdaudio = "disabled"\n'
+            printf 'pcsx_rearmed_noxadecoding = "disabled"\n'
+            printf 'pcsx_rearmed_scale_hires = "enabled"\n'
+            printf 'pcsx_rearmed_neon_enhancement_enable = "disabled"\n'
+            printf 'pcsx_rearmed_dithering = "enabled"\n'
+            printf 'pcsx_rearmed_vibration = "enabled"\n'
+        } > "$O"
+        touch "$M"
+    fi
+    ;;
+flycast)
+    C=Flycast
+    M=$R/.banana-dreamcast-1
+    if [ ! -f "$M" ]; then
+        mkdir -p "$R/config/$C"
+        cp /usr/share/banana/cores/Flycast.opt "$R/config/$C/$C.opt"
+        # The RPC has no analogue stick (a stickless slate), and Flycast drives the Dreamcast's analogue stick from the
+        # RetroPad's left stick. RetroArch's "Analog to Digital" (input_player1_analog_dpad_mode=1) has the D-pad drive
+        # that stick *as well as* the Dreamcast's own D-pad, so a game that only reads the stick is still playable. (The
+        # RPC's autoconfig has a stale `input_analog_dpad_mode` line: RetroArch does not parse that key from an
+        # autoconfig, so it does nothing.) Written to the core's own config, so a change in RetroArch's menu is kept.
+        printf 'input_player1_analog_dpad_mode = "1"\n' > "$R/config/$C/$C.cfg"
+        touch "$M"
+    fi
+    # The Dreamcast's L/R are analogue *triggers* (Crazy Taxi's brake and accelerator), and Flycast reads them from the
+    # RetroPad's L2/R2 -- not its L/R, which it reads as the Dreamcast's digital C/Z:
+    # shell/libretro/libretro.cpp, `lt[port] = get_analog_trigger(..., RETRO_DEVICE_ID_JOYPAD_L2)`. On this handheld the
+    # buttons a Dreamcast player reaches for are the shoulder pair (L1/R1), so swap the two pairs for this core: L1/R1
+    # then work the Dreamcast's triggers and L2/R2 become its C/Z.
+    #
+    # A core remap, so no other system's shoulders change. Note the key spelling: a remap file writes
+    # `input_playerN_btn_<name>` (configuration.c builds `input_player1_btn` and joins the button name to it, for both
+    # loading and saving), the *opposite* order from the autoconfig's `input_playerN_<name>_btn` -- the latter is simply
+    # ignored in a remap file. The values are RetroPad ids, not physical button indices (input_config_bind_order[]):
+    # RetroPad L=10, R=11, L2=12, R2=13. RetroArch rewrites this file itself whenever a core remap is active, so write
+    # ours when the line is missing rather than when the file is -- and a change made in RetroArch's own Controls menu
+    # afterwards keeps the line and is left alone.
+    RM=$R/remaps/$C
+    if ! grep -q '^input_player1_btn_l = "12"' "$RM/$C.rmp" 2>/dev/null; then
+        mkdir -p "$RM"
+        cat > "$RM/$C.rmp" <<'EOF'
+input_player1_btn_l = "12"
+input_player1_btn_l2 = "10"
+input_player1_btn_r = "13"
+input_player1_btn_r2 = "11"
+EOF
+    fi
+    ;;
+esac
+# RetroArch loads a core's own config after its --appendconfig, so a video_monitor_index or stdin_cmd_enable saved into
+# it (RetroArch's "Save Core Override") would have the last word over the panel settings below: those keys are dropped
+# here, so run-retroarch's always win. Banana's own keys (video_scale_integer) stay.
+case $c in swanstation|pcsx_rearmed)
+    CF=$R/config/$C/$C.cfg
+    if grep -q -e '^ *video_monitor_index *=' -e '^ *stdin_cmd_enable *=' "$CF" 2>/dev/null; then
+        sed -i -e '/^ *video_monitor_index *=/d' -e '/^ *stdin_cmd_enable *=/d' "$CF"
+    fi
+    ;;
+esac
 # The keys a game needs to be seen and heard at all, forced every start (not once): RetroArch writes this file back
 # when it quits, so one trip through its own menus -- Video > Output > Video Driver, Audio > Output Device -- leaves a
 # value the handheld cannot use, and the game then runs with no picture: a black panel over sound, with the menu gone
@@ -120,7 +262,7 @@ fi
 # not Slang, so the Slang preset Banana applies cannot load under it: the shader is turned off for it below (the
 # enable flag only -- the preset file is left alone).
 glc=
-case $BANANA_SYSTEM in dreamcast) glc=1 ;; esac
+case $c in flycast) glc=1 ;; esac
 if [ -n "$glc" ]; then
 	if [ -x /usr/bin/cage ]; then drv=glcore; ctx=wayland; else drv=gl; ctx=kms; fi
 fi

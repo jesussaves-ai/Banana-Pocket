@@ -1,5 +1,5 @@
 # Banana: Flycast's defaults for the Retroid Pocket Classic: written once into
-# /data/retroarch/config/Flycast/Flycast.opt by run-dreamcast (its marker is /data/retroarch/.banana-dreamcast-1).
+# /data/retroarch/config/Flycast/Flycast.opt by run-retroarch (its marker is /data/retroarch/.banana-dreamcast-1).
 # A change made in RetroArch's own Core Options afterwards is kept. The values are ROCKNIX's for this SoC's
 # flycast-lr: native resolution and a native texture upscale (the a613 through freedreno GLES is the bottleneck for
 # Dreamcast, so rendering above the console's own 640x480 only costs frames), the fast alpha sorting, no anisotropic

@@ -7,8 +7,9 @@ around the emulator without knowing it.
 ## Starting
 
 `systems.conf` names a `run` command per system, with `%ROM%` the game's path (quoted) and `%SYSTEM%` the system's
-id. The commands are the launchers in `/usr/libexec/banana/`: `run-retroarch <core> <rom>`, `run-ps1` (which picks
-SwanStation or PCSX-ReArmed from Settings and hands over), and `run-port` for PortMaster.
+id. The commands are the launchers in `/usr/libexec/banana/`: `run-retroarch <core> <rom>` for every RetroArch system
+(the PlayStation's SwanStation/PCSX-ReARMed and the Dreamcast's Flycast are set up inside it, keyed on the core that
+runs), and `run-port` for PortMaster.
 
 Before the launcher runs, banana-ui has:
 
@@ -105,12 +106,13 @@ write -- an update, a Wi-Fi join, the account check -- and the menu reads on its
 
 ## The PlayStation
 
-`run-ps1` picks the core from `core.psx`: **SwanStation** (DuckStation's libretro core, the default) or
-**PCSX-ReArmed**. SwanStation's renderer is its own option; Banana writes **Vulkan at 5x** (the panel's own 1080p),
-which runs at 60 fps through Turnip -- where its software renderer and the freedreno OpenGL path both fell short.
-PCSX-ReArmed is the ari64 dynarec with its NEON rasterizer, the lighter of the two. RetroArch's integer scaler is
-off for SwanStation, which fills its own 4:3 viewport. A core override saved from RetroArch's own menu can't take
-the panel settings away: `run-ps1` drops `video_monitor_index` and `stdin_cmd_enable` from it.
+`run-retroarch` picks the core from `core.psx`: **SwanStation** (DuckStation's libretro core, the default) or
+**PCSX-ReArmed** (the fallback if SwanStation is not installed). SwanStation's renderer is its own option; Banana
+writes **Vulkan at 4x** (1280x960, already past the 4:3 area on the 1240x1080 panel), which runs at 60 fps through
+Turnip -- where its software renderer and the freedreno OpenGL path both fell short, and where 5x only adds a
+downscale pass. PCSX-ReArmed is the ari64 dynarec with its NEON rasterizer, the lighter of the two. RetroArch's
+integer scaler is off for SwanStation, which fills its own 4:3 viewport. A core override saved from RetroArch's own
+menu can't take the panel settings away: `run-retroarch` drops `video_monitor_index` and `stdin_cmd_enable` from it.
 
 `run-retroarch` runs **every** core on Vulkan (the a613 through Mesa's Turnip) -- except Dreamcast, below: the games and their shaders share
 one driver, whose shader backend is Slang. A core that asks for OpenGL -- the N64 core's GLideN64 -- is no problem:
@@ -126,7 +128,7 @@ it starts.
 
 ## The Dreamcast
 
-**Flycast** is the core (`systems.conf`'s `[dreamcast]`, run by `run-dreamcast`). It needs a real BIOS --
+**Flycast** is the core (`systems.conf`'s `[dreamcast]`, run by `run-retroarch flycast`). It needs a real BIOS --
 `dc_boot.bin` and `dc_flash.bin` in `banana/bios` on the card -- and reads `.chd`/`.gdi`/`.cdi` images. Master System
 and Game Gear are not Flycast: they share the Mega Drive's Genesis Plus GX core (`systems.conf`'s `[mastersystem]`
 and `[gamegear]`). Four things are Banana's rather than the core's:
@@ -141,16 +143,16 @@ and `[gamegear]`). Four things are Banana's rather than the core's:
 - **The triggers are on the shoulders.** The Dreamcast's L/R are analogue *triggers* (Crazy Taxi's brake and
   accelerator), and Flycast reads them from the RetroPad's **L2/R2**, not its L/R -- which it reads as the Dreamcast's
   digital C/Z (`shell/libretro/libretro.cpp`, `lt[port] = get_analog_trigger(..., RETRO_DEVICE_ID_JOYPAD_L2)`).
-  `run-dreamcast` writes a core remap (`/data/retroarch/remaps/Flycast/Flycast.rmp`) swapping the two shoulder pairs,
+  `run-retroarch` writes a core remap (`/data/retroarch/remaps/Flycast/Flycast.rmp`) swapping the two shoulder pairs,
   so **L1/R1** work them, and leaves it alone once RetroArch has one (RetroArch rewrites that file itself whenever a
   core remap is active). Two traps in its format: a remap file spells its keys `input_playerN_btn_<name>`, the
   *opposite* order from an autoconfig's `input_playerN_<name>_btn`, and its values are RetroPad ids (L=10, R=11,
   L2=12, R2=13) rather than physical button indices.
 - **No analogue stick.** The RPC is a stickless slate, so the d-pad drives the emulated left stick (RetroArch's
-  "Analog to Digital", `input_player1_analog_dpad_mode=1`, which `run-dreamcast` sets), and **F + B** toggles it while
+  "Analog to Digital", `input_player1_analog_dpad_mode=1`, which `run-retroarch` sets), and **F + B** toggles it while
   a game runs -- bananad writes `TOGGLE_ANALOG_DPAD` to RetroArch's command FIFO, the command the RetroArch patch
   adds.
-- `Flycast.opt` (`/usr/share/banana/cores/`, written once by `run-dreamcast` into the core's own config) is ROCKNIX's
+- `Flycast.opt` (`/usr/share/banana/cores/`, written once by `run-retroarch` into the core's own config) is ROCKNIX's
   for this SoC: native 640x480, no texture upscaling, the fast alpha sorting, no anisotropic filtering, the renderer
   on its own thread, and **auto skip frame on** (`some`) so a frame the a613 cannot draw is dropped rather than
   stalling the emulation thread.
