@@ -58,6 +58,7 @@
   - `make -s bench`: Headless 600-game UI benchmark (compare against `docs/PERFORMANCE.md`).
   - `system/bananad/tests/sleep-test.sh`: Namespace-isolated mock `/sys` suspend/wake test.
   - `tools/qemu-boot.sh`: Boots full image in QEMU `virt` (`Virtual-1`, virtio input/GPU, tests A/B update & measures RAM/CPU into `resources-*.txt`).
+  - **CI (`.github/workflows/ci.yml`):** `checks` (the host tests above, `bananad` native+aarch64, the sleep test, `sh -n` on every launcher, the defconfig-preservation check) and `cores` — a change-gated Buildroot build of whichever `libretro-*` packages changed, so an upstream or pin break fails on the pull request; the SD card `image` and `boot` jobs run on dispatch.
 - **Board Package:** `buildroot/board/retroid-pocket-classic` (pinned ROCKNIX SM4450 patches, DTs, `linux-banana.fragment`, audio topology, OpenABL).
 
 ## 8. USB Device Link (development)

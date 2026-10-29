@@ -8,6 +8,10 @@ on:
         description: "Also build the SD card images (an hour or more)"
         type: boolean
         default: false
+      cores_all:
+        description: "Build every libretro core (not just the changed ones)"
+        type: boolean
+        default: false
 
 jobs:
   checks:
@@ -38,6 +42,90 @@ jobs:
               grep -qxF "$l" /tmp/out-$d/.config || { echo "$d drops: $l"; exit 1; }
             done
           done
+
+  # The libretro cores that changed: a core that stops compiling (a bad pin, an upstream break) should fail on the
+  # pull request, not at the next image build. Buildroot builds the real package -- its own download, its .mk, its
+  # Makefile/cmake, the aarch64 toolchain -- so this is the whole plumbing, not a re-implementation of it. The
+  # toolchain is why it is one job and not a per-core matrix (a matrix leg would rebuild it every time); it is also
+  # why the job is gated: it runs only when a core package (or something that decides which cores exist) changed, so
+  # most pull requests skip it. Downloads and the compiler cache are shared with the image job.
+  cores:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      BR2_DL_DIR: ${{ github.workspace }}/dl
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Which cores changed
+        id: changed
+        run: |
+          pkgs=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.cores_all }}" = "true" ]; then
+            pkgs=all
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              base="${{ github.event.pull_request.base.sha }}"; head="${{ github.sha }}"
+            else
+              base="${{ github.event.before }}"; head="${{ github.sha }}"
+            fi
+            files=""
+            if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+              files=$(git diff --name-only "$base" "$head")
+            fi
+            # a change to which cores exist, or how they are built, rebuilds them all
+            if printf '%s\n' "$files" | grep -qE 'buildroot/(external\.mk|Config\.in|configs/|package/retroarch/)'; then
+              pkgs=all
+            else
+              pkgs=$(printf '%s\n' "$files" | sed -n 's#^buildroot/package/\(libretro-[^/]*\)/.*#\1#p' | sort -u | tr '\n' ' ')
+            fi
+          fi
+          echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
+          echo "cores to build: ${pkgs:-none}"
+      - name: Packages
+        if: steps.changed.outputs.pkgs != ''
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev unzip rsync cpio file wget python3-dev swig libgnutls28-dev
+      - name: Restore downloads
+        if: steps.changed.outputs.pkgs != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: dl
+          key: dl-cores-${{ github.run_id }}
+          restore-keys: dl-
+      - name: Restore compiler cache
+        if: steps.changed.outputs.pkgs != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.buildroot-ccache
+          key: ccache-cores-${{ github.run_id }}
+          restore-keys: ccache-cores-
+      - name: Build the changed cores
+        if: steps.changed.outputs.pkgs != ''
+        run: |
+          make .buildroot/.banana-patched
+          make -s -C .buildroot BR2_EXTERNAL="$PWD/buildroot" O="$PWD/output/cores" banana_retroid_pocket_classic_defconfig
+          pkgs="${{ steps.changed.outputs.pkgs }}"
+          if [ "$pkgs" = all ]; then pkgs="$(cd buildroot/package && ls -d libretro-* | tr '\n' ' ')"; fi
+          echo "building: $pkgs"
+          for p in $pkgs; do
+            echo "::group::$p"
+            make -C output/cores "$p"
+            echo "::endgroup::"
+          done
+          echo "cores installed:"; ls -l output/cores/target/usr/lib/libretro/
+      - name: Save downloads
+        if: always() && steps.changed.outputs.pkgs != ''
+        uses: actions/cache/save@v4
+        with:
+          path: dl
+          key: dl-cores-${{ github.run_id }}
+      - name: Save compiler cache
+        if: always() && steps.changed.outputs.pkgs != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.buildroot-ccache
+          key: ccache-cores-${{ github.run_id }}
 
   image:
     if: github.event_name == 'workflow_dispatch' && inputs.image
