@@ -94,6 +94,11 @@ name them like `"cherry/top.png"`.
 Pictures are PNG or JPEG, at most 4096 pixels a side. A file that is missing simply keeps the normal look for that
 one part. Sounds change the next time the menu starts.
 
+The RNDS theme's own system icons are 32×32 pixel art (transparent background, a 1px outline, flat fills) under
+`ui/assets/rnds/icons/`, picked per system by `ui/assets/rnds/systems.cfg`. The drawn ones (and the dedicated
+`gamegear`, `dreamcast`, `pcengine`, `atari2600`, `c64`, `zxspectrum`) come from `tools/gen-icons.py`, which writes
+them from code so they stay consistent; run it with no arguments to redraw them in place.
+
 ## 2. The big one: rearrange the menu
 
 Everything so far changes colours and files. A theme that *also* has a `screens` section draws the whole menu
