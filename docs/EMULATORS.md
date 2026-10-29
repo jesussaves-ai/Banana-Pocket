@@ -175,3 +175,20 @@ system says.
 
 Fuse takes no RetroAchievements (its `.info` has memory monitoring off), so the only setting that touches it is the
 core pick, which is not offered: it is the one Spectrum core in the image.
+
+## The PC Engine, the Atari 2600 and the Commodore 64
+
+Three more systems run their libretro cores through `run-retroarch` with no per-system setup of their own:
+
+- **PC Engine / TurboGrafx-16** (`[pcengine]`, `mednafen_pce_fast` -- Beetle PCE Fast): HuCards and PC Engine CD. A
+  CD game needs its System Card BIOS in `banana/bios` (RetroArch's system directory): `syscard3.pce` (Super CD-ROM2)
+  for most games, `syscard2.pce` or `syscard1.pce` for the older ones. A PCE pad is a d-pad and two buttons, which is
+  what this handheld has.
+- **Atari 2600** (`[atari2600]`, `stella2014`): one stick and one button -- the whole Atari 2600 pad -- on Stella
+  2014, the libretro port's own lightweight build rather than the later full Stella.
+- **Commodore 64** (`[c64]`, `vice_x64` -- VICE's x64 machine): disks (`.d64`), tapes (`.t64`/`.tap`) and cartridges
+  (`.crt`) load straight from the file. The d-pad and A drive the joystick; SELECT raises RetroArch's keyboard, and
+  VICE's own on-screen keyboard is there too, for the games that want a typed command.
+
+All three are software cores, so their `perf` is `powersave` (the A55 cluster alone). None takes RetroAchievements,
+and none needs a Settings row: each is the one core the image ships for its system.

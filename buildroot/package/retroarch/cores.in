@@ -100,6 +100,26 @@ config BR2_PACKAGE_LIBRETRO_FUSE
 	  ZX Spectrum, with Fuse: the 48K, the 128K and the +2/+3, plus the
 	  Timex, the Pentagon and the Scorpion clones.
 
+config BR2_PACKAGE_LIBRETRO_BEETLE_PCE_FAST
+	bool "libretro-beetle-pce-fast"
+	default y
+	help
+	  PC Engine and TurboGrafx-16 (HuCard and PC Engine CD), with
+	  Beetle PCE Fast.
+
+config BR2_PACKAGE_LIBRETRO_STELLA2014
+	bool "libretro-stella2014"
+	default y
+	help
+	  Atari 2600, with Stella 2014 (a software core, one stick and one
+	  button).
+
+config BR2_PACKAGE_LIBRETRO_VICE
+	bool "libretro-vice"
+	default y
+	help
+	  Commodore 64, with VICE (the x64 machine).
+
 config BR2_PACKAGE_LIBRETRO_FAKE08
 	bool "libretro-fake08"
 	default y
