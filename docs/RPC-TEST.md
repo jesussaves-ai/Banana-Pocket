@@ -50,6 +50,15 @@ internal Android is there.
 - [ ] The fan spins up under a game and settles when idle (`/sys/class/hwmon/*/pwm1`)
 - [ ] Nothing gets too hot after 10 minutes of a N64/PSX game
 
+Profile it rather than guess. Copy `tools/rpc-thermals.sh` to the card and run it while the game plays, then send the
+log back (a line a second: every thermal zone, the fan's duty and tachometer, the CPU clusters' clock and the GPU's):
+
+    scp tools/rpc-thermals.sh root@169.254.170.2:/data/
+    ssh root@169.254.170.2 sh /data/rpc-thermals.sh 600 > thermals.txt
+
+The curve itself is in the rev Q DTS (`.../sm4450-retroid-pocket-classic-revq.dts`): off below 60 C, then 60/120/180/255
+of the fan's range at 60/70/80/88 C, `step_wise`. Tune the trips there and rebuild.
+
 ## Card and data
 
 - [ ] Games on the card's `banana-data` partition show in the library

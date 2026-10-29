@@ -71,7 +71,7 @@ verifies, writes the *inactive* slot, reads back, then rewrites `DEFAULT` (`Prev
 | Menu core | `ui/src/main.cpp` (main loop, launch/handover, iris), `library.cpp` (Source), `soft.cpp` (Backend), `kms.cpp` (Display), `turn.h` (rotation), `input.cpp`, `sound.cpp`, `settings.cpp`, `splash.cpp`, `wifi.cpp`, `carts.cpp`/`cart3d.cpp` |
 | Imported engine | `ui/rnds/RndsUI.cpp`, `ui/rnds/RndsRaster.cpp` |
 | Game contract | `system/rootfs/etc/banana/systems.conf` + `usr/libexec/banana/run-*` |
-| Tests | `ui/tests/run.sh` (+ `fixture.sh`, `bench.sh`, `turn-test.cpp`), `tools/check-systems.py`, `system/tests/run-retroarch-test.sh`, `system/bananad/tests/sleep-test.sh`, `tools/qemu-boot.sh` |
+| Tests | `ui/tests/run.sh` (+ `fixture.sh`, `bench.sh`, `turn-test.cpp`), `tools/check-systems.py`, `system/tests/run-retroarch-test.sh`, `system/tests/rpc-thermals-test.sh`, `system/bananad/tests/sleep-test.sh`, `tools/qemu-boot.sh` |
 
 ## 6. Testing surface
 

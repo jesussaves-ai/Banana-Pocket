@@ -9,8 +9,8 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist).
 
 ## Next (Active Targets)
 - [ ] **Sleep/Wake Optimization:** Profile on hardware (`sleep_debug = yes`). Cut panel power-on & SD re-init latency (evaluate `MMC_CAP_RUNTIME_RESUME`), test keeping Wi-Fi module loaded across suspend, measure overnight standby drain.
-- [ ] **Wi-Fi Firmware:** Verify/add any missing `WCN3950` `ath10k` board/firmware blobs.
-- [ ] **Thermals & Fan:** Tune `pwm_fan` curve and profile thermals under sustained 10m+ N64/PSX load.
+- [x] **Wi-Fi Firmware:** the WCN3950 `ath10k` blobs (`ath10k/WCN3990/hw1.0/{firmware-5.bin,board-2.bin,wlanmdsp.mbn}`) and the WPSS firmware are in the board's `firmware/`, and `rcS` `modprobe ath10k_snoc` (verified against the driver's path in `linux-custom`). On-unit Wi-Fi association still to confirm.
+- [ ] **Thermals & Fan:** Tune `pwm_fan` curve and profile thermals under sustained 10m+ N64/PSX load (`tools/rpc-thermals.sh`).
 - [ ] **PipeWire (Deferred/Optional):** Needs SoC UCM2 profile + `libudev-zero`/`udev-virtual` integration before replacing direct ALSA (see `docs/RPC-PORT.md`).
 
 ## Later

@@ -2,8 +2,8 @@
 #
 #   make retroid-pocket-classic   the SD card image   -> output/retroid-pocket-classic/images/banana-retroid-pocket-classic.img.gz
 #   make ui                       banana-ui for this computer (headless renders, no panel needed)
-#   make test                     checks systems.conf/launchers/cores and runs the launcher test, then renders the
-#                                 menu headless from a test library and checks it (needs ImageMagick)
+#   make test                     checks systems.conf/launchers/cores and runs the launcher and thermals tests, then
+#                                 renders the menu headless from a test library and checks it (needs ImageMagick)
 #   make bench                    a host measurement baseline (scan/start-up/frame cost) at both canvas sizes
 #   make local-rebuild            rebuild the in-tree packages (banana-ui, bananad) before a board build
 #   make menuconfig-retroid-pocket-classic / linux-menuconfig-retroid-pocket-classic ...   any Buildroot target
@@ -76,6 +76,7 @@ ui:
 test: ui
 	tools/check-systems.py
 	system/tests/run-retroarch-test.sh
+	system/tests/rpc-thermals-test.sh
 	ui/tests/run.sh
 
 # a host-only measurement baseline (the library scan, the menu's start-up and the frame cost) at both canvas

@@ -46,7 +46,9 @@ BR2_TARGET_ROOTFS_SQUASHFS4_LZ4=y
 BR2_PACKAGE_HOST_GENIMAGE=y
 BR2_PACKAGE_HOST_DOSFSTOOLS=y
 BR2_PACKAGE_HOST_MTOOLS=y
-# firmware: Wi-Fi (RTL8821CS) and its regulatory database
+# firmware: the GPU (Adreno) and Venus come from linux-firmware; the Wi-Fi is the WCN3950's ath10k blobs, which ship
+# with the board (firmware/ath10k/WCN3990/hw1.0, installed by post-build.sh) -- the path the qcom,wcn3990-wifi driver
+# asks for. The RPC's WLAN is WCN3950/ath10k_snoc, not the RG DS's RTL8821CS. The regulatory database is its own package.
 BR2_PACKAGE_LINUX_FIRMWARE=y
 BR2_PACKAGE_LINUX_FIRMWARE_QCOM_ADRENO=y
 BR2_PACKAGE_LINUX_FIRMWARE_QCOM_VENUS=y
