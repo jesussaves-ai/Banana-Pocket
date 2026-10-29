@@ -1,0 +1,69 @@
+From: Banana <bananalinux@proton.me>
+Date: Thu, 29 Oct 2026 15:00:00 +0000
+Subject: [PATCH] command: TOGGLE_ANALOG_DPAD, for a handheld with no analogue stick
+
+The Retroid Pocket Classic is a stickless slate -- a d-pad, four face buttons
+and the shoulders, no analogue stick. RetroArch's "Analog to Digital" (the
+per-port input_analog_dpad_mode) is what makes a game that reads only the
+analogue stick playable: the d-pad drives the emulated left stick. But there is
+no hotkey and no command for it, only the Quick Menu's Controls page, which is
+not reachable from inside every game.
+
+This adds a command to the stdin/network interface banana already drives
+(bananad writes /run/banana/retroarch.cmd): TOGGLE_ANALOG_DPAD toggles player 1
+between the d-pad and "the d-pad drives the analogue stick", and says which on
+screen. bananad sends it on F + B while a game runs.
+
+Upstream-Status: Inappropriate [a specific handheld's controls]
+---
+--- a/command.h
++++ b/command.h
+@@ -426,6 +426,7 @@
+ bool command_get_status(command_t *cmd, const char* arg);
+ bool command_get_config_param(command_t *cmd, const char* arg);
+ bool command_show_osd_msg(command_t *cmd, const char* arg);
++bool command_toggle_analog_dpad(command_t *cmd, const char* arg);
+ bool command_load_state_slot(command_t *cmd, const char* arg);
+ bool command_play_replay_slot(command_t *cmd, const char* arg);
+ bool command_seek_replay(command_t *cmd, const char *arg);
+@@ -466,6 +467,7 @@
+ 
+    { "LOAD_CORE", command_load_core, "<core path>"},
+    { "AUDIO_REINIT", command_audio_reinit, "No argument"},
++   { "TOGGLE_ANALOG_DPAD", command_toggle_analog_dpad, "No argument"},
+ };
+ 
+ static const struct cmd_map map[] = {
+--- a/command.c
++++ b/command.c
+@@ -744,6 +744,30 @@
+     return true;
+ }
+ 
++
++
++/* The d-pad and the emulated left analogue stick: a handheld with no analogue stick (the Retroid Pocket Classic)
++ * can have RetroArch's "Analog to Digital" drive the stick from the d-pad, which is what a game that reads only the
++ * stick needs. banana's bananad sends this on F + B in a running game. */
++bool command_toggle_analog_dpad(command_t *cmd, const char* arg)
++{
++   settings_t *settings = config_get_ptr();
++   const char *msg      = NULL;
++
++   if (settings->uints.input_analog_dpad_mode[0] == ANALOG_DPAD_LSTICK)
++   {
++      settings->uints.input_analog_dpad_mode[0] = ANALOG_DPAD_NONE;
++      msg = "The d-pad is the d-pad";
++   }
++   else
++   {
++      settings->uints.input_analog_dpad_mode[0] = ANALOG_DPAD_LSTICK;
++      msg = "The d-pad is the analogue stick";
++   }
++   runloop_msg_queue_push(msg, strlen(msg), 1, 180, false, NULL,
++         MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
++   return true;
++}
+ 
+ bool command_load_state_slot(command_t *cmd, const char *arg)
+ {

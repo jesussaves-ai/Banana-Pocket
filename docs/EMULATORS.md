@@ -89,7 +89,7 @@ PCSX-ReArmed is the ari64 dynarec with its NEON rasterizer, the lighter of the t
 off for SwanStation, which fills its own 4:3 viewport. A core override saved from RetroArch's own menu can't take
 the panel settings away: `run-ps1` drops `video_monitor_index` and `stdin_cmd_enable` from it.
 
-`run-retroarch` runs **every** core on Vulkan (the a613 through Mesa's Turnip): the games and their shaders share
+`run-retroarch` runs **every** core on Vulkan (the a613 through Mesa's Turnip) -- except Dreamcast, below: the games and their shaders share
 one driver, whose shader backend is Slang. A core that asks for OpenGL -- the N64 core's GLideN64 -- is no problem:
 RetroArch forces `glcore` for that core by itself (a libretro core's hardware context comes from the video driver,
 and `gfx/video_driver.c` switches to the one the core's context asks for), so N64 keeps its GL and the rest run on
@@ -100,3 +100,34 @@ place of the `khr_display`/`kms` pair it used when it took the panel itself. Tha
 be built with Wayland WSI (`BUILD_WSI_WAYLAND_SUPPORT`) and Mesa with the `wayland` platform, or the instance has no
 `VK_KHR_wayland_surface` and RetroArch gives up on the video driver and exits -- the game is back in the menu before
 it starts.
+
+## The Dreamcast
+
+**Flycast** is the core (`systems.conf`'s `[dreamcast]`, run by `run-dreamcast`). It needs a real BIOS --
+`dc_boot.bin` and `dc_flash.bin` in `banana/bios` on the card -- and reads `.chd`/`.gdi`/`.cdi` images. Master System
+and Game Gear are not Flycast: they share the Mega Drive's Genesis Plus GX core (`systems.conf`'s `[mastersystem]`
+and `[gamegear]`). Four things are Banana's rather than the core's:
+
+- **glcore, not Vulkan (Dreamcast only).** Flycast is the one core this handheld cannot quite hold: sampled on the
+  unit, its emulation thread spends most of its time in Flycast's own render-thread wait (a futex) with the GPU
+  already at its top step, the console runs 55-60 fps, and the sound comes out choppy -- with no ALSA underrun at all,
+  because the renderer is what paces the emulation. ROCKNIX runs this SoC on `glcore` (freedreno's GLES) for the same
+  reason, and Flycast keeps a GLES renderer when the frontend asks for GL instead of Vulkan, so `run-retroarch` gives
+  this one system `glcore`. glcore's shader backend is GLSL rather than Slang, so the Slang preset Banana would apply
+  cannot load under it and the shader is left off for Dreamcast (the preset file is untouched).
+- **The triggers are on the shoulders.** The Dreamcast's L/R are analogue *triggers* (Crazy Taxi's brake and
+  accelerator), and Flycast reads them from the RetroPad's **L2/R2**, not its L/R -- which it reads as the Dreamcast's
+  digital C/Z (`shell/libretro/libretro.cpp`, `lt[port] = get_analog_trigger(..., RETRO_DEVICE_ID_JOYPAD_L2)`).
+  `run-dreamcast` writes a core remap (`/data/retroarch/remaps/Flycast/Flycast.rmp`) swapping the two shoulder pairs,
+  so **L1/R1** work them, and leaves it alone once RetroArch has one (RetroArch rewrites that file itself whenever a
+  core remap is active). Two traps in its format: a remap file spells its keys `input_playerN_btn_<name>`, the
+  *opposite* order from an autoconfig's `input_playerN_<name>_btn`, and its values are RetroPad ids (L=10, R=11,
+  L2=12, R2=13) rather than physical button indices.
+- **No analogue stick.** The RPC is a stickless slate, so the d-pad drives the emulated left stick (RetroArch's
+  "Analog to Digital", `input_player1_analog_dpad_mode=1`, which `run-dreamcast` sets), and **F + B** toggles it while
+  a game runs -- bananad writes `TOGGLE_ANALOG_DPAD` to RetroArch's command FIFO, the command the RetroArch patch
+  adds.
+- `Flycast.opt` (`/usr/share/banana/cores/`, written once by `run-dreamcast` into the core's own config) is ROCKNIX's
+  for this SoC: native 640x480, no texture upscaling, the fast alpha sorting, no anisotropic filtering, the renderer
+  on its own thread, and **auto skip frame on** (`some`) so a frame the a613 cannot draw is dropped rather than
+  stalling the emulation thread.

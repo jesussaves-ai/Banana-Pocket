@@ -1232,6 +1232,17 @@ static void open_inputs(void)
 	closedir(d);
 }
 
+/* A command to a running RetroArch game: its stdin command interface, through the FIFO run-retroarch holds open
+ * (bananad's volume keys already write to it). Nothing happens when no game runs -- the FIFO is not there. */
+static void ra_cmd(const char *cmd)
+{
+	int fd = open("/run/banana/retroarch.cmd", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0) return;
+	if (write(fd, cmd, strlen(cmd)) < 0) {}
+	if (write(fd, "\n", 1) < 0) {}
+	close(fd);
+}
+
 static void handle(const struct input_event *e)
 {
 	double now = mono();
@@ -1251,6 +1262,11 @@ static void handle(const struct input_event *e)
 	switch (e->code) {
 	case BTN_MODE: fn_held = e->value; break;
 	case BTN_SELECT: select_held = e->value; break;
+	/* F (MODE, the button under the screen) + B, in a running game: the d-pad toggles between the d-pad and the
+	 * analogue stick (RetroArch's TOGGLE_ANALOG_DPAD, the command banana's RetroArch patch adds). The RPC has no
+	 * analogue stick, so this is what lets a game that reads only the stick -- a Dreamcast racer -- be played with
+	 * the d-pad, and hands the d-pad back for a game that wants it as a d-pad. */
+	case BTN_SOUTH: if (e->value && fn_held) ra_cmd("TOGGLE_ANALOG_DPAD"); break;
 	case KEY_POWER:
 		if (now < ignore_power_until) break;
 		/* The menu's burn-in guard has the screen dimmed or blanked (/run/banana/screen-off): this press is to wake

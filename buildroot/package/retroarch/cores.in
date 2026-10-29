@@ -99,6 +99,14 @@ config BR2_PACKAGE_LIBRETRO_FAKE08
 	help
 	  PICO-8 carts (.p8 and .p8.png), when the official PICO-8 isn't on the card.
 
+config BR2_PACKAGE_LIBRETRO_FLYCAST
+	bool "libretro-flycast"
+	default y
+	help
+	  Sega Dreamcast (and Naomi/Atomiswave), with Flycast. A real BIOS
+	  (dc_boot.bin and dc_flash.bin) goes in banana/bios on the card; without
+	  one, set the core's "HLE BIOS" option (many games are unhappy on it).
+
 config BR2_PACKAGE_RETROARCH_SLANG_SHADERS
 	bool "retroarch-slang-shaders"
 	default y

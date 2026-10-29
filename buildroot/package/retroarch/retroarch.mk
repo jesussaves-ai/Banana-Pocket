@@ -19,7 +19,7 @@ RETROARCH_EXTRA_DOWNLOADS = \
 
 # what a handheld with a KMS panel and no display server needs (built and linked for aarch64 with these options)
 RETROARCH_CONF_OPTS = --prefix=/usr \
-	--disable-x11 --enable-wayland --disable-pulse --disable-oss --disable-jack --disable-qt \
+	--disable-x11 --enable-wayland --disable-pulse --disable-pipewire --disable-oss --disable-jack --disable-qt \
 	--disable-ffmpeg --disable-sdl --disable-sdl2 --disable-systemd --disable-discord --disable-cdrom \
 	--disable-materialui --disable-xmb --enable-ozone --enable-rgui \
 	--enable-kms --enable-egl --enable-opengles --enable-opengles3 --enable-vulkan --enable-vulkan_display --enable-alsa --enable-udev --enable-freetype \

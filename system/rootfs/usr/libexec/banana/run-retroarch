@@ -112,6 +112,18 @@ else
 	if [ -n "$vk" ]; then drv=vulkan; ctx=khr_display; else drv=gl; ctx=kms; fi
 	rot=3
 fi
+# Dreamcast: Flycast is the one core this handheld cannot quite hold, and its renderer is what paces it. Sampled on
+# the unit, the emulation thread sits in Flycast's own render-thread wait (a futex) while the GPU is already at its
+# top step and the console runs 55-60 fps -- and the sound comes out choppy, with no ALSA underrun at all. ROCKNIX
+# runs this SoC on glcore (freedreno's GLES) rather than Turnip for exactly this, and Flycast keeps a GLES renderer
+# when the frontend asks for GL instead of Vulkan, so this one system gets glcore. glcore's shader backend is GLSL,
+# not Slang, so the Slang preset Banana applies cannot load under it: the shader is turned off for it below (the
+# enable flag only -- the preset file is left alone).
+glc=
+case $BANANA_SYSTEM in dreamcast) glc=1 ;; esac
+if [ -n "$glc" ]; then
+	if [ -x /usr/bin/cage ]; then drv=glcore; ctx=wayland; else drv=gl; ctx=kms; fi
+fi
 set_cfg video_driver $drv
 set_cfg video_context_driver $ctx
 set_cfg video_rotation $rot
@@ -213,6 +225,8 @@ if [ "$(cat $MARK 2>/dev/null)" != "$look" ]; then
     fi
     printf '%s' "$look" > $MARK
 fi
+# A system on glcore (Dreamcast, above) cannot run the Slang preset: leave the shader off for it, the file untouched.
+[ -n "$glc" ] && set_cfg video_shader_enable false
 # Settings > Other systems > Audio latency and VSync: Banana's values written into RetroArch's config before it starts
 # (a change made in RetroArch's own menu afterwards is kept until the setting is changed here again)
 lat=$(setting ra_audio_latency)

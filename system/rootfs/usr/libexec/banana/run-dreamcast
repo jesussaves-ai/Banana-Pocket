@@ -1,0 +1,46 @@
+#!/bin/sh
+# Dreamcast: Flycast, the one core this system has. run-retroarch owns the panel, the shader, the saves and
+# RetroAchievements; this launcher only writes Flycast's own defaults once and hands over.
+#   run-dreamcast <rom>
+#
+# A real Dreamcast BIOS is required: dc_boot.bin and dc_flash.bin in banana/bios on the card (RetroArch's system
+# directory). Without one, turn on the core's "HLE BIOS" option in RetroArch's own Core Options -- many games are
+# unhappy on the HLE BIOS, so a real one is worth copying over.
+R=/data/retroarch
+C=Flycast
+M=$R/.banana-dreamcast-1
+if [ ! -f "$M" ]; then
+    mkdir -p "$R/config/$C"
+    cp /usr/share/banana/cores/Flycast.opt "$R/config/$C/$C.opt"
+    # The RPC has no analogue stick (a stickless slate), and Flycast drives the Dreamcast's analogue stick from the
+    # RetroPad's left stick. RetroArch's "Analog to Digital" (input_player1_analog_dpad_mode=1) has the D-pad drive
+    # that stick *as well as* the Dreamcast's own D-pad, so a game that only reads the stick is still playable. (The
+    # RPC's autoconfig has a stale `input_analog_dpad_mode` line: RetroArch does not parse that key from an
+    # autoconfig, so it does nothing.) Written to the core's own config, so a change in RetroArch's menu is kept.
+    printf 'input_player1_analog_dpad_mode = "1"\n' > "$R/config/$C/$C.cfg"
+    touch "$M"
+fi
+# The Dreamcast's L/R are analogue *triggers* (Crazy Taxi's brake and accelerator), and Flycast reads them from the
+# RetroPad's L2/R2 -- not its L/R, which it reads as the Dreamcast's digital C/Z:
+# shell/libretro/libretro.cpp, `lt[port] = get_analog_trigger(..., RETRO_DEVICE_ID_JOYPAD_L2)`. On this handheld the
+# buttons a Dreamcast player reaches for are the shoulder pair (L1/R1), so swap the two pairs for this core: L1/R1
+# then work the Dreamcast's triggers and L2/R2 become its C/Z.
+#
+# A core remap, so no other system's shoulders change. Note the key spelling: a remap file writes
+# `input_playerN_btn_<name>` (configuration.c builds `input_player1_btn` and joins the button name to it, for both
+# loading and saving), the *opposite* order from the autoconfig's `input_playerN_<name>_btn` -- the latter is simply
+# ignored in a remap file. The values are RetroPad ids, not physical button indices (input_config_bind_order[]):
+# RetroPad L=10, R=11, L2=12, R2=13. RetroArch rewrites this file itself whenever a core remap is active, so write
+# ours when the line is missing rather than when the file is -- and a change made in RetroArch's own Controls menu
+# afterwards keeps the line and is left alone.
+RM=$R/remaps/$C
+if ! grep -q '^input_player1_btn_l = "12"' "$RM/$C.rmp" 2>/dev/null; then
+    mkdir -p "$RM"
+    cat > "$RM/$C.rmp" <<'EOF'
+input_player1_btn_l = "12"
+input_player1_btn_l2 = "10"
+input_player1_btn_r = "13"
+input_player1_btn_r2 = "11"
+EOF
+fi
+exec /usr/libexec/banana/run-retroarch flycast "$1"

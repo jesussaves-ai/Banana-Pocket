@@ -324,6 +324,8 @@ namespace banana
 			add(O, "gamepad", "Game Boy Color", "The emulator for Game Boy Color games. Gambatte: fast and accurate. SameBoy: the most accurate.", menu, "core.gbc", { "Gambatte", "SameBoy" }, { "gambatte", "sameboy" });
 		if (access("/usr/lib/libretro/genesis_plus_gx_libretro.so", F_OK) == 0)
 			add(O, "gamepad", "Mega Drive", "The emulator for Mega Drive games. PicoDrive: the lightest (32X too). Genesis Plus GX: more accurate for Mega CD.", menu, "core.megadrive", { "PicoDrive", "Genesis Plus GX" }, { "picodrive", "genesis_plus_gx" });
+		if (access("/usr/lib/libretro/genesis_plus_gx_libretro.so", F_OK) == 0)
+			add(O, "gamepad", "Game Gear", "The emulator for Game Gear games. Genesis Plus GX: more accurate. PicoDrive: the lightest (Mega Drive and 32X too).", menu, "core.gamegear", { "Genesis Plus GX", "PicoDrive" }, { "genesis_plus_gx", "picodrive" });
 		if (access("/usr/lib/libretro/parallel_n64_libretro.so", F_OK) == 0)
 			add(O, "gamepad", "Nintendo 64", "The emulator for N64 games. Mupen64Plus-Next: the usual choice, with its own GLideN64. ParaLLEl N64: the alternative.", menu, "core.n64", { "Mupen64Plus-Next", "ParaLLEl N64" }, { "mupen64plus_next", "parallel_n64" });
 		const char* W = "Network";
