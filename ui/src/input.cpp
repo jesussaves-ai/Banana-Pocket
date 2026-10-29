@@ -32,6 +32,10 @@ namespace banana
 		case BTN_START: case KEY_S: return Key::START;
 		case BTN_SELECT: case KEY_TAB: return Key::SELECT;
 		case BTN_MODE: case KEY_F1: return Key::MENU;
+		// The power button is bananad's (a short press sleeps, a hold shuts down) -- but it is also the obvious
+		// way to wake a screen the burn-in guard has blanked, and the guard's wake is the menu's, so the menu has
+		// to *see* the press. WAKE is not a menu button (uiButton ignores it), so it wakes and does nothing else.
+		case KEY_POWER: case KEY_SLEEP: case KEY_WAKEUP: return Key::WAKE;
 		default: return Key::NONE;
 		}
 	}

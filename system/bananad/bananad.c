@@ -704,7 +704,15 @@ static void audio_route(void)
 static void audio_setup(void)
 {
 	audio_find_cards();
+	/* The DSP builds this card's mixer controls a moment after the card itself binds (the frontends' "SENARY_..."
+	 * switches are what audio_find_cards looks for), and rcS starts us right after the card appears -- so they may
+	 * not be there yet. Everything below is gated on having found the card (the route, and the "PCM" the volume
+	 * keys and Settings > Volume drive), so look again for a few seconds rather than give the whole session up on
+	 * the first look. */
+	for (int i = 0; card_play >= 0 && card_ar < 0 && i < 40; i++) { usleep(100000); audio_find_cards(); }
 	if (card_play < 0) { audio_route(); return; }	/* no sound card at all (QEMU): nothing to set */
+	if (card_ar < 0) say("sound: no audioreach card (the volume keys and the route have nothing to drive)");
+	else say("sound: the audioreach card is %d", card_ar);
 	audio_route();
 	/* The RPC's DSP reads the routes when a stream is instantiated, which is why rcS puts them in before the menu
 	 * opens its own. rcS runs its own wait but gives up after 6 s, and a card that enumerated later than that leaves

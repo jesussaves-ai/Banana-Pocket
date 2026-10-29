@@ -193,7 +193,10 @@ card. `system/bananad/tests/sleep-test.sh` runs all of the above against a made-
 FIFO for `/sys/power/state`, real input events for the power key).
 
 Two idle minutes in the menu dim the panel (`dim_minutes`, `dim_percent`); the first press brings it back, and a
-game is never dimmed. bananad itself sleeps in `poll()` until something is due (the battery
+game is never dimmed. The menu's own burn-in guard (90 s dim, 180 s off) writes `/run/banana/screen-off` while the
+panel is dark, and a power press then *wakes* it rather than sleeping: bananad ignores power while that marker is
+there, and the menu maps `KEY_POWER` (as `Key::WAKE`, which is not a menu button, so it wakes and does nothing else).
+bananad itself sleeps in `poll()` until something is due (the battery
 look once a minute, the dim or sleep deadline, a pending save), so an idle handheld wakes it about once a minute.
 Hold power 2 s to shut down; the volume keys change the two amplifiers' level -- the system's volume -- wherever they
 are pressed, with the menu's own indicator (the pill at the top of the panel) and deliberately none over a game
