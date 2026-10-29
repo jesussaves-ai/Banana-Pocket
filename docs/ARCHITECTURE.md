@@ -52,7 +52,9 @@
 - **CPU Clusters:** Must apply governors to BOTH `policy0` (6x Cortex-A55) and `policy6` (2x Cortex-A78):
   - `ui`: `schedutil` (~1.4 GHz) | `powersave`: `schedutil` | `balanced`: `schedutil` (full) | `performance`: `performance`.
 - **Verification & Tooling:**
-  - `make -s test`: Host unit tests.
+  - `make -s test`: Host unit tests (`tools/check-systems.py`, the launcher test, then the headless UI test).
+  - `tools/check-systems.py`: Host check that every `systems.conf` system names an existing launcher and a core a buildroot package builds (the launchers/cores graph, without a device).
+  - `system/tests/run-retroarch-test.sh`: Host test of `run-retroarch`'s per-core defaults, config writes and RetroAchievements hand-off, from a path-rewritten copy (no root, no device).
   - `make -s bench`: Headless 600-game UI benchmark (compare against `docs/PERFORMANCE.md`).
   - `system/bananad/tests/sleep-test.sh`: Namespace-isolated mock `/sys` suspend/wake test.
   - `tools/qemu-boot.sh`: Boots full image in QEMU `virt` (`Virtual-1`, virtio input/GPU, tests A/B update & measures RAM/CPU into `resources-*.txt`).
