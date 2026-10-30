@@ -90,6 +90,9 @@ Screenshots and logs land in `qemu-out/`. For a window with the panel, use `--in
 Download the image, and the update package, from
 [the Releases page](https://github.com/jesussaves-ai/Banana-Pocket/releases).
 
+The full walkthrough — **the bootloader (`OpenABL`), the Android root/unlock step to install it, writing the card, and
+the first boot** — is **[`docs/INSTALL.md`](docs/INSTALL.md)**.
+
 Flash the image to a microSD card (the first three partitions; the data partition is made on first boot):
 
 ```sh
