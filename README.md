@@ -40,6 +40,26 @@ The kernel is built from ROCKNIX's SM4450 support, trimmed to what the device tr
 no cameras, no Bluetooth, no FUSE, no swap, no netsched. The modules that remain are the Wi-Fi and GPU ones,
 the AudioReach audio stack, the fan, file sharing and virtio for QEMU.
 
+## What it plays
+
+Twenty-one shelves, each with the libretro core it needs in the image (nothing to download):
+
+| | |
+|---|---|
+| Nintendo | Game Boy, Game Boy Color, Game Boy Advance, NES, Super Nintendo, Nintendo 64 |
+| Sega | Master System, Game Gear, Mega Drive/Genesis, Sega CD, Sega 32X, Dreamcast |
+| Sony | PlayStation |
+| NEC, SNK | PC Engine & PC Engine CD, Neo Geo Pocket Color |
+| Atari | Atari 2600, Atari Lynx |
+| Bandai | WonderSwan / Color |
+| Computers | Commodore 64, ZX Spectrum |
+| Ports | PortMaster |
+
+**RetroAchievements** is built in: the account from the first-time setup unlocks in-game, and when the menu comes
+back the achievements a game won appear as toasts (with the badge RetroArch downloaded) and the system's running
+total sits on the home shelf. **X** on a game opens its own options — the emulator and shader that one game runs
+with, and its **save states** to browse, delete or back up.
+
 ## Building it
 
 Buildroot does everything: the toolchain, the kernel, Mesa/freedreno, RetroArch and the cores, the
@@ -66,6 +86,9 @@ sh tools/qemu-boot.sh output/retroid-pocket-classic/images/banana-retroid-pocket
 Screenshots and logs land in `qemu-out/`. For a window with the panel, use `--interactive`.
 
 ### Running it on the handheld
+
+Download the image, and the update package, from
+[the Releases page](https://github.com/jesussaves-ai/Banana-Pocket/releases).
 
 Flash the image to a microSD card (the first three partitions; the data partition is made on first boot):
 
