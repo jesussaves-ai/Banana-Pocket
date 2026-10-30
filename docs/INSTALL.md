@@ -25,61 +25,57 @@ Power it **off**, then hold **Volume Down** and press **Power**.
 
 - **A menu appears** (its items include *Start*, *Boot mode*, *Device model*, *Boot source*) → **OpenABL is already
   there. Skip to Step 3.**
-- **Android boots** (or nothing does) → install OpenABL in Step 2.
+- **Android boots** (or nothing does) → install one in Step 2.
 
-OpenABL is a patched Qualcomm ABL with a graphical menu and a standard Linux boot: it is what reads
-`extlinux/extlinux.conf` from the card. Without it the handheld boots Android only.
+The bootloader Banana needs is a patched Qualcomm **ABL** with a menu and a standard Linux boot, so that it reads
+`extlinux/extlinux.conf` from the card. Without one the handheld boots Android only.
 
-## Step 2 — Install OpenABL (SM4450)
+## Step 2 — Install a Linux bootloader (SM4450)
 
-Download, from the OpenABL releases, the file **for this chipset** and its checksum:
+**Two different projects** provide it, and either works with Banana (the menu differs a little):
 
-- `abl_signed-SM4450.elf`
-- `abl_signed-SM4450.elf.sha256` — check it before flashing (`sha256sum -c`).
+- **OpenABL** — <https://github.com/OpenHandheldCollective/OpenABL> — the graphical menu; this is what Banana's docs
+  and current ROCKNIX SM4450 builds use. Its releases carry `abl_signed-SM4450.elf` (+ `.sha256`) and
+  `openabl-recovery-flashable-sm4450.zip`.
+- **ROCKNIX‑ABL** — <https://github.com/ROCKNIX/abl> — ROCKNIX's own, installed *from the device* with its
+  `update.sh` (or the `rocknix_abl` folder's `backup_abl.sh` / `flash_abl.sh` run as root from Android).
 
-<https://github.com/OpenHandheldCollective/OpenABL/releases>
+Whichever you pick, the image must be for **SM4450**, and check its `.sha256` before flashing.
 
-Then pick **one** of the three ways to put it on the handheld.
+### 2a. OpenABL with `fastboot` (the usual way)
 
-### 2a. From Android, as root — no unlock, Android data kept (recommended)
+Flashing ABL needs an **unlocked** bootloader. If yours isn't: Android → **Settings → System → Developer options** →
+**OEM unlocking**, then `fastboot flashing unlock` — **that erases Android's data**. Already unlocked, as yours is:
 
-Retroid's Android can run a script as root (its own **Handheld Settings → Advanced → "Run script as Root"**; the exact
-path varies by firmware), with no Magisk. This is how ROCKNIX installs its ABL on these handhelds, and it **backs up
-the current bootloader first**:
-
-1. Take the **`rocknix_abl`** folder from a ROCKNIX SM4450 SD card (or the equivalent OpenABL scripts), and copy it to
-   the **root of Android's internal storage**.
-2. Android → **Handheld Settings → Advanced → Run script as Root** → select `rocknix_abl/<SM4450>/backup_abl.sh` →
-   **Run**. It writes `abl_a.img` / `abl_b.img` next to the script — **copy those to your computer**; they are how you
-   get Android's own bootloader back.
-3. Run **`flash_abl.sh`** the same way.
-4. Power off, hold **Volume Down** + **Power** → the OpenABL menu → set *Boot mode* to **Linux** → *Start*.
-
-### 2b. With `fastboot` — unlocks the bootloader, wipes Android
-
-1. In Android: **Settings → About** → tap **Build number** seven times; then **Settings → System → Developer options**
-   → enable **OEM unlocking** (and **USB debugging**).
-2. `adb reboot bootloader` (or power off, hold **Volume Down**) → `fastboot devices` shows the handheld.
-3. `fastboot flashing unlock` — the handheld asks for confirmation; **this erases Android's user data**.
-4. Flash both slots:
+1. Download `abl_signed-SM4450.elf` and its `.sha256` from the OpenABL releases and check it (`sha256sum -c`).
+2. Power off; hold **Volume Down** and press **Power** → `fastboot devices` lists the handheld.
+3. Flash **both** A/B slots:
 
    ```sh
    fastboot flash abl_a abl_signed-SM4450.elf
    fastboot flash abl_b abl_signed-SM4450.elf
    ```
 
-5. `fastboot reboot`; hold **Volume Down** at power‑on for the menu.
+4. `fastboot reboot`; hold **Volume Down** at power‑on for the OpenABL menu (*Boot mode → Linux*, *Boot source →
+   Auto*, *Start*).
 
-### 2c. From a custom recovery
+### 2b. OpenABL from a custom recovery
 
-`openabl-recovery-flashable-sm4450.zip` (OpenABL releases) installs in a custom recovery such as TWRP. It writes ABL
-to both slots and adds an `addon.d` script that re‑flashes the other slot after an Android OTA.
+`openabl-recovery-flashable-sm4450.zip` in a custom recovery such as TWRP: it writes ABL to both slots and adds an
+`addon.d` script that re‑flashes the other slot after an Android OTA.
+
+### 2c. ROCKNIX‑ABL, from the device
+
+ROCKNIX's `update.sh` fetches its release and writes `/dev/disk/by-partlabel/abl_a` and `abl_b`; run it on the device
+(from its Linux, or from Android with root via **Handheld Settings → Advanced → "Run script as Root"**, or the
+`rocknix_abl` folder's **`backup_abl.sh` then `flash_abl.sh`**). **Back up first** — those scripts write `abl_a.img` /
+`abl_b.img`, which is how you restore the factory bootloader.
 
 ### If the flash goes wrong
 
-A bad ABL is recoverable: the handheld can always be put back through Qualcomm **EDL (9008)** with its own firmware,
-or Android's own bootloader restored with the `abl_a.img` / `abl_b.img` backup from 2a. This is why the backup is the
-first thing 2a does — and why the chipset must match.
+A bad ABL is recoverable through Qualcomm **EDL (9008)** with the device's own firmware, or from a backup of the ABL
+partitions (take one before flashing OpenABL too: from a root shell,
+`dd if=/dev/block/by-name/abl_a of=abl_a.img`). Getting the chipset wrong is the classic way to brick the device.
 
 ## Step 3 — Write the Banana card
 
@@ -135,9 +131,9 @@ before. Nothing on the data partition — games, saves, settings — is touched.
 
 ## Booting Android again, or uninstalling
 
-In the OpenABL menu set **Boot mode → Android**. Installing OpenABL does **not** remove Android. If you took the
-`fastboot` route (2b) or installed a custom recovery, Android's data was wiped and a backup (`abl_a.img` /
-`abl_b.img`) is your way back to the factory bootloader.
+In the bootloader menu set **Boot mode → Android**. Installing OpenABL (or ROCKNIX‑ABL) does **not** remove Android.
+If you unlocked the bootloader or installed a custom recovery along the way, Android's data was wiped then — not by
+installing the ABL — and an ABL backup (`abl_a.img` / `abl_b.img`) is your way back to the factory bootloader.
 
 ## When something is wrong
 
