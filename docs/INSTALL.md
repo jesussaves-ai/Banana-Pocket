@@ -44,8 +44,9 @@ Whichever you pick, the image must be for **SM4450**, and check its `.sha256` be
 
 ### 2a. OpenABL with `fastboot` (the usual way)
 
-Flashing ABL needs an **unlocked** bootloader. If yours isn't: Android → **Settings → System → Developer options** →
-**OEM unlocking**, then `fastboot flashing unlock` — **that erases Android's data**. Already unlocked, as yours is:
+The Retroid Pocket Classic's bootloader is **already unlocked**, so `fastboot` flashes the ABL straight away — there
+is no OEM‑unlocking step and nothing is wiped. (`fastboot getvar unlocked` says `unlocked: yes`; only a *locked*
+bootloader would need OEM unlocking and `fastboot flashing unlock`, which erases Android's data.)
 
 1. Download `abl_signed-SM4450.elf` and its `.sha256` from the OpenABL releases and check it (`sha256sum -c`).
 2. Power off; hold **Volume Down** and press **Power** → `fastboot devices` lists the handheld.
@@ -131,9 +132,9 @@ before. Nothing on the data partition — games, saves, settings — is touched.
 
 ## Booting Android again, or uninstalling
 
-In the bootloader menu set **Boot mode → Android**. Installing OpenABL (or ROCKNIX‑ABL) does **not** remove Android.
-If you unlocked the bootloader or installed a custom recovery along the way, Android's data was wiped then — not by
-installing the ABL — and an ABL backup (`abl_a.img` / `abl_b.img`) is your way back to the factory bootloader.
+In the bootloader menu set **Boot mode → Android**. Installing OpenABL (or ROCKNIX‑ABL) does **not** remove Android or
+its data — the bootloader is already unlocked and nothing is wiped to flash it. An ABL backup (`abl_a.img` /
+`abl_b.img`) is your way back to the factory bootloader.
 
 ## When something is wrong
 
