@@ -11,6 +11,7 @@ Banana's own code (ui/src, system/, buildroot/package, tools/) is under the MIT 
 | The SM4450 hardware layer: kernel patches, the Retroid Pocket Classic device trees, the kernel config, the ADSP/WPSS/ACF/QCA firmware and the audio topology | buildroot/board/retroid-pocket-classic | [ROCKNIX](https://github.com/ROCKNIX/distribution) `next`, imported 2026-10-27 | GPL-2.0 |
 | Mesa's freedreno driver, with the Adreno 613 entries Banana adds | the image's Mesa; buildroot/patches/mesa3d | [Mesa](https://gitlab.freedesktop.org/mesa/mesa) | MIT |
 | The RPC joypad's RetroArch autoconfig | system/rootfs/usr/share/libretro/autoconfig/udev/Retroid Pocket Classic Gamepad.cfg | Banana's own, from the rsinput driver's mapping | MIT |
+| The standalone Wii emulator: ROCKNIX's Wayland/evdev patches for Dolphin's nogui frontend, and the pinned commit they apply to | buildroot/package/dolphin | patches from [ROCKNIX](https://github.com/ROCKNIX/distribution) `projects/ROCKNIX/packages/emulators/standalone/dolphin-sa`; Dolphin from [dolphin-emu/dolphin](https://github.com/dolphin-emu/dolphin) @6094cfcf | GPL-2.0+ |
 | RetroArch's joypad autoconfigs for the pads people plug in (8BitDo, Xbox, PlayStation) | fetched at build time | [libretro/retroarch-joypad-autoconfig](https://github.com/libretro/retroarch-joypad-autoconfig) | per file, mostly GPL-2.0 |
 
 **OpenABL**, the arm-efi bootloader already in the handheld's `abl_a`/`abl_b` slots, is not built from or
@@ -19,6 +20,7 @@ it reads.
 
 Downloaded at build time, not kept here: RetroArch (GPL-3.0) and its cores (gpSP, Gambatte, FCEUmm, PCSX ReARMed,
 Mupen64Plus-Next, NEStopia, Snes9x, PicoDrive, Genesis Plus GX, bsnes, mGBA, SameBoy, Parallel N64, fake-08,
-SwanStation — the libretro core of DuckStation: GPL-3.0-or-later; per core, see each package), libretro's GLSL
+SwanStation — the libretro core of DuckStation: GPL-3.0-or-later; per core, see each package), the standalone Dolphin
+(GPL-2.0-or-later), libretro's GLSL
 shaders (per shader, mostly GPL/public domain), PortMaster (MIT), libudev-zero (ISC), Linux, Buildroot and its
 packages.

@@ -1,9 +1,9 @@
 #pragma once
 // banana-ui: the AMOLED burn-in guard. While the menu runs it owns the panel's backlight (bananad's own idle dim
-// leaves this backlight to us while /run/banana/panel-ui is there): after 90 s with no button or touch it drops to a
-// night level, after 180 s it turns the panel off, and the first press or touch restores it and is *swallowed*, so
-// waking the screen can never launch a game or change a setting. The backlight paths are passed in, so the headless
-// test can point them at files instead of /sys.
+// leaves this backlight to us while /run/banana/panel-ui is there): after bananad.conf's dim_minutes with no button
+// or touch it drops to dim_percent, 90 s later it turns the panel off, and the first press or touch restores it and
+// is *swallowed*, so waking the screen can never launch a game or change a setting. The backlight paths are passed
+// in, so the headless test can point them at files instead of /sys.
 #include "sound.h"
 #include <fstream>
 #include <string>
@@ -17,6 +17,14 @@ namespace banana
 		// brightness: the panel's .../brightness file; maximum: its .../max_brightness. Empty: no panel to guard.
 		void attach(const std::string& brightness, const std::string& maximum) { bl = brightness; blMax = maximum; ensureOn(); }
 		bool attached() const { return !bl.empty(); }
+		// bananad.conf's dim_minutes/dim_percent: 0 minutes disables the guard; blank is 90 s after dim
+		void configure(int minutes, int percent)
+		{
+			if (minutes <= 0) { dimMs = blankMs = -1; return; }
+			dimMs = minutes * 60000;
+			blankMs = dimMs + 90000;
+			dimPct = percent < 1 ? 1 : percent > 100 ? 100 : percent;
+		}
 		void input(double now) { lastInput = now; }
 		int stage() const { return st; }			// 0 awake, 1 dimmed, 2 blanked
 		int level() const { int c = -1; std::ifstream(bl) >> c; return c; }
@@ -25,6 +33,7 @@ namespace banana
 		bool tick(double now, Sound* sound)
 		{
 			int was = st;
+			if (dimMs <= 0) return false;
 			if (st == 0 && attached() && now - lastInput >= dimMs) dim(sound);
 			else if (st == 1 && now - lastInput >= blankMs) blank(sound);
 			return st != was;
@@ -32,7 +41,7 @@ namespace banana
 		// ms until the guard's next step, or -1 when there is none (blanked, or nothing attached)
 		int nextMs(double now) const
 		{
-			if (st == 2 || !attached()) return -1;
+			if (dimMs <= 0 || st == 2 || !attached()) return -1;
 			double due = lastInput + (st == 0 ? dimMs : blankMs);
 			int left = (int)(due - now) + 1;
 			return left < 1 ? 1 : left;
@@ -89,7 +98,7 @@ namespace banana
 		std::string bl, blMax;
 		double lastInput = 0;
 		int st = 0, savedBright = -1;
-		int dimMs = 90000, blankMs = 180000;
+		int dimMs = 90000, blankMs = 180000, dimPct = 5;	// the headless test's defaults; main() configures from bananad.conf
 		void write(int v) { if (!bl.empty()) { std::ofstream o(bl); o << v << "\n"; } }
 		void dim(Sound* sound)
 		{
@@ -100,7 +109,7 @@ namespace banana
 			if (cur >= 0 && max > 0)
 			{
 				savedBright = cur;
-				int v = max * 5 / 100; if (v < 1) v = 1;	// a 5% floor, still visible
+				int v = max * dimPct / 100; if (v < 1) v = 1;	// never a dead-looking panel
 				write(v);
 				std::ofstream("/run/banana/dim") << (cur * 1000 / max) << "\n";	// the level before, for Settings
 			}

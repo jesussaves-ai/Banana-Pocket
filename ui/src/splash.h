@@ -1,8 +1,8 @@
 #pragma once
 // banana-ui: the boot animation, from the first frame while the library is read on another thread.
-// One screen (the RPC's), so there is no second panel and no console/cartridge: the pixel bunch is at rest, BANANA
-// types itself in, a shine runs over the bananas and LOADING ticks until the menu takes over. The still layers are
-// tools/make-splash.mjs's.
+// One screen (the RPC's), so there is no second panel and no console/cartridge: the pixel bunch drops in from above
+// and clicks into place (the "insert" cue), BANANA types itself in, a shine runs over the bananas and LOADING ticks
+// until the menu takes over. The still layers are tools/make-splash.mjs's.
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -22,7 +22,7 @@ namespace banana
 		bool played() const { return W > 0; }
 		// ms until the next frame is different (16 while anything moves)
 		int nextFrame(double t, bool ready) const;
-		std::function<void(const std::string&)> onCue;	// "insert": once, as the wordmark finishes and the shine runs
+		std::function<void(const std::string&)> onCue;	// "insert": once, the frame the bunch seats (CLICK_AT)
 
 		static constexpr double INTRO_END = 1390;
 
@@ -39,7 +39,8 @@ namespace banana
 		uint32_t ink = 0, muted = 0;
 
 		int X(float v) const;
-		void drawBunch(uint32_t* d, int x, int y, double shine) const;
+		// draw the bunch with its top-left at (x,y); kxs/kys: device px per sprite px (the drop's squash scales them)
+		void drawBunch(uint32_t* d, int x, int y, double shine, double kxs, double kys) const;
 		void drawMask(uint32_t* d, const Mask& m, int k, int x, int y, uint32_t colour, int fromCol, int toCol, int dy) const;
 		void drawWord(uint32_t* d, double t) const;
 		void fill(uint32_t* d, int x, int y, int w, int h, uint32_t c) const;

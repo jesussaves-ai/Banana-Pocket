@@ -1,0 +1,139 @@
+--- a/Source/Core/AudioCommon/AlsaSoundStream.cpp
++++ b/Source/Core/AudioCommon/AlsaSoundStream.cpp
+@@ -107,63 +107,79 @@
+ 
+   snd_pcm_hw_params_alloca(&hwparams);
+ 
+-  err = snd_pcm_hw_params_any(handle, hwparams);
+-  if (err < 0)
+-  {
+-    ERROR_LOG_FMT(AUDIO, "Broken configuration for this PCM: {}", snd_strerror(err));
+-    return false;
+-  }
+-
+-  err = snd_pcm_hw_params_set_access(handle, hwparams, SND_PCM_ACCESS_RW_INTERLEAVED);
+-  if (err < 0)
+-  {
+-    ERROR_LOG_FMT(AUDIO, "Access type not available: {}", snd_strerror(err));
+-    return false;
+-  }
+-
+-  err = snd_pcm_hw_params_set_format(handle, hwparams, SND_PCM_FORMAT_S16_LE);
+-  if (err < 0)
+-  {
+-    ERROR_LOG_FMT(AUDIO, "Sample format not available: {}", snd_strerror(err));
+-    return false;
+-  }
+-
+-  dir = 0;
+-  err = snd_pcm_hw_params_set_rate_near(handle, hwparams, &sample_rate, &dir);
+-  if (err < 0)
+-  {
+-    ERROR_LOG_FMT(AUDIO, "Rate not available: {}", snd_strerror(err));
+-    return false;
+-  }
+-
+-  err = snd_pcm_hw_params_set_channels(handle, hwparams, CHANNEL_COUNT);
+-  if (err < 0)
+-  {
+-    ERROR_LOG_FMT(AUDIO, "Channels count not available: {}", snd_strerror(err));
+-    return false;
+-  }
+-
+-  periods = BUFFER_SIZE_MAX / FRAME_COUNT_MIN;
+-  err = snd_pcm_hw_params_set_periods_max(handle, hwparams, &periods, &dir);
+-  if (err < 0)
+-  {
+-    ERROR_LOG_FMT(AUDIO, "Cannot set maximum periods per buffer: {}", snd_strerror(err));
+-    return false;
+-  }
+-
+-  buffer_size_max = BUFFER_SIZE_MAX;
+-  err = snd_pcm_hw_params_set_buffer_size_max(handle, hwparams, &buffer_size_max);
+-  if (err < 0)
+-  {
+-    ERROR_LOG_FMT(AUDIO, "Cannot set maximum buffer size: {}", snd_strerror(err));
+-    return false;
+-  }
+-
+-  err = snd_pcm_hw_params(handle, hwparams);
+-  if (err < 0)
+-  {
+-    ERROR_LOG_FMT(AUDIO, "Unable to install hw params: {}", snd_strerror(err));
+-    return false;
++  // A frontend's supported buffer sizes are not continuous on every driver: the RPC's AudioReach DSP rejects a
++  // maximum of BUFFER_SIZE_MAX (8192) outright -- snd_pcm_hw_params returns EINVAL and the card plays nothing at all
++  // -- while it takes 7680, 4096 or 2048. Negotiate: start from the wanted maximum and halve it until the driver
++  // installs the parameters, so a coarse constraint gets the largest buffer it will take instead of silence. Each
++  // try restarts from the driver's full range, because a rejected hw_params leaves the set unusable.
++  snd_pcm_uframes_t buffer_size_want = BUFFER_SIZE_MAX;
++  for (;;)
++  {
++    err = snd_pcm_hw_params_any(handle, hwparams);
++    if (err < 0)
++    {
++      ERROR_LOG_FMT(AUDIO, "Broken configuration for this PCM: {}", snd_strerror(err));
++      return false;
++    }
++
++    err = snd_pcm_hw_params_set_access(handle, hwparams, SND_PCM_ACCESS_RW_INTERLEAVED);
++    if (err < 0)
++    {
++      ERROR_LOG_FMT(AUDIO, "Access type not available: {}", snd_strerror(err));
++      return false;
++    }
++
++    err = snd_pcm_hw_params_set_format(handle, hwparams, SND_PCM_FORMAT_S16_LE);
++    if (err < 0)
++    {
++      ERROR_LOG_FMT(AUDIO, "Sample format not available: {}", snd_strerror(err));
++      return false;
++    }
++
++    dir = 0;
++    err = snd_pcm_hw_params_set_rate_near(handle, hwparams, &sample_rate, &dir);
++    if (err < 0)
++    {
++      ERROR_LOG_FMT(AUDIO, "Rate not available: {}", snd_strerror(err));
++      return false;
++    }
++
++    err = snd_pcm_hw_params_set_channels(handle, hwparams, CHANNEL_COUNT);
++    if (err < 0)
++    {
++      ERROR_LOG_FMT(AUDIO, "Channels count not available: {}", snd_strerror(err));
++      return false;
++    }
++
++    periods = buffer_size_want / FRAME_COUNT_MIN;
++    if (periods < 1)
++      periods = 1;
++    err = snd_pcm_hw_params_set_periods_max(handle, hwparams, &periods, &dir);
++    if (err < 0)
++    {
++      ERROR_LOG_FMT(AUDIO, "Cannot set maximum periods per buffer: {}", snd_strerror(err));
++      return false;
++    }
++
++    buffer_size_max = buffer_size_want;
++    err = snd_pcm_hw_params_set_buffer_size_max(handle, hwparams, &buffer_size_max);
++    if (err < 0)
++    {
++      ERROR_LOG_FMT(AUDIO, "Cannot set maximum buffer size: {}", snd_strerror(err));
++      return false;
++    }
++
++    err = snd_pcm_hw_params(handle, hwparams);
++    if (err == 0)
++      break;
++
++    // halve the wanted buffer and try again, down to a single frame; a device that takes none is a real failure
++    if (buffer_size_want <= FRAME_COUNT_MIN)
++    {
++      ERROR_LOG_FMT(AUDIO, "Unable to install hw params: {}", snd_strerror(err));
++      return false;
++    }
++    buffer_size_want /= 2;
+   }
+ 
+   err = snd_pcm_hw_params_get_buffer_size(hwparams, &buffer_size);

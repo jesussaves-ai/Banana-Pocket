@@ -1,0 +1,120 @@
+#!/bin/sh
+# Standalone Dolphin (dolphin-emu-nogui) as a Wayland client in cage, for the Wii shelf. This is the non-RetroArch
+# launcher: it owns the same contract run-retroarch does -- the panel, the audio route, the saves, the per-hardware
+# input profiles -- for the one system that runs its own emulator instead of a libretro core.
+#   run-dolphin <rom>       e.g. run-dolphin /data/roms/wii/game.rvz
+#
+# nogui, not the Qt frontend: a game is launched from the command line and configured entirely through the INI files
+# in the card's config directory (/data/dolphin-emu/Config), which this script writes from the templates in
+# /usr/share/banana/dolphin. cage (the kiosk compositor) turns the output with the panel, so Dolphin runs as a plain
+# Wayland client (its -p wayland, which the package's patches add to nogui) and nothing here rotates the picture.
+ROM=$1
+[ -n "$ROM" ] || ROM=$BANANA_ROM
+[ -n "$ROM" ] || { echo "run-dolphin: no game" >&2; exit 1; }
+
+BIN=/usr/bin/dolphin-emu-nogui
+[ -x "$BIN" ] || { echo "run-dolphin: no $BIN" >&2; exit 1; }
+
+# The AudioReach handoff, shared with run-retroarch: wait for the menu's cue stream to go, write the DSP route and
+# gate on the frontend being claimable. The menu has just let go of the frontend (banana-ui closes its stream when a
+# game starts); the DSP tears that graph down a beat later, and an open in the middle of it leaves the game silent.
+/usr/libexec/banana/audio-handoff
+
+# the card's config, made from the image's templates the first time (a card from an older Banana gets the missing
+# files filled in without touching what it already has)
+U=/data/dolphin-emu
+C=$U/Config
+mkdir -p "$C" /data/banana/logs
+for f in Dolphin.ini GFX.ini; do
+    [ -f "$C/$f" ] || cp "/usr/share/banana/dolphin/$f" "$C/$f"
+done
+# GFXBackend: Vulkan is the a613 through Mesa's Turnip. A machine without it (the QEMU test's virtio GPU) falls back
+# to OGL, the same device-tree check run-retroarch makes.
+if ! grep -qa 'qcom,sm4450' /proc/device-tree/compatible 2>/dev/null; then
+    sed -i 's/^GFXBackend *=.*/GFXBackend = OGL/' "$C/Dolphin.ini"
+fi
+# 4:3: the card's GFX.ini is made from the image's template once, so a card made before 4:3 was the default still
+# carries Dolphin's "Auto" (16:9 for most Wii games). Move it to the 4:3 default once; delete the marker to have
+# Dolphin's Auto back.
+A43=$U/.banana-aspect-43
+if [ ! -f "$A43" ]; then
+    sed -i 's/^AspectRatio *=.*/AspectRatio = 2/' "$C/GFX.ini" 2>/dev/null
+    touch "$A43" 2>/dev/null
+fi
+# Shader mode: synchronous (0) holds a higher frame rate on the a613 than the async ubershaders a card made from the
+# old template carries (see the template). Set it once; delete the marker to leave Dolphin's own mode alone.
+SS=$U/.banana-gfx-sync-1
+if [ ! -f "$SS" ]; then
+    sed -i -e 's/^ShaderCompilationMode *=.*/ShaderCompilationMode = 0/' \
+           -e 's/^WaitForShadersBeforeStarting *=.*/WaitForShadersBeforeStarting = True/' "$C/GFX.ini" 2>/dev/null
+    touch "$SS" 2>/dev/null
+fi
+# The controller profiles follow the faceplate: pad-profile reports 4 (the standard pad) or 6 (the variant that adds C
+# and Z; Dolphin's evdev button numbers shift when they are present). Copied when the profile changed, so a mapping
+# edited on the card afterwards is kept for a pad that does not change.
+P=$(/usr/libexec/banana/pad-profile)
+case $P in
+6) W=WiimoteNew.6button.ini; G=GCPadNew.6button.ini ;;
+*) W=WiimoteNew.ini;        G=GCPadNew.ini ;;
+esac
+PF=$U/.banana-pad-profile
+if [ ! -f "$C/WiimoteNew.ini" ] || [ "$(cat $PF 2>/dev/null)" != "$P" ]; then
+    cp "/usr/share/banana/dolphin/$W" "$C/WiimoteNew.ini"
+    cp "/usr/share/banana/dolphin/$G" "$C/GCPadNew.ini"
+    printf '%s' "$P" > "$PF"
+fi
+
+# Dolphin keeps its user data (configs, NAND, state saves, shader cache) here; the read-only root must not be written.
+export DOLPHIN_EMU_USERPATH=$U
+# The game's own ALSA default, and a HOME of its own to carry it: MultiMedia2, the *second* AudioReach frontend. The
+# menu keeps MultiMedia1 open, and a frontend whose graph the DSP tears down (the menu releasing its stream at game
+# start) has its route switches refused/reset to off -- a game that shared MultiMedia1 latched the switch after that
+# release, off, and played nothing. The second frontend is not the menu's, so its route stands; it is the node
+# docs/RPC-PORT.md records as the working one. The .asoundrc lives in the game's HOME (run-retroarch keeps its own HOME
+# and stays on "default"/MultiMedia1), so nothing else is affected. home/.asoundrc is written every launch.
+GH=$U/home
+mkdir -p "$GH" 2>/dev/null
+printf 'pcm.!default { type plug slave { pcm "hw:0,1" format S16_LE channels 2 rate 48000 } }\n' > "$GH/.asoundrc" 2>/dev/null
+export HOME=$GH
+# cage (the kiosk compositor) puts its socket here: a private, 0700 runtime dir on tmpfs.
+export XDG_RUNTIME_DIR=/run/banana/wayland
+mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null
+# This kernel has no virtual terminals at all (no fbcon, no /dev/tty1...): a VT-bound seat opens one and the kernel's
+# VT switch on suspend then waits for its owner to release it, and bananad has the game's process group SIGSTOPped by
+# then, so the suspend never returns. SEATD_VTBOUND=0 makes it a plain seat (run-retroarch's note, the same seat).
+export SEATD_VTBOUND=0
+
+L=/data/banana/logs/dolphin.log
+[ -s "$L" ] && mv -f "$L" "$L.1"
+# a core that dies by signal is worth a core dump; the root is read-only, so the dump goes on the card
+ulimit -c unlimited 2>/dev/null; cd /data 2>/dev/null
+
+# cage is a kiosk compositor: one application, fullscreen, and it turns the output with the panel (the connector's
+# "panel orientation", which wlroots reads). A card without it falls back to Dolphin taking the panel itself on KMS,
+# which cannot be turned -- keep cage in the image.
+#
+# The launch is retried: an exit within a few seconds is a start-up race (the DSP graph, the panel), not a game that
+# ran, so the handoff is made ready again and it is started once more -- the same shape as run-retroarch's retry on
+# RetroArch's ALSA abort.
+tries=0
+trap 'kill -TERM $P 2>/dev/null' TERM INT HUP
+while :; do
+    start=$(date +%s)
+    if [ -x /usr/bin/cage ]; then
+        cage -- "$BIN" -p wayland -a HLE -e "$ROM" >"$L" 2>&1 &
+    else
+        "$BIN" -p fbdev -a HLE -e "$ROM" >"$L" 2>&1 &
+    fi
+    P=$!
+    if [ -x /usr/bin/cage ]; then echo $P > /run/banana/cage.pid; else rm -f /run/banana/cage.pid; fi
+    wait $P; S=$?
+    while kill -0 $P 2>/dev/null; do wait $P; S=$?; done
+    tries=$((tries + 1))
+    now=$(date +%s)
+    [ $((now - start)) -ge 5 ] && break          # it ran; a real exit or a crash
+    [ $tries -lt 3 ] || break                    # three start-up tries and then let it be
+    echo "run-dolphin: exited after $((now - start))s, retrying ($tries)" >&2
+    /usr/libexec/banana/audio-handoff             # make the frontend ready again
+    sleep 0.5
+done
+exit $S

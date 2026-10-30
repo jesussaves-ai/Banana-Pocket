@@ -83,9 +83,11 @@ apply)
         [ "$(hash_of "$DIR/$f")" = "$h" ] || fail "$f is damaged (its hash is wrong)"
     done < "$DIR/sha256sums"
     ROOT_HASH=$(sed -n 's/ \+rootfs.squashfs$//p' "$DIR/sha256sums")
+    [ -n "$ROOT_HASH" ] || fail "sha256sums has no rootfs.squashfs entry"
     TO=$(other $SLOT); PART=$(partition $TO)
     [ -b "$PART" ] || fail "no partition for slot $TO ($PART)"
     SIZE=$(wc -c < "$DIR/rootfs.squashfs")
+    [ "$SIZE" -gt 0 ] || fail "rootfs.squashfs is empty"
     LIMIT=$(( $(cat /sys/class/block/${PART##*/}/size) * 512 ))
     [ "$SIZE" -le "$LIMIT" ] || fail "the system ($SIZE bytes) doesn't fit the slot ($LIMIT bytes)"
     # the root, in 16 MB pieces so the progress can be told

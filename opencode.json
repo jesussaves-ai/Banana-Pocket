@@ -2,8 +2,7 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "deepseek/deepseek-v4.1-flash",
   "instructions": [
-    "docs/ARCHITECTURE.md",
-    ".opencode/AGENTS.md"
+    "AGENTS.md"
   ],
   "permission": {
     "edit": "allow",
@@ -14,12 +13,38 @@
   },
   "compaction": {
     "auto": true,
+    "prune": true,
     "keep": {
-      "tokens": 12000
+      "tokens": 6000
     },
-    "buffer": 20000
+    "buffer": 8000
   },
   "experimental": {
     "background_compaction": true
+  },
+  "watcher": {
+    "ignore": [
+      "build/**",
+      "output/**",
+      "dl/**",
+      "host/**",
+      "**/*.o",
+      "**/*.img",
+      "**/*.tar"
+    ]
+  },
+  "commands": {
+    "test": {
+      "description": "Run quiet test suite and report failures",
+      "template": "Run `make -s test` and report any errors concisely with zero conversational filler."
+    },
+      "build": {
+      "description": "Verify build state quietly",
+      "template": "Check build status using quiet flags, filtering output to errors and warnings only."
+    },
+    "arch": {
+      "description": "Lookup specific architecture section from docs/ARCHITECTURE.md",
+      "template": "Query docs/ARCHITECTURE.md for section $ARGUMENTS using grep/sed line ranges. Return only the requested technical details."
+    }
   }
 }

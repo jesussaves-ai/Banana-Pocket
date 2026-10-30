@@ -494,8 +494,12 @@ namespace banana
 			strncpy(ifr.ifr_name, "wlan0", IFNAMSIZ - 1);
 			if (fd >= 0 && ioctl(fd, SIOCGIFADDR, &ifr) == 0)
 			{
-				ip = inet_ntoa(((sockaddr_in*)&ifr.ifr_addr)->sin_addr);
-				wifiInfo = "Connected: " + ip;
+				char addr[INET_ADDRSTRLEN];
+				if (inet_ntop(AF_INET, &((sockaddr_in*)&ifr.ifr_addr)->sin_addr, addr, sizeof addr))
+				{
+					ip = addr;
+					wifiInfo = "Connected: " + ip;
+				}
 			}
 			if (fd >= 0) ::close(fd);
 		}

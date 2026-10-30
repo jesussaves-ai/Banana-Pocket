@@ -1,0 +1,41 @@
+# Buildroot & compile trees
+/build/
+/output/
+/dl/
+/host/
+.opencode/
+
+# Images, archives & rootfs slots
+*.img
+*.squashfs
+*.tar
+*.tar.*
+*.gz
+*.xz
+*.zst
+*.zip
+
+# Compiled objects & libraries
+*.o
+*.a
+*.so
+*.so.*
+*.elf
+*.ko
+
+# Firmware, device trees & binary assets
+*.bin
+*.fw
+*.mbn
+*.dtb
+*.dtbo
+*.png
+*.jpg
+*.ttf
+*.otf
+*.woff*
+
+# Test & benchmark dumps
+ui/tests/golden/
+resources-*.txt
+*.log

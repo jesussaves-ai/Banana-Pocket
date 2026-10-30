@@ -42,11 +42,11 @@ the AudioReach audio stack, the fan, file sharing and virtio for QEMU.
 
 ## What it plays
 
-Twenty-one shelves, each with the libretro core it needs in the image (nothing to download):
+Twenty-two shelves, each with the emulator it needs in the image (nothing to download):
 
 | | |
 |---|---|
-| Nintendo | Game Boy, Game Boy Color, Game Boy Advance, NES, Super Nintendo, Nintendo 64 |
+| Nintendo | Game Boy, Game Boy Color, Game Boy Advance, NES, Super Nintendo, Nintendo 64, Wii |
 | Sega | Master System, Game Gear, Mega Drive/Genesis, Sega CD, Sega 32X, Dreamcast |
 | Sony | PlayStation |
 | NEC, SNK | PC Engine & PC Engine CD, Neo Geo Pocket Color |

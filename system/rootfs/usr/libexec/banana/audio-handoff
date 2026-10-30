@@ -1,0 +1,80 @@
+#!/bin/sh
+# audio-handoff: make the AudioReach frontend ready for the process that is about to open the PCM. The menu released
+# its cue stream when it started the game (banana-ui's Sound::release), and the DSP tears that graph down a beat
+# after the substream reads "closed"; the DSP also latches the route switches at the *next* frontend's open, so
+# whoever is about to play has to write them here -- a stream opened with the switch still off has no backend DAI and
+# stays unrouted (silent) for its whole life. This is the shared handoff run-dolphin and run-retroarch both use, so
+# the two launchers cannot drift apart.
+#
+# Bounded and blocking: every step has a cap, so the launcher is delayed by at most ~4 s and then goes ahead anyway.
+#   audio-handoff
+CARD=/proc/asound/card0
+[ -d "$CARD" ] || exit 0
+
+# 1. wait for the menu's (or any) playback substream to leave the active states. It reads "closed" the moment the
+#    process lets go, but the DSP is still tearing the graph down.
+i=0
+while [ $i -lt 15 ]; do
+    busy=
+    for f in $CARD/pcm*p/sub0/status; do
+        [ -r "$f" ] || continue
+        case "$(cat "$f" 2>/dev/null)" in
+            RUNNING|SETUP|PREPARING|PREPARED|DRAINING|PAUSED) busy=1 ;;
+        esac
+    done
+    [ -n "$busy" ] || break
+    sleep 0.1; i=$((i + 1))
+done
+# 2. the teardown finishes a beat after the substream reports closed; give it that beat before the graph is
+#    instantiated again (the fixed settle the wrappers used, kept here).
+sleep 0.4
+
+# 3. write both speaker frontends' route and read each back: the DSP refuses a write until the card's mixer is ready,
+#    so retry. bananad publishes the jack's decision per control in /run/banana/audio-route (speaker on, headphones
+#    off); its first channel is the one the DSP's backend listens to.
+#
+#    This is the LAST thing done before the emulator is started, on purpose: the DSP rebuilds its route switches with
+#    each graph's life, so any frontend that is opened and closed *after* this resets them to off (a readiness probe
+#    that opens the device here did exactly that -- the game then latched an unrouted MultiMedia1 and was silent). The
+#    route must be standing when the emulator's own open instantiates the graph.
+for ctl in \
+    "SENARY_MI2S_RX Audio Mixer MultiMedia1" \
+    "SENARY_MI2S_RX Audio Mixer MultiMedia2"
+do
+    want=$(sed -n "s/^${ctl}=//p" /run/banana/audio-route 2>/dev/null | tail -n 1)
+    [ -n "$want" ] || want=on,on
+    i=0
+    while [ $i -lt 30 ]; do
+        amixer -q -c 0 cset "name=${ctl}" "$want" 2>/dev/null
+        # read the switch back by its short name (the way rcS does): a stereo switch prints [on][off] and the first
+        # value is the backend's, so a match on [on] means the route took
+        amixer -c 0 sget "${ctl}" 2>/dev/null | grep -q '\[on\]' && break
+        sleep 0.05; i=$((i + 1))
+    done
+done
+
+# 4. Keep the route standing until the emulator's own stream is up. The DSP finishes tearing the menu's graph down
+#    *after* its substream already reads closed, and a switch written during that teardown is swallowed and reset to
+#    off; a frontend instantiated with the switch off stays unrouted for its whole life -- the silent Wii. So re-assert
+#    both routes in the background (bounded, ~15 s) until a playback substream reads RUNNING (the emulator's open) and
+#    then stop. The launcher does not wait for this: it is backgrounded so the game starts while it watches. Writing
+#    the switch after the graph is instantiated is ignored by the DSP, so this cannot disturb a playing stream.
+(
+    i=0
+    while [ $i -lt 150 ]; do
+        up=
+        for f in /proc/asound/card0/pcm*p/sub0/status; do
+            [ "$(cat "$f" 2>/dev/null)" = RUNNING ] && up=1
+        done
+        [ -n "$up" ] && break
+        for ctl in \
+            "SENARY_MI2S_RX Audio Mixer MultiMedia1" \
+            "SENARY_MI2S_RX Audio Mixer MultiMedia2"
+        do
+            want=$(sed -n "s/^${ctl}=//p" /run/banana/audio-route 2>/dev/null | tail -n 1)
+            amixer -q -c 0 cset "name=${ctl}" "${want:-on,on}" 2>/dev/null
+        done
+        sleep 0.1; i=$((i + 1))
+    done
+) &
+exit 0

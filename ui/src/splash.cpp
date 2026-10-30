@@ -8,7 +8,8 @@ namespace banana
 	// timings (ms)
 	static constexpr double WORD_AT = 560, LETTER = 60, LOAD_AT = 600, DOT = 240;
 	static constexpr double SHINE_AT = 1000, SHINE = 300;
-	static constexpr double CLICK_AT = 1000;	// the wordmark is complete and the shine starts: the intro's cue
+	static constexpr double CLICK_AT = 1000;	// the bunch lands and the wordmark is complete: the intro's cue ("insert")
+	static constexpr double DROP_AT = 60;		// the bunch leaves the top a beat after the background
 
 	// the layout, in CSS px of a 640x480 panel
 	static constexpr float BUNCH_Y = 96, WORD_Y = 268, LOAD_Y = 342, DOTS_Y = 368;
@@ -109,30 +110,34 @@ namespace banana
 			for (int xx = x0; xx < x1; xx++) d[(size_t)yy * W + xx] = over(c, d[(size_t)yy * W + xx]);
 	}
 
-	// the bunch at K device px per pixel; shine: the light band's position over the sprite, 0..1 (outside: none)
-	void Splash::drawBunch(uint32_t* d, int x, int y, double shine) const
+	// the bunch, drawn in device space so the drop's squash can scale it: kxs/kys are device px per sprite px (both K at
+	// rest), the top-left is (x,y). Nearest-neighbour sampling, so a fractional scale still maps cleanly and the pass
+	// stays one walk over the sprite's device pixels -- the drop adds no cost, only a different (x,y,kxs,kys).
+	// shine: the light band's position over the sprite, 0..1 (outside: none).
+	void Splash::drawBunch(uint32_t* d, int x, int y, double shine, double kxs, double kys) const
 	{
-		int band = shine >= 0 && shine <= 1 ? (int)std::lround(shine * (bunch.w + bunch.h + 8)) - 4 : -100;
-		for (int sy = 0; sy < bunch.h; sy++)
-			for (int sx = 0; sx < bunch.w; sx++)
+		const int Wd = (int)std::lround(bunch.w * kxs), Hd = (int)std::lround(bunch.h * kys);
+		if (Wd <= 0 || Hd <= 0 || bunch.w <= 0 || bunch.h <= 0) return;
+		const int band = shine >= 0 && shine <= 1 ? (int)std::lround(shine * (bunch.w + bunch.h + 8)) - 4 : -100000;
+		for (int dy = 0; dy < Hd; dy++)
+		{
+			const int yy = y + dy;
+			if (yy < 0 || yy >= H) continue;
+			const int sy = (int)((int64_t)dy * bunch.h / Hd);
+			const uint32_t* srow = &bunch.px[(size_t)sy * bunch.w];
+			uint32_t* drow = d + (size_t)yy * W;
+			for (int dx = 0; dx < Wd; dx++)
 			{
-				uint32_t p = bunch.px[(size_t)sy * bunch.w + sx];
+				const int sx = (int)((int64_t)dx * bunch.w / Wd);
+				uint32_t p = srow[sx];
 				if (!(p >> 24)) continue;
 				// the shine: a diagonal stripe of pale yellow across the fruit (not the outline)
-				int diag = sx + (bunch.h - sy);
+				const int diag = sx + (bunch.h - sy);
 				if ((p & 0xffffff) != 0 && diag >= band && diag < band + 4) p = rnds::tintAccent(0xfffff0b4u);
-				for (int ky = 0; ky < K; ky++)
-				{
-					int yy = y + sy * K + ky;
-					if (yy < 0 || yy >= H) continue;
-					uint32_t* row = d + (size_t)yy * W;
-					for (int kx = 0; kx < K; kx++)
-					{
-						int xx = x + sx * K + kx;
-						if (xx >= 0 && xx < W) row[xx] = over(p, row[xx]);
-					}
-				}
+				const int xx = x + dx;
+				if (xx >= 0 && xx < W) drow[xx] = over(p, drow[xx]);
 			}
+		}
 	}
 
 	// columns [fromCol, toCol) of a mask at k device px per pixel, dy device px lower
@@ -172,14 +177,40 @@ namespace banana
 
 	void Splash::draw(uint32_t* scr, double t, bool ready)
 	{
-		// The bunch stays still (no drop: a logo that lands wants a landing sound, and this card cannot play one
-		// until well after boot), BANANAOS types itself in, a shine runs over the bananas and LOADING ticks.
-		// (`ready` only stops the dots at the hand-over; see nextFrame.)
+		// The bunch drops in from above and lands with a click -- its ground line reaching BUNCH_Y exactly at CLICK_AT,
+		// where the insert cue fires -- then a short damped settle and a squash sell its weight. BANANAOS types itself
+		// in, the shine runs over the bananas as they land and LOADING ticks. (`ready` only stops the dots at the
+		// hand-over; see nextFrame.)
 		(void)ready;
 		std::copy(bgTop.begin(), bgTop.end(), scr);
-		int bx = (W - bunch.w * K) / 2;
+
+		// The drop, in geometry the drawBunch pass already walks, so a frame costs the same as before: an easeInCubic
+		// fall (it accelerates into the impact, the way gravity does), then a decaying oscillation about the ground and
+		// a squash that recovers -- the micro-bounce at the click coordinate. The ground line (the sprite's bottom) is
+		// what lands; the top is derived from it and the squash so the fruit keeps its foot on the surface.
+		double drop = 0, squash = 0;
+		const double restTop = (double)X(BUNCH_Y) + oy;		// the sprite's top line at rest
+		if (t < CLICK_AT)
+		{
+			double p = (t - DROP_AT) / (CLICK_AT - DROP_AT);
+			p = std::clamp(p, 0.0, 1.0);
+			drop = -(restTop + (double)K * bunch.h + X(24)) * (1.0 - p * p * p);	// from just above the panel, onto the ground
+		}
+		else
+		{
+			const double tau = (t - CLICK_AT) / 1000.0;	// seconds after the click
+			if (tau < 0.28)
+			{
+				drop = 6.0 * s * std::exp(-tau * 15.0) * std::sin(tau * 42.0);	// the micro-bounce about the ground
+				squash = 0.26 * std::exp(-tau * 24.0);				// a sharp squash, then gone
+			}
+		}
+		const double kx = K * (1.0 + squash * 0.5), ky = K * (1.0 - squash);
+		const double ground = restTop + (double)K * bunch.h;	// the sprite's bottom line at rest
+		int bx = (int)std::lround((W - kx * bunch.w) / 2.0);
+		int by = (int)std::lround(ground + drop - ky * bunch.h);
 		double shine = t >= SHINE_AT && t < SHINE_AT + SHINE ? (t - SHINE_AT) / SHINE : -1;
-		drawBunch(scr, bx, X(BUNCH_Y) + oy, shine);
+		drawBunch(scr, bx, by, shine, kx, ky);
 		drawWord(scr, t);
 		if (t >= LOAD_AT)
 		{
@@ -194,9 +225,9 @@ namespace banana
 				fill(scr, dx + i * (dw + gap), X(DOTS_Y) + oy, dw, dw, c);
 			}
 		}
-		// the intro's cue: as the wordmark finishes and the shine starts. The sound device is pre-opened by
-		// Sound::warm() at boot (the rcS bring-up has the DSP playing by ~8 s, before this), so it is a write,
-		// not a graph to instantiate.
+		// the intro's cue: the frame the bunch seats -- it lands exactly at CLICK_AT, so the click is heard as it
+		// touches down. The sound device is pre-opened by Sound::warm() at boot (the rcS bring-up has the DSP playing
+		// by ~8 s, before this), so it is a write, not a graph to instantiate.
 		if (!cued && t >= CLICK_AT) { cued = true; if (onCue) onCue("insert"); }
 	}
 

@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstring>
 #include <fstream>
+#include <glob.h>
 #include <string>
 #ifdef BANANA_ALSA
 #include <alsa/asoundlib.h>
@@ -17,25 +18,29 @@
 
 namespace banana
 {
-// usleep is obsolete in POSIX.1-2008; nanosleep is its replacement
-static void sleepUs(long us) { timespec ts = { us / 1000000, (us % 1000000) * 1000 }; nanosleep(&ts, nullptr); }
-
 // Are the RPC's DSP frontends all free right now? /proc says so, and "closed"/"disconnected" are the two states in
 // which a stream is not holding the graph. The DSP tears a graph down after the close returns, so a route written
 // straight after closing a stream can be written to a graph that is on its way out.
 static bool dspFrontendsFree()
 {
-	FILE* p = popen("cat /proc/asound/card0/pcm*p/sub0/status 2>/dev/null", "r");
-	if (!p) return true;
-	char buf[64];
+	// read the status files directly: a `popen("cat ...")` here forked a shell on every handover
+	glob_t g;
+	if (glob("/proc/asound/card0/pcm*p/sub0/status", 0, nullptr, &g)) return true;
 	bool busy = false;
-	while (fgets(buf, sizeof buf, p))
+	for (size_t i = 0; i < g.gl_pathc && !busy; i++)
 	{
-		size_t n = strlen(buf);
-		while (n && isspace((unsigned char)buf[n - 1])) buf[--n] = 0;
-		if (strcmp(buf, "closed") && strcmp(buf, "disconnected")) busy = true;
+		FILE* f = fopen(g.gl_pathv[i], "r");
+		if (!f) continue;
+		char buf[64];
+		while (fgets(buf, sizeof buf, f))
+		{
+			size_t n = strlen(buf);
+			while (n && isspace((unsigned char)buf[n - 1])) buf[--n] = 0;
+			if (strcmp(buf, "closed") && strcmp(buf, "disconnected")) { busy = true; break; }
+		}
+		fclose(f);
 	}
-	pclose(p);
+	globfree(&g);
 	return !busy;
 }
 
@@ -57,15 +62,17 @@ static bool dspFrontendsFree()
 		{
 			uint32_t len = b[at + 4] | (b[at + 5] << 8) | (b[at + 6] << 16) | ((uint32_t)b[at + 7] << 24);
 			const uint8_t* c = b.data() + at + 8;
-			if (!memcmp(b.data() + at, "fmt ", 4) && len >= 16)
+			if (!memcmp(b.data() + at, "fmt ", 4))
 			{
+				// the header says 16 bytes, but the file can be cut short inside it: check the body, not just the size
+				if (len < 16 || at + 8 + len > b.size()) return false;
 				channels = c[2] | (c[3] << 8);
-				rate = c[4] | (c[5] << 8) | (c[6] << 16) | (c[7] << 24);
+				rate = c[4] | (c[5] << 8) | (c[6] << 16) | ((uint32_t)c[7] << 24);
 				bits = c[14] | (c[15] << 8);
 			}
 			else if (!memcmp(b.data() + at, "data", 4))
 			{
-				if (bits != 16 || channels < 1) return false;
+				if (bits != 16 || channels < 1 || channels > 8 || rate <= 0) return false;
 				len = (uint32_t)std::min<size_t>(len, b.size() - at - 8);
 				pcm.resize(len / 2);
 				memcpy(pcm.data(), c, pcm.size() * 2);
@@ -240,16 +247,13 @@ static bool dspFrontendsFree()
 		/* the DSP gives one stream per frontend: the game that is about to start opens the same one, so wait for the
 		 * thread to close it (it does within a frame or two) instead of racing it -- RetroArch's ALSA driver asserts
 		 * on a handle it couldn't open */
-		for (int i = 0; i < 80 && devOpen; i++) sleepUs(5000);
-		cv.notify_all();
-		// wait until the device is closed
-		for (int i = 0; i < 100; i++)
+		cv.notify_all();	// wake the thread if it is waiting for a cue with the device closed
+		std::unique_lock<std::mutex> l(m);
+		if (!cv.wait_for(l, std::chrono::seconds(2), [this] { return !closeNow; }))
 		{
-			{
-				std::lock_guard<std::mutex> l(m);
-				if (!closeNow) return;
-			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+#ifdef BANANA_ALSA
+			slog("release(): the device did not close in 2 s");
+#endif
 		}
 	}
 
@@ -371,6 +375,7 @@ static bool dspFrontendsFree()
 		 * waits exactly this way; the menu now does the same. */
 		auto openDev = [&](const Clip& c) -> bool
 		{
+			if (closeNow) return false;	// release() won the race: do not open a device the game is about to claim
 			slog("opening the device");
 			if (long long r = routeId(); r != routeLoaded) { snd_config_update_free_global(); dropMixer(); routeLoaded = r; }
 			if (access("/proc/asound/card0", F_OK) == 0)
@@ -388,11 +393,12 @@ static bool dspFrontendsFree()
 				 * whole session. Make sure the route this stream is about to latch reads back as published before
 				 * opening, retrying the write rather than opening on hope. routeIsAsPublished answers true when
 				 * nothing is published (not this card), so this is a no-op elsewhere. */
-				for (int t = 0; t < 75 && !routeIsAsPublished(); t++)
+				for (int t = 0; t < 75 && !closeNow && !routeIsAsPublished(); t++)
 				{
 					applyRoute();
 					std::this_thread::sleep_for(std::chrono::milliseconds(200));
 				}
+				if (closeNow) return false;
 				/* The frontend poll and the settle are for a *handover*: the game that just ended may still be
 				 * holding the DSP frontend, and an open inside its teardown comes up half connected (the amps answer
 				 * "start failure (-1)": measured on the RPC with a game and a menu cue overlapping by a few hundred
@@ -401,13 +407,13 @@ static bool dspFrontendsFree()
 				if (handover.exchange(false))
 				{
 					bool wasHeld = false;
-					for (int t = 0; t < 12 && !dspFrontendsFree(); t++)
+					for (int t = 0; t < 12 && !closeNow && !dspFrontendsFree(); t++)
 					{
 						wasHeld = true;
 						std::this_thread::sleep_for(std::chrono::milliseconds(100));
 					}
 					slog("DSP frontends %s", wasHeld ? "were held: waited" : "were free");
-					if (wasHeld)
+					if (wasHeld && !closeNow)
 						std::this_thread::sleep_for(std::chrono::milliseconds(600));
 				}
 				if (first)	// one line, so a silent menu says what the DSP was told and what it answered
@@ -421,8 +427,10 @@ static bool dspFrontendsFree()
 					first = false;
 				}
 			}
+			if (closeNow) return false;
 			int e = snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
 			if (e < 0) { slog("open failed: %s", snd_strerror(e)); pcm = nullptr; return false; }
+			if (closeNow) { snd_pcm_close(pcm); pcm = nullptr; return false; }	// release() arrived during the open
 			/* The host buffer: as small as the DSP will take, so a cue starts as soon as the mixer has it. A 128 ms
 			 * buffer is refused outright on this card (no sound at all, docs/RPC-PORT.md), so try 15 ms and 20 ms
 			 * before the 30 ms that has always worked; what took is logged. */
@@ -494,7 +502,7 @@ static bool dspFrontendsFree()
 				// closed: nothing to do until a cue, a game's release, or the loop wanting the device again
 				if (!pcm) cv.wait(l, [this] { return stop || closeNow || screenOff.load() || !queued.empty() || bgmOn.load() || warmUp.load(); });
 				if (stop) break;
-				if (closeNow) { closeDev("release"); cur = nullptr; closeNow = false; continue; }	// a game is starting
+				if (closeNow) { closeDev("release"); cur = nullptr; closeNow = false; cv.notify_all(); continue; }	// a game is starting
 				// the burn-in guard blanked the screen (idle.h): the real idle, so let the device go -- unless a
 				// cue came with it, in which case the screen is being used again
 				if (screenOff.exchange(false) && queued.empty())

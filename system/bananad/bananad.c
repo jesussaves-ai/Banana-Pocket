@@ -22,6 +22,7 @@
  * It reads the input devices alongside banana-ui and the games (evdev allows many readers) and grabs nothing.
  */
 #define _GNU_SOURCE
+#include <alsa/asoundlib.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -47,7 +48,11 @@
 #define MAXDEV 32
 
 /* usleep is obsolete in POSIX.1-2008; nanosleep is its replacement */
-static void sleep_us(long us) { struct timespec ts = { us / 1000000, (us % 1000000) * 1000 }; nanosleep(&ts, NULL); }
+static void sleep_us(long us)
+{
+	struct timespec ts = { us / 1000000, (us % 1000000) * 1000 };
+	while (nanosleep(&ts, &ts) && errno == EINTR) {}
+}
 
 static struct {
 	char mixer[64];			/* ALSA simple control the volume keys change; "auto": the playing card's own */
@@ -196,9 +201,13 @@ static int run(char *const argv[])
 		execvp(argv[0], argv);
 		_exit(127);
 	}
+	if (p < 0) return -1;
 	int st = 0;
-	if (p > 0) while (waitpid(p, &st, 0) < 0 && errno == EINTR) {}
-	return st;
+	while (waitpid(p, &st, 0) < 0)
+		if (errno != EINTR) return -1;
+	if (WIFEXITED(st)) return WEXITSTATUS(st);
+	if (WIFSIGNALED(st)) return 128 + WTERMSIG(st);
+	return -1;
 }
 
 /* every executable in /etc/banana/sleep.d, in name order, with "pre" or "post"; background: not waited for (after a
@@ -388,6 +397,9 @@ static void suspend_now(const char *why)
 		if (cycles == 0) sleep_log("sleep (%s): %.0f ms to suspend%s", why, (t_in - t0) * 1000, game ? ", game paused" : "");
 		int r = write_file("/sys/power/state", "mem");
 		int err = errno;
+		/* a signal (SIGHUP from the menu, SIGCHLD) interrupted the write: nothing slept, so retry rather than
+		 * counting it as a failed suspend and falling back to s2idle */
+		if (r && err == EINTR) { rtc_alarm(0); sleep_us(50000); continue; }
 		clock_gettime(CLOCK_BOOTTIME, &b1);
 		/* the RTC clears wakealarm when the alarm fires: set before, empty now, is the battery check's wake */
 		char pending[32];
@@ -432,7 +444,9 @@ static void suspend_now(const char *why)
 		woke = "power button";
 		break;
 	}
-	/* awake: the game and the menu first */
+	/* awake: the game and the menu first. A fallback (devices one at a time, or s2idle) was for this sleep: the
+	 * next one starts from the configured mode again instead of staying in the safer, higher-power one all session */
+	sleep_fallback = 0;
 	double t_wake = mono();
 	backlights_power(1);
 	sleep_quiet_end();
@@ -483,6 +497,22 @@ static int card_play = -1;	/* the card sound plays on; -1: none yet (or none at 
 static int card_ar = -1;	/* the audioreach card (the RPC): its DSP graph is routed by mixer controls, no UCM */
 
 /* the card, from /proc/asound/cards (" 0 [sm8450 ]: simple-card - ...") */
+/* The card and its route through the ALSA C mixer: no `amixer` fork. The DSP rebuilds its controls with each
+ * frontend graph, so every look-up opens and loads a fresh mixer instead of holding a handle whose elements may
+ * point at controls that no longer exist. */
+static int mixer_open(int card, snd_mixer_t **mx)
+{
+	char dev[16];
+	snprintf(dev, sizeof dev, "hw:%d", card);
+	if (snd_mixer_open(mx, 0) < 0) return -1;
+	if (snd_mixer_attach(*mx, dev) < 0 || snd_mixer_selem_register(*mx, NULL, NULL) < 0 || snd_mixer_load(*mx) < 0) {
+		snd_mixer_close(*mx);
+		*mx = NULL;
+		return -1;
+	}
+	return 0;
+}
+
 static void audio_find_cards(void)
 {
 	FILE *f = fopen("/proc/asound/cards", "r");
@@ -495,54 +525,121 @@ static void audio_find_cards(void)
 		/* the RPC's card: audioreach, with the frontends (MultiMedia1/2) mixed into the speaker I2S and the codec
 		 * by mixer controls whose names say so -- what alsa-ucm-conf's profile would set. Nothing does it on this
 		 * image, so without this the DSP says "no backend DAIs enabled" and plays nothing. */
-		char cmd[128];
-		snprintf(cmd, sizeof cmd, "amixer -c %d scontrols 2>/dev/null", n);
-		FILE *p = popen(cmd, "r");
-		char cl[256];
-		while (p && fgets(cl, sizeof cl, p)) if (strstr(cl, "SENARY_MI2S_RX Audio Mixer")) { card_ar = n; break; }
-		if (p) pclose(p);
+		snd_mixer_t *mx = NULL;
+		if (mixer_open(n, &mx) == 0) {
+			for (snd_mixer_elem_t *e = snd_mixer_first_elem(mx); e; e = snd_mixer_elem_next(e))
+				if (snd_mixer_elem_get_type(e) == SND_MIXER_ELEM_SIMPLE &&
+				    strstr(snd_mixer_selem_get_name(e), "SENARY_MI2S_RX Audio Mixer")) { card_ar = n; break; }
+			snd_mixer_close(mx);
+		}
 		break;	/* the first card is the one sound plays on */
 	}
 	fclose(f);
 }
 
+/* Named CTL access (what `amixer cset/sset` did), through the ALSA C API: works for DAPM muxes and enums too, not
+ * only the simple-mixer elements. */
+static int ctl_open(int card, snd_ctl_t **ctl)
+{
+	char dev[16];
+	snprintf(dev, sizeof dev, "hw:%d", card);
+	return snd_ctl_open(ctl, dev, 0);
+}
+
+static int ctl_set(int card, const char *name, const char *val)
+{
+	snd_ctl_t *ctl = NULL;
+	snd_ctl_elem_id_t *id = NULL;
+	snd_ctl_elem_info_t *info = NULL;
+	snd_ctl_elem_value_t *v = NULL;
+	int r = -1;
+	if (ctl_open(card, &ctl) < 0) return -1;
+	snd_ctl_elem_id_alloca(&id);
+	snd_ctl_elem_id_set_interface(id, SND_CTL_ELEM_IFACE_MIXER);
+	snd_ctl_elem_id_set_name(id, name);
+	snd_ctl_elem_id_set_index(id, 0);
+	snd_ctl_elem_info_alloca(&info);
+	snd_ctl_elem_info_set_id(info, id);
+	if (snd_ctl_elem_info(ctl, info) < 0) goto out;
+	unsigned count = snd_ctl_elem_info_get_count(info);
+	snd_ctl_elem_type_t type = snd_ctl_elem_info_get_type(info);
+	snd_ctl_elem_value_alloca(&v);
+	snd_ctl_elem_value_set_id(v, id);
+	if (type == SND_CTL_ELEM_TYPE_BOOLEAN) {
+		int on = !strcmp(val, "on") || !strcmp(val, "1");
+		for (unsigned i = 0; i < count; i++) snd_ctl_elem_value_set_boolean(v, i, on);
+	} else if (type == SND_CTL_ELEM_TYPE_INTEGER) {
+		char *end = NULL;
+		long x = strtol(val, &end, 10);
+		if (end == val || *end) goto out;
+		for (unsigned i = 0; i < count; i++) snd_ctl_elem_value_set_integer(v, i, x);
+	} else if (type == SND_CTL_ELEM_TYPE_INTEGER64) {
+		char *end = NULL;
+		long long x = strtoll(val, &end, 10);
+		if (end == val || *end) goto out;
+		for (unsigned i = 0; i < count; i++) snd_ctl_elem_value_set_integer64(v, i, x);
+	} else if (type == SND_CTL_ELEM_TYPE_ENUMERATED) {
+		unsigned item = 0, items = snd_ctl_elem_info_get_items(info);
+		int found = 0;
+		for (; item < items; item++) {
+			snd_ctl_elem_info_set_item(info, item);
+			const char *nm = snd_ctl_elem_info_get_item_name(info);
+			if (nm && !strcmp(nm, val)) { found = 1; break; }
+		}
+		if (!found) goto out;
+		for (unsigned i = 0; i < count; i++) snd_ctl_elem_value_set_enumerated(v, i, item);
+	} else goto out;
+	if (snd_ctl_elem_write(ctl, v) < 0) goto out;
+	r = 0;
+out:
+	snd_ctl_close(ctl);
+	return r;
+}
+
 static void cset(int card, const char *name, const char *val)
 {
-	char c[8], spec[128];
-	snprintf(c, sizeof c, "%d", card);
-	snprintf(spec, sizeof spec, "name=%s", name);
-	char *argv[] = { "amixer", "-c", c, "cset", spec, (char *)val, NULL };
-	int st = run(argv);
-	if (st) say("sound: amixer cset %s %s -> %d", name, val, st);
+	if (ctl_set(card, name, val)) say("sound: mixer set %s %s -> failed", name, val);
 }
 
-/* the switch controls (HPHL, HPHL_RDAC, ...) are simple-mixer elements: cset name= doesn't reach them on this
- * codec, sset does */
-static void sset(int card, const char *name, const char *val)
-{
-	char c[8];
-	snprintf(c, sizeof c, "%d", card);
-	char *argv[] = { "amixer", "-c", c, "sset", (char *)name, (char *)val, NULL };
-	int st = run(argv);
-	if (st) say("sound: amixer sset %s %s -> %d", name, val, st);
-}
+/* the switch controls (HPHL, HPHL_RDAC, ...) are simple-mixer elements: the same CTL API reaches them */
+static void sset(int card, const char *name, const char *val) { cset(card, name, val); }
 
-/* amixer_get <card> <control> <out> <size>: the values the control holds, "" when there is no such control. Asked
- * with `cset` and no value (the only way to name a control with spaces in it), amixer answers with a line that ends
- * in ": values=on,on" -- the label before the colon is empty on the DSP's mixers, so the colon is the anchor, not
- * the word "value:" many codecs print. */
-static int amixer_get(int card, const char *name, char *out, size_t n)
+static int mixer_get(int card, const char *name, char *out, size_t n)
 {
-	char c[8], cmd[256];
-	snprintf(c, sizeof c, "%d", card);
-	snprintf(cmd, sizeof cmd,
-		"amixer -c %s cset name='%s' 2>/dev/null | sed -n 's/.*: *values=//p' | head -n 1", c, name);
-	FILE *p = popen(cmd, "r");
-	if (!p) { out[0] = 0; return 0; }
-	int got = fgets(out, (int)n, p) ? (int)strlen(out) : 0;
-	pclose(p);
-	while (got && (out[got - 1] == '\n' || out[got - 1] == '\r')) out[--got] = 0;
-	return got;
+	out[0] = 0;
+	snd_ctl_t *ctl = NULL;
+	snd_ctl_elem_id_t *id = NULL;
+	snd_ctl_elem_info_t *info = NULL;
+	snd_ctl_elem_value_t *v = NULL;
+	if (ctl_open(card, &ctl) < 0) return 0;
+	snd_ctl_elem_id_alloca(&id);
+	snd_ctl_elem_id_set_interface(id, SND_CTL_ELEM_IFACE_MIXER);
+	snd_ctl_elem_id_set_name(id, name);
+	snd_ctl_elem_id_set_index(id, 0);
+	snd_ctl_elem_info_alloca(&info);
+	snd_ctl_elem_info_set_id(info, id);
+	if (snd_ctl_elem_info(ctl, info) == 0) {
+		snd_ctl_elem_value_alloca(&v);
+		snd_ctl_elem_value_set_id(v, id);
+		if (snd_ctl_elem_read(ctl, v) == 0) {
+			snd_ctl_elem_type_t type = snd_ctl_elem_info_get_type(info);
+			if (type == SND_CTL_ELEM_TYPE_BOOLEAN)
+				snprintf(out, n, "%s", snd_ctl_elem_value_get_boolean(v, 0) ? "on" : "off");
+			else if (type == SND_CTL_ELEM_TYPE_INTEGER)
+				snprintf(out, n, "%ld", snd_ctl_elem_value_get_integer(v, 0));
+			else if (type == SND_CTL_ELEM_TYPE_INTEGER64)
+				snprintf(out, n, "%lld", snd_ctl_elem_value_get_integer64(v, 0));
+			else if (type == SND_CTL_ELEM_TYPE_ENUMERATED) {
+				unsigned item = snd_ctl_elem_value_get_enumerated(v, 0);
+				if (item < snd_ctl_elem_info_get_items(info)) {
+					snd_ctl_elem_info_set_item(info, item);
+					snprintf(out, n, "%s", snd_ctl_elem_info_get_item_name(info));
+				}
+			}
+		}
+	}
+	snd_ctl_close(ctl);
+	return (int)strlen(out);
 }
 
 /* A sleep: the panel dark and the codec's playback volumes muted before the ADSP's clock stops, so the AMOLED does not
@@ -578,8 +675,8 @@ static void sleep_quiet_begin(void)
 	}
 	if (d) closedir(d);
 	if (card_ar >= 0) {
-		amixer_get(card_ar, "RX_RX0 Digital Volume", sleep_rx0, sizeof sleep_rx0);
-		amixer_get(card_ar, "RX_RX1 Digital Volume", sleep_rx1, sizeof sleep_rx1);
+		mixer_get(card_ar, "RX_RX0 Digital Volume", sleep_rx0, sizeof sleep_rx0);
+		mixer_get(card_ar, "RX_RX1 Digital Volume", sleep_rx1, sizeof sleep_rx1);
 		cset(card_ar, "RX_RX0 Digital Volume", "0");
 		cset(card_ar, "RX_RX1 Digital Volume", "0");
 	}
@@ -687,7 +784,7 @@ static void audio_route(void)
 		fclose(f);
 		rename("/run/banana/asound.conf.new", "/run/banana/asound.conf");
 	}
-	/* the control the volume keys change, for the settings screen's Volume (amixer -c <card> sset <control>) */
+	/* the control the volume keys change, for the settings screen's Volume (the volume script's sset) */
 	f = fopen("/run/banana/mixer.new", "w");
 	if (f) {
 		const char *mix = cfg.mixer;
@@ -796,7 +893,7 @@ static void audio_setup(void)
 		int tries = 0;
 		while (tries < 30) {
 			audio_route_ar();
-			amixer_get(card_ar, route, val, sizeof val);
+			mixer_get(card_ar, route, val, sizeof val);
 			if (strstr(val, "on")) break;
 			sleep_us(100000);
 			tries++;
@@ -875,6 +972,7 @@ static void backlight_set_permille(int pm)
 		char p[320], v[32];
 		snprintf(p, sizeof p, "/sys/class/backlight/%s/max_brightness", e->d_name);
 		int max = read_int(p, 0);
+		if (max <= 0) continue;
 		int nv = max * pm / 1000;
 		if (nv < 1) nv = 1;
 		snprintf(p, sizeof p, "/sys/class/backlight/%s/brightness", e->d_name);
@@ -980,15 +1078,19 @@ static void save_settings(double now)
 {
 	if (save_backlight_at > 0 && now >= save_backlight_at) {
 		save_backlight_at = 0;
-		char v[16];
-		snprintf(v, sizeof v, "%d\n", backlight_permille());
-		FILE *f = fopen("/data/banana/backlight", "w");
-		if (f) { fputs(v, f); fclose(f); }
+		int pm = backlight_permille();
+		if (pm >= 0) {	/* no backlight (or no readable max): keep the last good level */
+			char v[16];
+			snprintf(v, sizeof v, "%d\n", pm);
+			FILE *f = fopen("/data/banana/backlight", "w");
+			if (f) { fputs(v, f); fclose(f); }
+		}
 	}
 	if (save_volume_at > 0 && now >= save_volume_at) {
 		save_volume_at = 0;
-		char *argv[] = { "alsactl", "-f", "/data/banana/asound.state", "store", NULL };
-		run(argv);
+		const char *path = "/data/banana/asound.state", *tmp = "/data/banana/asound.state.new";
+		char *argv[] = { "alsactl", "-f", (char *)tmp, "store", NULL };
+		if (run(argv) || rename(tmp, path)) unlink(tmp);	/* a power cut leaves the old state, not a short one */
 	}
 }
 
@@ -1197,16 +1299,21 @@ static int uevent_read(int fd)
 	while ((n = recv(fd, buf, sizeof buf - 1, 0)) > 0) {
 		buf[n] = 0;
 		const char *alias = NULL;
-		int add = 0, block = 0, mmc = 0;
+		int add = 0, block = 0, mmc = 0, udc = 0;
 		for (char *p = buf; p < buf + n; p += strlen(p) + 1) {
 			if (!strcmp(p, "SUBSYSTEM=power_supply")) hit = 1;
 			else if (!strcmp(p, "SUBSYSTEM=block")) block = 1;
+			else if (!strcmp(p, "SUBSYSTEM=udc")) udc = 1;
 			else if (!strncmp(p, "DEVNAME=mmcblk", 14)) mmc = 1;
 			else if (!strcmp(p, "ACTION=add")) add = 1;
 			else if (!strncmp(p, "MODALIAS=", 9)) alias = p + 9;
 		}
 		if (add && alias) load_driver(alias);
 		if (block && mmc) sd2_scan();	/* a card in or out of the second slot (the script looks at what's there) */
+		if (add && udc) {	/* an OTG role switch back to peripheral: rcS's one-shot run cannot see this */
+			char *argv[] = { "/usr/libexec/banana/usb-gadget", NULL };
+			spawn_bg(argv);
+		}
 	}
 	return hit;
 }

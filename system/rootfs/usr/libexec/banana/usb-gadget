@@ -34,6 +34,9 @@ down() {
     if [ "$(cat $G/UDC 2>/dev/null)" ]; then
         echo "" > $G/UDC 2>/dev/null
     fi
+    # the interface can outlive a failed unbind; do not leave its addresses or a live DHCP server behind
+    ip address flush dev $IFACE 2>/dev/null
+    ip link set $IFACE down 2>/dev/null
     # BusyBox's udhcpd writes no pid file (it ignores the conf's `pidfile` line), so find it by its config instead
     pkill -f /run/banana/udhcpd-usb.conf 2>/dev/null
     rm -f $CONF
@@ -41,7 +44,9 @@ down() {
     rm -f $G/configs/c.1/ncm.usb0
     rmdir $G/functions/ncm.usb0 2>/dev/null
     rmdir $G/configs/c.1/strings/0x409 $G/configs/c.1 2>/dev/null
-    rmdir $G/strings/0x409 $G 2>/dev/null
+    rmdir $G/strings/0x409 2>/dev/null
+    rmdir $G/os_desc 2>/dev/null
+    rmdir $G 2>/dev/null
     say "taken down"
 }
 

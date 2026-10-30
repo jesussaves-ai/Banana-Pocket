@@ -68,7 +68,7 @@ static double nowMs()
 }
 
 // usleep is obsolete in POSIX.1-2008; nanosleep is its replacement
-static void sleepUs(long us) { timespec ts = { us / 1000000, (us % 1000000) * 1000 }; nanosleep(&ts, nullptr); }
+static void sleepUs(long us) { timespec ts = { us / 1000000, (us % 1000000) * 1000 }; while (nanosleep(&ts, &ts) && errno == EINTR) {} }
 
 static void logf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 static void logf(const char* fmt, ...)
@@ -485,6 +485,8 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 		{ lib.setOverride(s, r, c, sh); };
 	LowBattery low;
 	IdleGuard guard;	// the burn-in guard's logic, driven by the `guard`/`idle` script commands (test only)
+	guard.configure(atoi(getConfValue(o.data + "/bananad.conf", "dim_minutes", "2").c_str()),
+		atoi(getConfValue(o.data + "/bananad.conf", "dim_percent", "30").c_str()));
 	// the overlay runs in endScreen, over whatever screen the menu drew: the battery's notice, the volume's level,
 	// and the achievement toasts. None of them is gated on a page being open -- what a game unlocked is for the screen
 	// the player comes back to, and the battery is the battery.
@@ -689,9 +691,11 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 			static Splash sp;
 			static bool loaded = false;
 			if (!loaded && !(loaded = sp.load(o.splash, o.banana + "/banana-48.png", variant, o.w, o.h))) { logf("no splash assets in %s", o.splash.c_str()); return 1; }
+			double s0 = nowMs();
 			sp.draw(be.canvas(0), t, ready != 0);
+			double s1 = nowMs();
 			if (!save(0, o.headless + name + "-top.png")) return 1;
-			logf("splash %s at %.0f ms", name.c_str(), t);
+			logf("splash %s at %.0f ms (frame %.2f ms)", name.c_str(), t, s1 - s0);
 		}
 		else if (op == "boot")
 		{
@@ -762,11 +766,13 @@ static Splash gSplash;
 
 // plays until the intro is over and the menu is ready (with the animation off: only the wait for the menu)
 static void playSplash(Display& disp, SoftBackend& be, const Options& o, const std::string& variant, bool on,
-	std::atomic<bool>& ready, Sound& sound, int sig)
+	std::atomic<bool>& ready, std::mutex& readyM, std::condition_variable& readyCv, Sound& sound, int sig)
 {
 	if (!on || !gSplash.load(o.splash, o.banana + "/banana-48.png", variant, be.width(), be.height()))
 	{
-		while (!ready) sleepUs(2000);
+		// no animation: sleep until the loader publishes the menu instead of polling `ready` every 2 ms
+		std::unique_lock<std::mutex> l(readyM);
+		readyCv.wait(l, [&] { return ready.load(); });
 		return;
 	}
 	gSplash.onCue = [&sound](const std::string& n) { sound.play(n); };
@@ -1106,6 +1112,8 @@ int main(int argc, char** argv)
 		return t;
 	};
 	std::atomic<bool> ready{ false };
+	std::mutex readyM;
+	std::condition_variable readyCv;
 	std::thread loader([&]
 	{
 		double t0 = nowMs();
@@ -1124,8 +1132,9 @@ int main(int argc, char** argv)
 		uiPtr->update(nowMs());
 		uiPtr->finishWork();
 		ready = true;
+		readyCv.notify_all();
 	});
-	playSplash(disp, be, o, variant, settings["splash"] != "off", ready, sound, sigPipe[0]);
+	playSplash(disp, be, o, variant, settings["splash"] != "off", ready, readyM, readyCv, sound, sigPipe[0]);
 	loader.join();
 	Menu* ui = uiPtr.get();
 	ui->setLog([](const std::string& m) { logf("%s", m.c_str()); });
@@ -1192,6 +1201,13 @@ int main(int argc, char** argv)
 		if (!panelBl.empty()) { std::ofstream o("/run/banana/panel-ui"); o << "\n"; }
 	}
 	guard.attach(panelBl, panelBlMax);
+	auto configureGuard = [&]
+	{
+		// the same file bananad reads; Settings > Sleep & power owns dim_minutes
+		guard.configure(atoi(getConfValue(o.data + "/bananad.conf", "dim_minutes", "2").c_str()),
+			atoi(getConfValue(o.data + "/bananad.conf", "dim_percent", "30").c_str()));
+	};
+	configureGuard();
 	guard.input(nowMs());
 
 	// what a change on the settings screen means for the menu (called with uiLock held)
@@ -1208,6 +1224,7 @@ int main(int argc, char** argv)
 			lib.batteryShown = settings["battery"] == "percent" ? "text" : "icon";
 			sound.enabled = settings["sounds"] != "off";
 			sound.setBgm(settings["bgm"] != "off");
+			configureGuard();
 			ui->dataChanged();
 			sound.play("select");
 			break;
@@ -1373,7 +1390,19 @@ int main(int argc, char** argv)
 		unlink(CHEEVOS);	// last game's: this game's are written as they are won
 		double start = nowMs();
 		pid_t pid = fork();
-		if (pid < 0) logf("fork failed: %s", strerror(errno));
+		if (pid < 0)
+		{
+			// the panel, input and sound were handed over above: take them back rather than pretend a game ran
+			logf("fork failed: %s", strerror(errno));
+			for (int tries = 0; !disp.openSingle(o.top, err) && tries < 100; tries++) sleepUs(50000);
+			be.invalidate();
+			input.open(disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());
+			sound.setBgm(settings["bgm"] != "off");
+			sound.warm();
+			guard.input(nowMs());
+			dirty = true;
+			return;
+		}
 		if (pid == 0)
 		{
 			setsid();
@@ -1653,6 +1682,7 @@ int main(int argc, char** argv)
 		addFd(sigPipe[0]); addFd(worker.wakeFd); addFd(roms.fd); addFd(launchWatch);
 		if (disp.isOpen()) addFd(disp.pollFd());
 		nf = input.fillFds(fds, nf, (int)(sizeof fds / sizeof fds[0]));
+		if (timeout == 0) timeout = 1;	// a deadline that is due is handled above; never spin on poll(2)
 		int n = poll(fds, nf, timeout);
 		if (n == 0 && !want) dirty = true;	// the engine's next step is due
 		if (n <= 0) continue;

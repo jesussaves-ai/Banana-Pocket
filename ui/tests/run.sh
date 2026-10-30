@@ -169,15 +169,16 @@ for size in 640x480 1024x768; do
     run_bgm "home 0; press start; press a; press down; press down; press down; press down; press down; press down; press right; shot bgm-on"
     grep -q '^bgm = on' "$FX/data/settings.conf" || { echo "FAIL $size: Background Music On didn't save: $(grep '^bgm' "$FX/data/settings.conf")"; fail=1; }
     for s in bgm-off bgm-on; do [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }; done
-    # the AMOLED burn-in guard: 90 s idle dims the panel to 5%, 180 s blanks it, and the first press restores it and
-    # is swallowed (it must not act on the menu)
+    # the AMOLED burn-in guard follows bananad.conf: 2 min idle dims the panel to 30%, 90 s later it blanks, and the
+    # first press restores it and is swallowed (it must not act on the menu)
     glog=$OUT/$size-guard.log
+    printf 'dim_minutes = 2\ndim_percent = 30\n' > "$FX/data/bananad.conf"
     printf '200\n' > "$FX/bl"; printf '255\n' > "$FX/blmax"
     "$HERE/banana-ui" --headless "$OUT/$size-" --size $size --assets "$HERE/assets/rnds" \
         --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
-        --script "home 0; guard $FX/bl $FX/blmax; idle 90000; wait 1; shot guard-dim; idle 90000; wait 1; shot guard-blank; press a; wait 1; shot guard-wake" 2> "$glog" ||
+        --script "home 0; guard $FX/bl $FX/blmax; idle 120000; wait 1; shot guard-dim; idle 90000; wait 1; shot guard-blank; press a; wait 1; shot guard-wake" 2> "$glog" ||
         { echo "FAIL $size: banana-ui (guard) exited $?"; fail=1; }
-    grep -q "guard: idle +90000 ms -> stage 1, level 12" "$glog" || { echo "FAIL $size: the guard didn't dim to 5%: $(grep 'guard: idle' "$glog" | tr '\n' '|')"; fail=1; }
+    grep -q "guard: idle +120000 ms -> stage 1, level 76" "$glog" || { echo "FAIL $size: the guard didn't dim to 30%: $(grep 'guard: idle' "$glog" | tr '\n' '|')"; fail=1; }
     grep -q "guard: idle +90000 ms -> stage 2, level 0" "$glog" || { echo "FAIL $size: the guard didn't blank the panel"; fail=1; }
     grep -q "press a: swallowed by the burn-in guard" "$glog" || { echo "FAIL $size: waking the panel wasn't swallowed"; fail=1; }
     [ "$(cat "$FX/bl")" = 200 ] || { echo "FAIL $size: the guard didn't restore the brightness: $(cat "$FX/bl")"; fail=1; }

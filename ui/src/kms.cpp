@@ -26,14 +26,31 @@ namespace banana
 		drm_mode_create_dumb c = {};
 		c.width = SW; c.height = SH; c.bpp = 32;
 		if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &c)) return false;
-		b.handle = c.handle; b.pitch = c.pitch; b.size = c.size;
-		uint32_t handles[4] = { b.handle }, pitches[4] = { b.pitch }, offsets[4] = { 0 };
-		if (drmModeAddFB2(fd, SW, SH, 0x34325258 /* XR24 */, handles, pitches, offsets, &b.fb, 0)) return false;
+		// the buffer is assigned only on success, so the caller's Buf is never half-initialised
+		auto destroy = [&](uint32_t fb) {
+			if (fb) drmModeRmFB(fd, fb);
+			drm_mode_destroy_dumb d = {};
+			d.handle = c.handle;
+			drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &d);
+		};
+		uint32_t handles[4] = { c.handle }, pitches[4] = { c.pitch }, offsets[4] = { 0 };
+		uint32_t fb = 0;
+		if (drmModeAddFB2(fd, SW, SH, 0x34325258 /* XR24 */, handles, pitches, offsets, &fb, 0))
+		{
+			destroy(0);
+			return false;
+		}
 		drm_mode_map_dumb m = {};
-		m.handle = b.handle;
-		if (drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &m)) return false;
-		void* p = mmap(nullptr, b.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, m.offset);
-		if (p == MAP_FAILED) return false;
+		m.handle = c.handle;
+		void* p = nullptr;
+		if (drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &m) == 0)
+			p = mmap(nullptr, c.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, m.offset);
+		if (p == MAP_FAILED || !p)
+		{
+			destroy(fb);
+			return false;
+		}
+		b.handle = c.handle; b.pitch = c.pitch; b.size = c.size; b.fb = fb;
 		b.map = (uint8_t*)p;
 		memset(b.map, 0, b.size);
 		return true;
@@ -211,6 +228,11 @@ namespace banana
 			Buf& bf = pn.buf[back];
 			if (rot)
 				turn(screens[s], bf, d);
+			else if (d.x0 == 0 && d.x1 == W && bf.pitch == (uint32_t)W * 4)
+			{
+				// a full-width change on an unpadded buffer is one contiguous copy, not a row at a time
+				memcpy(bf.map + (size_t)d.y0 * bf.pitch, screens[s] + (size_t)d.y0 * W, (size_t)(d.y1 - d.y0) * W * 4);
+			}
 			else
 			{
 				// only the columns that changed: the scanout buffer is uncached, every byte written costs

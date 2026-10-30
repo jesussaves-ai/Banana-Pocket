@@ -30,7 +30,7 @@ The launcher runs in its own session (`setsid`), with signals at their defaults 
 | GPU | The Adreno a613 through Mesa's freedreno (A6xx), EGL on GBM, OpenGL ES 3.2, and **Turnip** (Mesa's freedreno Vulkan; Vulkan 1.0 on this part, the a6xx gen1 low block having no hardware multiview). SwanStation's Vulkan renderer runs at 60 fps at 5x through it. Software rendering is fine for the lighter cores. |
 | Touch | evdev; the panel's touchscreen is the FT5452, the only one, so its events are screen 0. It reports the panel's own (unrotated) axes, so coordinates need the same turn as the picture. |
 | Buttons | evdev, one device: the MCU's `rsinput` gamepad. A = `BTN_EAST`, B = `BTN_SOUTH`, X = `BTN_NORTH`, Y = `BTN_WEST`, d-pad = `BTN_DPAD_*`, L/R = `BTN_TL`/`BTN_TR`, L2/R2 = `BTN_TL2`/`BTN_TR2`, Start/Select = `BTN_START`/`BTN_SELECT`, F = `BTN_MODE`. Read it, never grab it (`EVIOCGRAB`): bananad reads the same device for the power button and the volume keys. The volume keys (`KEY_VOLUMEUP/DOWN`) and F + volume (brightness) are bananad's; ignore them. In a game a volume press is handed to RetroArch through `/run/banana/retroarch.cmd` (`VOLUME_UP`/`VOLUME_DOWN`) so it changes its own volume live and shows its OSD; only the menu edits the card's mixer. |
-| Sound | ALSA, device `default` (bananad routes it and writes `/run/banana/asound.conf`; the card is the WCD937x codec with the two AW88166 amplifiers through the AudioReach DSP). Three rules on this platform: the route must be set **before** the stream opens (the DSP takes the mixer values at the open), only the first frontend makes sound (so `run-retroarch` re-asserts the route and waits for the menu's stream to be released first), and the device can abort (`SIGABRT`, exit 134) if the DSP is still tearing the menu's graph down — `run-retroarch` reads the substreams' status and waits, and retries the start if it aborts anyway. |
+| Sound | ALSA, device `default` (bananad routes it and writes `/run/banana/asound.conf`; the card is the WCD937x codec with the two AW88166 amplifiers through the AudioReach DSP). Three rules on this platform: the route must be set **before** the stream opens (the DSP takes the mixer values at the open), only the first frontend makes sound (so the launchers re-assert the route and wait for the menu's stream to be released first), and the device can abort (`SIGABRT`, exit 134) if the DSP is still tearing the menu's graph down. Both launchers call the shared `/usr/libexec/banana/audio-handoff`, which waits for the menu's substream to clear, writes the route with a bounded read-back retry, and then re-asserts it in the background until the emulator's own stream reads RUNNING -- the DSP finishes tearing the menu's graph down *after* its substream already reads closed, so a switch written during that teardown is swallowed and the game would otherwise instantiate its graph with the route off and play nothing. `run-retroarch` additionally retries the start if RetroArch aborts (134). |
 | CPU | Six Cortex-A55 (`policy0`) and two Cortex-A78 (`policy6`); `banana-perf` sets every policy before the game starts. An emulator that lowers a policy's `scaling_max_freq` must put it back on exit. |
 | Clock | The kernel's; the time zone is in `TZ`. |
 
@@ -165,6 +165,53 @@ and `[gamegear]`). Four things are Banana's rather than the core's:
   for this SoC: native 640x480, no texture upscaling, the fast alpha sorting, no anisotropic filtering, the renderer
   on its own thread, and **auto skip frame on** (`some`) so a frame the a613 cannot draw is dropped rather than
   stalling the emulation thread.
+
+## The Wii
+
+**Dolphin**, the standalone emulator, not a libretro core (`systems.conf`'s `[wii]`, run by `run-dolphin`). It is the
+heaviest emulator in the image: a GameCube/Wii console is a 480p machine, and the a613 renders it, so the light
+platformers carry it and the rest are a stretch. Banana ships Dolphin's **nogui** frontend (`dolphin-emu-nogui`, no
+Qt), which is launched from the command line and configured entirely through the INI files beside it -- the same shape
+as a RetroArch core, so a launcher owns it instead of the menu. Four things are Banana's:
+
+- **The frontend and the panel.** `run-dolphin` runs `dolphin-emu-nogui -p wayland` under **cage** (the kiosk
+  compositor), so the game is a Wayland client and cage turns the output with the panel -- nothing rotates the
+  picture itself. Dolphin's nogui has no Wayland platform upstream; the package carries ROCKNIX's patches that add it
+  (and the evdev pad ordering that keeps the button numbers below stable). A card without cage falls back to Dolphin's
+  own `-p fbdev`, which cannot be turned.
+- **The config and the Sys tree.** Dolphin keeps its user data (configs, Wii NAND, state saves, shader cache) at
+  `DOLPHIN_EMU_USERPATH`, which `run-dolphin` points at `/data/dolphin-emu` on the card; the INI files land in its
+  `Config/` subdirectory, written from the image's templates in `/usr/share/banana/dolphin` the first time a game
+  starts (a card keeps its own copy afterwards). Dolphin's mandatory **Sys** tree ships read-only in the image at
+  `/usr/share/dolphin-emu/Sys`, where `File::GetSysDirectory()` looks for it. Games go under `/data/roms/wii`.
+- **Vulkan on the a613, at 4:3.** `Dolphin.ini` sets `GFXBackend = Vulkan` (Mesa's Turnip, the driver the games and
+  RetroArch share) and `GFX.ini` renders at **1x** (640x528) with **synchronous** shaders (`ShaderCompilationMode = 0`;
+  the a613 is the bottleneck and ubershaders cost it more than they save -- ~52 fps against ~45 measured on a
+  platformer) and every enhancement off -- the a613 has no frame to spare on upscaling -- and **`AspectRatio = 2`**
+  (ForceStandard, 4:3), which suits the panel better than Dolphin's `Auto` (16:9 for most Wii titles). A machine without
+  Turnip (the QEMU test's virtio GPU) falls back to `GFXBackend = OGL`, the same device-tree check `run-retroarch` makes.
+- **A sideways Wii Remote, the shake on a shoulder.** The RPC is a stickless slate with no gyro, so the Remote is held
+  **sideways** (`Options/Sideways Wiimote`): the d-pad and the 1/2 buttons play, which is what the platformers (New
+  Super Mario Bros. Wii, the Kirby titles, Donkey Kong Country Returns, Wario Land: Shake It!) expect. The shake has
+  no motion to read, so **R1** drives Dolphin's `Shake/X,Y,Z` accelerator triplet -- a single shoulder stands in for a
+  physical shake. The profile is `WiimoteNew.ini` on the card.
+
+**The faceplate, four buttons or six.** `pad-profile` reports whether the pad is the standard 4-button faceplate or the
+6-button variant (the one whose gamepad advertises `BTN_C`/`BTN_Z`; the device-tree model is only a fallback).
+`run-dolphin` picks the matching `WiimoteNew.ini`/`GCPadNew.ini` and copies it when the detected profile changes, so
+the standard unit's button numbers are untouched and the variant (whose extra buttons shift Dolphin's evdev numbering)
+gets its own. The **hotkeys** are Dolphin's patched nogui ones, read from a GameCube pad: **F (MODE) + Start** quits,
+**F + L1** loads a state, **F + R1** saves one, **F + d-pad up/down** picks the slot, **F + A** screenshots, and
+**F + Y/X/B/Z** toggle FPS, aspect, internal resolution and fast-forward.
+
+Audio is Dolphin's own ALSA backend (no PulseAudio or Cubeb in the image): `run-dolphin` asserts the AudioReach route
+before the game opens the device, the same shared `audio-handoff` `run-retroarch` uses. Dolphin's stock ALSA init
+asks for a maximum buffer of 8192 frames, which this DSP's frontend **rejects outright** (`snd_pcm_hw_params` EINVAL),
+leaving the card silent; the package carries a patch that retries with a halved buffer until the driver takes it (the
+RPC settles on 3840 frames, 8 periods, ~80 ms), so `alsa-negotiate-the-buffer-size.patch` is what makes the Wii make
+sound. Wii games are big: an `.iso`, `.wbfs` or `.rvz` (or a `.wad`), and the system's `perf` is `performance` (both
+clusters).
+
 
 ## The ZX Spectrum
 

@@ -1,0 +1,44 @@
+#!/bin/sh
+# The handheld's face-button layout, for the launchers that map a pad with more (or fewer) buttons than the standard
+# four: prints "4" (the standard faceplate, A/B/X/Y) or "6" (the variant that adds C and Z). One line, nothing else:
+# a launcher reads it with $(pad-profile).
+#
+#   BANANA_PAD_PROFILE   a test or the menu can force "4" or "6"; any other value is ignored
+#
+# Detection is what the kernel actually exposes, not a guess from a name: the six-button pad is the one whose gamepad
+# advertises BTN_C (0x132, 306) and BTN_Z (0x135, 309). On the standard unit the rsinput driver never sets those bits
+# (they are the variant's spare MCU key bits), so its capability mask -- and RetroArch's udev button numbering -- stay
+# exactly as they are. The device tree's model (sm4450-retroid-pocket-classic-6-revq.dts, "Retroid Pocket Classic 6
+# Rev Q") is only the fallback, for a board whose driver has not been taught the two buttons yet.
+set -u
+
+case "${BANANA_PAD_PROFILE:-}" in
+    4|6) printf '%s\n' "$BANANA_PAD_PROFILE"; exit 0 ;;
+esac
+
+# /sys/class/input/eventN/device/capabilities/key is the key bitmap as 64-bit words, least-significant word first, in
+# hex. The gamepad is the rsinput one; its event number is not fixed, so scan every node and pick it by name.
+for cap in /sys/class/input/event*/device/capabilities/key; do
+    [ -r "$cap" ] || continue
+    name=$(cat "${cap%/capabilities/key}/name" 2>/dev/null)
+    case "$name" in
+        *Gamepad*) ;;
+        *) continue ;;
+    esac
+    # shellcheck disable=SC2086
+    set -- $(cat "$cap")
+    [ $# -ge 5 ] || continue
+    # word 4 (0-based) covers bits 256..319: BTN_C is bit 306, BTN_Z bit 309 (50 and 53 within the word)
+    word=$5
+    v=$((0x$word))
+    if [ $(( (v >> 50) & 1 )) -eq 1 ] && [ $(( (v >> 53) & 1 )) -eq 1 ]; then
+        echo 6
+        exit 0
+    fi
+done
+
+if grep -qs 'Classic 6' /proc/device-tree/model; then
+    echo 6
+else
+    echo 4
+fi

@@ -15,13 +15,21 @@ cpu() {   # cpu <governor> <cap kHz or "max">: every cluster, each to the freque
         [ -d "$p" ] || continue
         lo=$(cat $p/cpuinfo_min_freq 2>/dev/null) || continue
         hi=$(cat $p/cpuinfo_max_freq 2>/dev/null)
+        [ -n "$hi" ] || hi=$lo
         target=$2
         [ "$2" = max ] && target=$hi
-        # the highest frequency this cluster offers at or under the cap
-        best=$lo
-        for f in $(cat $p/scaling_available_frequencies 2>/dev/null); do
-            [ "$f" -le "$target" ] && [ "$f" -gt "$best" ] && best=$f
-        done
+        # the highest frequency this cluster offers at or under the cap; with no table, let the kernel reject a
+        # target it cannot take rather than silently capping the cluster to its minimum
+        freqs=$(cat $p/scaling_available_frequencies 2>/dev/null)
+        best=$target
+        [ -n "$freqs" ] && {
+            best=$lo
+            for f in $freqs; do
+                [ "$f" -le "$target" ] && [ "$f" -gt "$best" ] && best=$f
+            done
+        }
+        [ "$best" -gt "$hi" ] && best=$hi
+        [ "$best" -lt "$lo" ] && best=$lo
         echo $lo > $p/scaling_min_freq 2>/dev/null
         echo $best > $p/scaling_max_freq 2>/dev/null
         echo $1 > $p/scaling_governor 2>/dev/null

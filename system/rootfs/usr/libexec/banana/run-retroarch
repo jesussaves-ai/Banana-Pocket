@@ -38,54 +38,10 @@ fi
 c=${CORE##*/}; c=${c%_libretro.so}
 [ "$c" != "$1" ] && echo "run-retroarch: core $c (Settings > Other systems), not $1" >&2 || echo "run-retroarch: core $c" >&2
 # The RPC's DSP: the frontend RetroArch opens has to be routed to the speaker I2S before the open, and the menu has
-# just let go of that frontend (banana-ui closes its stream when a game starts). Setting it here as well as in rcS
-# covers a library that was built without the rcS step, and a route the DSP dropped when the menu's stream closed.
-if [ -d /proc/asound/card0 ]; then
-    # the menu closed its stream a moment ago (its click sounds); the DSP tears that frontend's graph down
-    # asynchronously, and an open in the middle of it leaves RetroArch with no device (its ALSA driver then aborts in
-    # snd_pcm_avail, exit 134). Wait for the frontends to say they are free rather than guess a delay: how long the
-    # DSP takes depends on what the menu was playing. Up to 1.2 s, then take the device anyway (the 134 retry below
-    # still covers a graph that outlasts the wait).
-    i=0
-    while [ $i -lt 12 ]; do
-        busy=
-        for st in /proc/asound/card0/pcm*p/sub0/status; do
-            [ -r "$st" ] || continue
-            case "$(cat $st 2>/dev/null)" in
-                RUNNING|SETUP|PREPARING|PREPARED|DRAINING|PAUSED) busy=1 ;;
-            esac
-        done
-        [ -n "$busy" ] || break
-        slept=1
-        sleep 0.1; i=$((i + 1))
-    done
-    # A substream reads "closed" the moment banana-ui lets go of the frontend (its Sound::release() when a game
-    # starts), but the DSP finishes tearing the graph down a beat later; an open inside that beat leaves the speaker
-    # amplifiers answering "start failure (-1)" and the game silent -- measured on the RPC, and the reason it is not
-    # enough to wait only while a substream still reads busy. So wait out the teardown every time.
-    sleep 0.8
-    # Write the route and, more to the point, make sure it *took*: the DSP refuses a mixer write until it is
-    # ready, so amixer returning 0 is not proof, and an open while the mixer still reads off latches an unrouted
-    # graph ("no backend DAIs enabled for MultiMedia1 Playback") that is silent for the game's whole life. The
-    # value is bananad's published route, so headphones still route to the codec.
-    routectl="SENARY_MI2S_RX Audio Mixer MultiMedia1"
-    want=$(sed -n "s/^${routectl}=//p" /run/banana/audio-route 2>/dev/null | tail -n 1)
-    [ -n "$want" ] || want=on,on
-    i=0
-    while [ $i -lt 25 ]; do
-        amixer -q -c 0 cset "name=${routectl}" "$want" 2>/dev/null
-        # The values are on the line starting with ": " -- the one above says ",values=2" (how many there are). A
-        # pattern of "values=" alone takes both, so the read-back is "2 on" and never equals "on": every launch then
-        # waits out the whole loop (15 s of black screen) before the game is even started.
-        cur=$(amixer -c 0 cset "name=${routectl}" 2>/dev/null | sed -n 's/.*: *values=//p' | cut -d, -f1)
-        [ "$cur" = "$(printf '%s' "$want" | cut -d, -f1)" ] && break
-        sleep 0.2; i=$((i + 1))
-    done
-    # The amplifiers' level is the *user's* volume -- the volume keys and Settings > Volume own it, and bananad
-    # has it saved in asound.state. Setting it here as well (it used to be pinned to 90% on every launch) was what
-    # made a game start loud again however quiet the menu had been left: the menu's level was thrown away the moment
-    # a game started. The route is what this script has to fix up; the level it leaves alone.
-fi
+# just let go of that frontend (banana-ui closes its stream when a game starts). The shared handoff does the waiting,
+# the route write and the readiness gate (see audio-handoff); a graph that still outlasts it is covered by the ALSA
+# abort (exit 134) retry below.
+/usr/libexec/banana/audio-handoff
 CFG=/data/retroarch/retroarch.cfg
 [ -f $CFG ] || { mkdir -p /data/retroarch; cp /etc/banana/retroarch.cfg $CFG; }
 mkdir -p /data/saves /data/states /data/screenshots

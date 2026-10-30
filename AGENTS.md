@@ -1,27 +1,20 @@
-# Banana Pocket Agent Rules & Constraints
+# Banana Pocket (RPC / SM4450)
 
-## 1. Token & Context Efficiency (CRITICAL)
-- **Zero Fluff:** Omit all conversational filler, greetings, preambles, and post-change summaries. Output only code actions, tool calls, or direct answers.
-- **Surgical Reads:** NEVER read entire files or run recursive directory dumps (`ls -R`, `find .`, `cat`). Use `grep` or `ripgrep` (`rg -n`) to locate target symbols, then read only exact line ranges (`sed -n 'X,Yp'` or scoped file reads).
-- **Minimal Diffs:** Apply targeted line replacements. Never echo unchanged functions or full files in chat responses.
-- **Quiet Shell:** Always append quiet/concise flags to bash commands (`make -s`, `git status -s`, `git diff --stat`). Pipe build logs through `tail -n 30` or `grep -iE "error|warning|undefined"` to avoid flooding context.
-- **Ignore Build Artifacts:** Never inspect or index `build/`, `output/`, `dl/`, `host/`, `.git/`, `*.o`, `*.img`, or binary firmware blobs.
+## 1. Agent I/O & Token Discipline
+- **Output:** Zero prose/preambles/summaries. Output ONLY tool calls, minimal line-diffs, or direct answers. Never echo unchanged code.
+- **Reads:** NO full-file reads or tree dumps (`cat`, `ls -R`, `find .`). Locate via `rg -n`, read exact line ranges (`sed -n 'X,Yp'`).
+- **Arch Docs:** Do NOT read full `docs/ARCHITECTURE.md`. Query specific sections via `rg -n "^## " docs/ARCHITECTURE.md` + `sed -n 'X,Yp'` ONLY when modifying boot/A-B updates, KMS/renderer, ALSA/DSP, `bananad` power/sleep, or USB gadget.
+- **Ignore:** `build/`, `output/`, `dl/`, `host/`, `.git/`, `*.o`, `*.img`, `*.tar`, binary blobs.
+- **Shell/Verify:** Quiet flags only (`make -s`, `git status -s`, `git diff --stat`). Filter build logs (`| tail -n 30` or `| grep -iE "error|warning|undefined"`). Validate changes via `make -s test` (inspect full log only on failure).
 
-## 2. Hardware Scope (Strict: Retroid Pocket Classic / SM4450)
-- **SoC & GPU:** Qualcomm Snapdragon G1 Gen 2 (`SM4450`, `policy0` 6x A55 + `policy6` 2x A78), Adreno `a613` GPU (`msm` + Freedreno).
-- **Display:** Single 1240x1080 AMOLED panel (`CH13726A`, `rotation = <90>`). `banana-ui` renders on CPU (`src/soft.cpp`) to KMS dumb buffers with 4x4 transpose rotation; games run via `cage` kiosk compositor.
-- **Audio:** Qualcomm AudioReach (`sc8280xp`/q6apm) + `WCD937x` + dual `AW88166` amps. In `banana-ui`/`bananad`, set the route with the ALSA C mixer API (never fork `amixer`) before opening the PCM (the shell launchers `volume` and `run-retroarch` do fork `amixer`: they run before/around the open, out of process); release PCM before game handover; control volume via `Left PCM`/`Right PCM` amp gain (`0..511`).
-- **Input & Power:** Stickless slate (no `SW_LID`, no RTC `wakealarm`). `rsinput` MCU gamepad + `FT5452` touch + power/vol keys.
+## 2. Hardware & Stack Invariants
+- **SoC/Clocks:** SM4450 (`policy0` 6xA55 + `policy6` 2xA78; apply governors to BOTH), Adreno `a613` (`msm` + Freedreno).
+- **Display:** 1240x1080 AMOLED (`CH13726A`, `rotation = <90>`). `banana-ui` (`ui/src/soft.cpp`, `kms.cpp`): CPU render, dirty-rect diffing, 4x4 transpose copy to KMS dumb buffers, vblank flip. Games: `cage` Wayland kiosk ONLY.
+- **Audio:** AudioReach (`sc8280xp`/q6apm) + `WCD937x` + dual `AW88166`. `banana-ui`/`bananad` MUST apply mixer route via ALSA C API *before* PCM open (NEVER fork `amixer` in C/C++; only shell scripts `volume`/`run-retroarch` fork `amixer`). Close PCM before game handover. Volume: `Left PCM`/`Right PCM` HW gain (`0..511`).
+- **Input/Power:** Stickless slate (`rsinput` MCU + `FT5452` touch + power/vol; NO `SW_LID`, NO RTC `wakealarm`). Preserve AMOLED burn-in guard (`/run/banana/screen-off`) + `s2idle`/`deep` wake-key swallowing.
+- **Storage:** RO A/B `squashfs` (`banana-root-a`/`b`), RW `exFAT` `/data` (`BANANA`), `tmpfs` `/run/banana`.
+- **Forbidden:** NO `systemd`, `udev`, `PipeWire`, `PulseAudio`, `DBus`, `NetworkManager`, or extra compositors in `banana-ui`.
 
-## 3. Architecture & Minimalism
-- **Filesystem:** Read-only A/B `squashfs` rootfs (`banana-root-a`/`b`) + writable `exFAT` partition mounted at `/data` (`BANANA`) and `/run/banana` (`tmpfs`).
-- **Forbidden Stack:** NO `systemd`, `udev`, `PipeWire`, `PulseAudio`, `DBus`, or `NetworkManager`. Do not add compositors to `banana-ui` (`cage` is strictly for single-app game execution).
-
-## 4. Performance & Resource Discipline
-- **Rendering:** Minimize CPU composition overhead. Use dirty-rectangle / damage-diffing in `banana-ui` and zero-copy DRM page-flipping where applicable.
-- **Idle & Memory:** Preserve minimal idle CPU/RAM footprint. Avoid polling loops; use blocking `epoll`/`poll` on `evdev`, `udev`, and IPC sockets.
-- **AMOLED Protection:** Maintain burn-in guard logic and wake-input swallowing when dimming or waking from `s2idle`.
-
-## 5. Code Standards & Verification
-- **Languages:** Idiomatic C++17 (`-fno-exceptions -fno-rtti` where configured) in `ui/src/`; strict POSIX C11/C99 in `system/bananad/`. No unauthorized third-party libraries.
-- **Verification:** Run `make -s test` to validate changes locally before completing a task. Only inspect full test output if a test fails.
+## 3. Code Standards
+- **Lang:** `ui/src/` = C++17 (`-fno-exceptions -fno-rtti`, avoid diverging `ui/rnds`); `system/bananad/` = strict POSIX C99/C11. Zero unauthorized 3rd-party libs.
+- **Concurrency:** Zero polling loops; strictly blocking `poll`/`epoll` on `evdev`, `inotify`, netlink, and IPC FDs.

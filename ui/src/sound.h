@@ -47,7 +47,8 @@ namespace banana
 		std::mutex m;
 		std::condition_variable cv;
 		std::string queued;
-		bool stop = false, closeNow = false;
+		bool stop = false;
+		std::atomic<bool> closeNow{false};	// read by openDev() without m (release() must be able to abort an open)
 		std::atomic<bool> screenOff{false};	// the guard blanked the panel: let the device go (see setScreenOn)
 		std::atomic<bool> handover{false};	// the last close was release(): the next open follows a game's handover
 		std::atomic<bool> devOpen{false};	// the playback device is open (see release())

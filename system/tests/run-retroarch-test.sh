@@ -36,7 +36,8 @@ xform() {
 }
 xform "$LAUNCH/run-retroarch" > "$W/libexec/run-retroarch"
 xform "$LAUNCH/ra-secrets" > "$W/libexec/ra-secrets"
-chmod +x "$W/libexec/run-retroarch" "$W/libexec/ra-secrets"
+xform "$LAUNCH/audio-handoff" > "$W/libexec/audio-handoff"
+chmod +x "$W/libexec/run-retroarch" "$W/libexec/ra-secrets" "$W/libexec/audio-handoff"
 
 # the stub: record argv, and keep the account config the run appends (the game's own copy of the password/token)
 cat > "$W/retroarch" <<EOF
