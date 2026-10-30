@@ -23,8 +23,9 @@ namespace banana
 	{
 	public:
 		~Input() { close(); }
-		// rot: the panel is mounted turned (the RPC's 90); panelW/panelH: its own size (1080x1240 there), which the
-		// touchscreen reports, while the menu draws in another size (1240x1080) -- taps are turned to match
+		// panelW/panelH: the size the menu draws in (the RPC's 1240x1080). rot: the panel is mounted turned (the
+		// RPC's 90); scanoutW/scanoutH: the panel's own size (1080x1240 there), which the touchscreen reports --
+		// taps are turned from those to the menu's. 0 for rot/scanout: the panel is the menu's own size, unturned.
 		void open(int panelW, int panelH, int rot = 0, int scanoutW = 0, int scanoutH = 0);
 		void close();
 		// a device came or went in /dev/input (watched with inotify): open() again to take it

@@ -43,7 +43,8 @@ namespace banana
 	void Input::open(int panelW, int panelH, int turn, int scanoutW, int scanoutH)
 	{
 		close();
-		pw = panelW; ph = panelH;
+		pw = panelW; ph = panelH;						// the menu's own size
+		rot = turn; sw = scanoutW; sh = scanoutH;		// the panel's turn and its own size (the touchscreen's axes)
 		watch = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 		if (watch >= 0) inotify_add_watch(watch, "/dev/input", IN_CREATE | IN_DELETE | IN_ATTRIB);
 		DIR* d = opendir("/dev/input");
