@@ -1,14 +1,13 @@
 # Installing BananaOS on the Retroid Pocket Classic
 
-Two things stand between a stock Retroid Pocket Classic and BananaOS: the handheld needs a bootloader that reads a
-Linux card (that is **OpenABL**, which this device may or may not already have), and the card needs the Banana image.
-This page walks both, from a stock Android handheld.
+Two things stand between a stock Retroid Pocket Classic and BananaOS. The handheld ships with Qualcomm's own ABL,
+which boots **Android only**, so first you flash a Linux bootloader (**OpenABL**); then the card needs the Banana
+image. This page walks both, from a stock Android handheld.
 
 > [!CAUTION]
 > <span style="color:red">**A Retroid Pocket Classic (Qualcomm Snapdragon G1 Gen 2 / SM4450, board "Rev Q" — the one
 > this build targets).**</span> Getting the **wrong chipset's** ABL (`abl_signed-<other>.elf`) is the classic way to
-> brick the device, and flashing a bootloader is the one step here that can. It is only needed once — if your handheld
-> already shows the bootloader menu (Step 1), skip to Step 3 and flash nothing.
+> brick the device, and flashing a bootloader is the one step here that can. It is only needed once.
 >
 > **I am not responsible if you accidentally brick your device.**
 
@@ -22,20 +21,11 @@ This page walks both, from a stock Android handheld.
 - The image: **`banana-retroid-pocket-classic.img.gz`** from
   [the Releases page](https://github.com/jesussaves-ai/Banana-Pocket/releases).
 
-## Step 1 — Does the handheld already have OpenABL?
+## Step 1 — Install a Linux bootloader (SM4450)
 
-Power it **off**, then hold **Volume Down** and press **Power**.
-
-- **A menu appears** (its items include *Start*, *Boot mode*, *Device model*, *Boot source*) → **OpenABL is already
-  there. Skip to Step 3.**
-- **Android boots** (or nothing does) → install one in Step 2.
-
-The bootloader Banana needs is a patched Qualcomm **ABL** with a menu and a standard Linux boot, so that it reads
-`extlinux/extlinux.conf` from the card. Without one the handheld boots Android only.
-
-## Step 2 — Install a Linux bootloader (SM4450)
-
-**Two different projects** provide it, and either works with Banana (the menu differs a little):
+The handheld ships with Qualcomm's own ABL, which boots **Android only**. Banana needs a patched **ABL** — a menu and
+a standard Linux boot, so it reads `extlinux/extlinux.conf` from the card. **Two different projects** provide one, and
+either works with Banana (the menu differs a little):
 
 - **OpenABL** — <https://github.com/OpenHandheldCollective/OpenABL> — the graphical menu; this is what Banana's docs
   and current ROCKNIX SM4450 builds use. Its releases carry `abl_signed-SM4450.elf` (+ `.sha256`) and
@@ -45,7 +35,7 @@ The bootloader Banana needs is a patched Qualcomm **ABL** with a menu and a stan
 
 Whichever you pick, the image must be for **SM4450**, and check its `.sha256` before flashing.
 
-### 2a. OpenABL with `fastboot` (the usual way)
+### 1a. OpenABL with `fastboot` (the usual way)
 
 The Retroid Pocket Classic's bootloader is **already unlocked**, so `fastboot` flashes the ABL straight away — there
 is no OEM‑unlocking step and nothing is wiped. (`fastboot getvar unlocked` says `unlocked: yes`; only a *locked*
@@ -63,12 +53,12 @@ bootloader would need OEM unlocking and `fastboot flashing unlock`, which erases
 4. `fastboot reboot`; hold **Volume Down** at power‑on for the OpenABL menu (*Boot mode → Linux*, *Boot source →
    Auto*, *Start*).
 
-### 2b. OpenABL from a custom recovery
+### 1b. OpenABL from a custom recovery
 
 `openabl-recovery-flashable-sm4450.zip` in a custom recovery such as TWRP: it writes ABL to both slots and adds an
 `addon.d` script that re‑flashes the other slot after an Android OTA.
 
-### 2c. ROCKNIX‑ABL, from the device
+### 1c. ROCKNIX‑ABL, from the device
 
 ROCKNIX's `update.sh` fetches its release and writes `/dev/disk/by-partlabel/abl_a` and `abl_b`; run it on the device
 (from its Linux, or from Android with root via **Handheld Settings → Advanced → "Run script as Root"**, or the
@@ -81,7 +71,7 @@ A bad ABL is recoverable through Qualcomm **EDL (9008)** with the device's own f
 partitions (take one before flashing OpenABL too: from a root shell,
 `dd if=/dev/block/by-name/abl_a of=abl_a.img`). Getting the chipset wrong is the classic way to brick the device.
 
-## Step 3 — Write the Banana card
+## Step 2 — Write the Banana card
 
 Download **`banana-retroid-pocket-classic.img.gz`** and write it to the microSD card. **Everything on the card is
 erased.**
@@ -100,7 +90,7 @@ erased.**
   zcat banana-retroid-pocket-classic.img.gz | sudo dd of=/dev/mmcblk0 bs=4M status=progress
   ```
 
-## Step 4 — First boot
+## Step 3 — First boot
 
 Put the card in the handheld, then power on (holding **Volume Down** if the OpenABL menu is set to Android):
 
@@ -116,7 +106,7 @@ Put the card in the handheld, then power on (holding **Volume Down** if the Open
 If the picture is turned or upside down, add `banana.rotate=0`, `90`, `180` or `270` to the `APPEND` lines in
 `extlinux/extlinux.conf` on the card's **BANANA-BOOT** partition and reboot — no rebuild needed.
 
-## Step 5 — Games
+## Step 4 — Games
 
 Power off, put the card in a computer: a **BANANA** drive with `roms/`, `bios/`, `banana/`.
 
