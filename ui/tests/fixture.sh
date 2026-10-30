@@ -45,4 +45,7 @@ now=$(date +%s)
 printf 'nds/Banana Kart DS.nds\t14\t79920\t%s\t12\t40\nnds/Peel Quest.nds\t3\t5400\t%s\t5\t40\ngba/Orchard Tactics.gba\t1\t900\t%s\n' \
     $((now - 3600)) $((now - 90000)) $((now - 900000)) > "$D/data/playstats.tsv"
 echo "nds/Peel Quest.nds" > "$D/data/favorites.txt"
+# a save state for one nds game (RetroArch keeps them sorted per core), so the states page has something to list
+mkdir -p "$D/states/DeSmuME"
+head -c 4096 /dev/zero > "$D/states/DeSmuME/Banana Kart DS.state"
 echo "fixture in $D"

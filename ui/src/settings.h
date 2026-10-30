@@ -38,8 +38,9 @@ namespace banana
 		}
 		void setup() { mOpen = true; openSetup(); }	// the first-time setup, from the host
 		// a game's own options (the library's X): the core and shader this one game runs with instead of the
-		// system's and the global ones; `core` and `shader` are the game's present overrides ("" for neither)
-		void openGame(const std::string& system, const std::string& rel, const std::string& title,
+		// system's and the global ones, and its save states. `core` and `shader` are the game's present overrides
+		// ("" for neither); `rom` is its path, for the states page.
+		void openGame(const std::string& system, const std::string& rel, const std::string& rom, const std::string& title,
 				const std::string& core, const std::string& shader);
 		std::function<void(const std::string& system, const std::string& rel, const std::string& core, const std::string& shader)> setOverride;
 		bool isOpen() const { return mOpen; }
@@ -112,13 +113,23 @@ namespace banana
 		std::string about, wifiInfo, ip;
 
 		// the Wi-Fi pages: the networks around, and the keyboard for a password (settings-wifi.cpp)
-		enum Page { LIST, NETWORKS, KEYBOARD, UPDATES, SETUP } page = LIST;
-		// a game's own options: the LIST machinery, but a flat two-row list (Emulator, Shader) for one game, opened
-		// from the library and closed back to the menu (there is no group grid behind it)
+		enum Page { LIST, NETWORKS, KEYBOARD, UPDATES, SETUP, STATES } page = LIST;
+		// a game's own options: the LIST machinery, but a flat list (Emulator, Shader, Save states) for one game,
+		// opened from the library and closed back to the menu (there is no group grid behind it)
 		bool gamePage = false;
 		std::string gameSys, gameRel, gameTitle;
 		std::vector<Item> savedItems;		// the main list, while a game's page holds items instead
 		std::vector<std::string> savedGroups;
+		// the states page (from a game's Save states row): the states the game has, in banana/states (RetroArch's
+		// savestate_directory, sorted per core). A deletes one (twice), Y copies it to a timestamped backup.
+		struct SaveState { std::string path, label, detail; };
+		std::string gameRom;
+		std::vector<SaveState> states;
+		int ssel = 0, statesCount = 0;
+		void scanStates();
+		void openStates();
+		Result pressStates(Key k);
+		void renderStates();
 		// the keyboard types a text for a purpose: a Wi-Fi password, or an account's name or password
 		// (banana/accounts.conf: RetroAchievements for RetroArch, ScreenScraper for the scraper to come)
 		enum Entry { ENTRY_WIFI, ENTRY_RA_USER, ENTRY_RA_PASS, ENTRY_SS_USER, ENTRY_SS_PASS, ENTRY_SEARCH } entry = ENTRY_WIFI;

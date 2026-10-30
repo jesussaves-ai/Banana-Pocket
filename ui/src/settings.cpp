@@ -543,13 +543,13 @@ namespace banana
 		mOpen = true;
 	}
 
-	void Settings::openGame(const std::string& system, const std::string& rel, const std::string& title,
+	void Settings::openGame(const std::string& system, const std::string& rel, const std::string& rom, const std::string& title,
 			const std::string& core, const std::string& shader)
 	{
 		// the main list is held aside and put back on close(); the game's page is the LIST machinery with a flat
-		// two-row list (there is no group grid behind it, so B and Start both close back to the menu)
+		// list (there is no group grid behind it, so B and Start both close back to the menu)
 		savedItems = items; savedGroups = groups;
-		gamePage = true; gameSys = system; gameRel = rel; gameTitle = title;
+		gamePage = true; gameSys = system; gameRel = rel; gameRom = rom; gameTitle = title;
 		items.clear();
 		auto opt = [&](const std::string& label, const std::string& help, const std::string& cur,
 				const std::vector<std::pair<std::string, std::string>>& opts)
@@ -590,6 +590,15 @@ namespace banana
 		opt("Emulator", "The core this one game runs with. Default follows the system's own emulator (Settings > Other systems).", core, cores);
 		opt("Shader", "The look for this one game. Default follows Settings > Other systems > Shader.", shader,
 			{ { "Off", "off" }, { "LCD", "lcd" }, { "CRT", "crt" }, { "Sharp pixels", "sharp" } });
+		scanStates();	// (a game has at most a handful; the row's value is their count)
+		{
+			Item it;
+			it.section = title; it.icon = "gear"; it.label = "Save states";
+			it.help = "The save states this game has on the card: browse them, delete one, or keep a backup copy. "
+				"RetroArch writes them (Quick resume, and the slots you save to) under banana/states.";
+			it.kind = Item::PAGE; it.key = "states";
+			items.push_back(it);
+		}
 		groups = { title };
 		inGroups = false;
 		sel = top = 0;
@@ -661,6 +670,7 @@ namespace banana
 		{
 			if (dir <= 0) return NONE;
 			if (it.key == "scrape") { startScrape(); return MOVED; }
+			if (it.key == "states") { openStates(); return MOVED; }
 			if (it.key == "update") openUpdates(); else if (it.key == "setup") openSetup(); else openNetworks();
 			return MOVED;
 		}
@@ -770,9 +780,10 @@ namespace banana
 		if (page == KEYBOARD) return pressKeyboard(k);
 		if (page == UPDATES) return pressUpdates(k);
 		if (page == SETUP) return pressSetup(k);
+		if (page == STATES) return pressStates(k);
 		if (gamePage)
 		{
-			// a game's own page: a flat two-row list; B and Start close back to the menu (there is no grid behind it)
+			// a game's own page: a flat list; B and Start close back to the menu (there is no grid behind it)
 			switch (k)
 			{
 			case Key::UP: case Key::DOWN:
@@ -873,6 +884,18 @@ namespace banana
 				if (downY < ry || downY > ry + 56) continue;
 				if (r != usel) { usel = r; armed = -1; return MOVED; }
 				return pressUpdates(Key::A);
+			}
+			return NONE;
+		}
+		if (page == STATES)
+		{
+			if (downY >= 418 && downY <= 466) return pressStates(downX < 320 ? Key::B : Key::A);
+			for (int r = 0; r < ROWS && r < (int)states.size(); r++)
+			{
+				float ry = 82 + r * 64;
+				if (downY < ry || downY > ry + 56) continue;
+				if (r != ssel) { ssel = r; armed = -1; return MOVED; }
+				return pressStates(Key::A);
 			}
 			return NONE;
 		}
@@ -1258,6 +1281,7 @@ namespace banana
 		if (page == KEYBOARD) { renderKeyboard(); return; }
 		if (page == UPDATES) { renderUpdates(); return; }
 		if (page == SETUP) { renderSetup(); return; }
+		if (page == STATES) { renderStates(); return; }
 		if (inGroups) { renderGroups(); return; }
 		SPal p = pal(light);
 		const Item& cur = items[sel];
@@ -1331,6 +1355,8 @@ namespace banana
 			else if (it.kind == Item::PAGE && it.key == "network") v = wstat.connected ? fit(wstat.ssid, true, 19, 300) : (wifiOn() ? "Choose" : "");
 			else if (it.kind == Item::PAGE && it.key == "update") v = updatesWaiting();
 			else if (it.kind == Item::PAGE && it.key == "scrape") v = scrapeShort();
+			else if (it.kind == Item::PAGE && it.key == "states")
+				v = states.empty() ? "None" : std::to_string(states.size()) + (states.size() == 1 ? " state" : " states");
 			if (v.empty()) continue;
 			float vw = text(v, true, 19, 0, 0, p.ink, false, 0, true);
 			Color vc = on ? (armed == i ? p.onPickAccent : p.onPick) : p.muted;
@@ -1991,6 +2017,192 @@ namespace banana
 		{
 			float aw = faceWidth("A", act);
 			face("A", act, 622 - aw, aw);
+		}
+		if (single) footer(help, p.muted);
+		be->endScreen();
+	}
+	// ---- the save states a game has (the states page) -----------------------------------------------------------
+	void Settings::scanStates()
+	{
+		states.clear();
+		const char* env = getenv("BANANA_STATES");	// (another directory, for testing)
+		std::string root = env && *env ? env : "/data/states";
+		// RetroArch names a state "<rom basename, no extension>.state", then ".state1"..".stateN", and ".state.auto"
+		// for the quick-resume one; its slot handling ignores ".state.bak"-like names. With savestates sorted per
+		// core (the default false for by-content), the files are in states/<core>/, so look in the root too.
+		std::string base = gameRom.substr(gameRom.rfind('/') + 1);
+		size_t dot = base.rfind('.');
+		if (dot != std::string::npos && dot > 0) base = base.substr(0, dot);
+		std::string prefix = base + ".state";
+		std::vector<std::string> dirs = { root };
+		if (DIR* d = opendir(root.c_str()))
+		{
+			while (dirent* e = readdir(d))
+			{
+				if (e->d_name[0] == '.') continue;
+				std::string sub = root + "/" + e->d_name;
+				struct stat st;
+				if (stat(sub.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) dirs.push_back(sub);
+			}
+			closedir(d);
+		}
+		for (auto& dir : dirs)
+		{
+			DIR* d = opendir(dir.c_str());
+			if (!d) continue;
+			while (dirent* e = readdir(d))
+			{
+				std::string n = e->d_name;
+				if (n.compare(0, prefix.size(), prefix) != 0) continue;	// "" suffix is slot 0 itself
+				std::string path = dir + "/" + n;
+				struct stat st;
+				if (stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) continue;
+				std::string suffix = n.substr(prefix.size());	// "" . "1".."9" . ".auto" . ".bak-<epoch>"
+				SaveState s; s.path = path;
+				if (suffix.empty()) s.label = "Slot 0";
+				else if (suffix.find_first_not_of("0123456789") == std::string::npos) s.label = "Slot " + suffix;
+				else if (suffix == ".auto") s.label = "Auto (quick resume)";
+				else if (suffix.compare(0, 5, ".bak-") == 0) s.label = "Backup";
+				else s.label = suffix;
+				char when[32];
+				struct tm tmv;
+				localtime_r(&st.st_mtime, &tmv);
+				strftime(when, sizeof when, "%Y-%m-%d %H:%M", &tmv);
+				s.detail = std::string(when) + "  " + (st.st_size >= 1048576 ? std::to_string(st.st_size / 1048576) + " MB"
+					: std::to_string((st.st_size + 512) / 1024) + " KB");
+				states.push_back(s);
+			}
+			closedir(d);
+		}
+		// Auto first, then Slot 0, then the numbered slots, then backups
+		auto rank = [](const std::string& l)
+		{
+			if (l.compare(0, 4, "Auto") == 0) return 0;
+			if (l.compare(0, 5, "Slot ") == 0) return 1;
+			if (l.compare(0, 6, "Backup") == 0) return 3;
+			return 2;
+		};
+		std::sort(states.begin(), states.end(), [&](const SaveState& a, const SaveState& b)
+			{
+				int ra = rank(a.label), rb = rank(b.label);
+				return ra != rb ? ra < rb : a.label < b.label;
+			});
+		statesCount = (int)states.size();
+	}
+
+	void Settings::openStates()
+	{
+		scanStates();
+		page = STATES;
+		ssel = 0;
+		armed = -1;
+		message.clear();
+	}
+
+	Settings::Result Settings::pressStates(Key k)
+	{
+		int n = (int)states.size();
+		switch (k)
+		{
+		case Key::UP: case Key::DOWN:
+			if (!n) return NONE;
+			ssel = (ssel + (k == Key::UP ? -1 : 1) + n) % n;
+			armed = -1;
+			return MOVED;
+		case Key::A: case Key::RIGHT:
+			if (!n) return NONE;
+			if (armed != 2000 + ssel) { armed = 2000 + ssel; return MOVED; }	// A again to delete it
+			armed = -1;
+			message = unlink(states[ssel].path.c_str()) == 0 ? "State deleted" : "Couldn't delete that state";
+			scanStates();
+			if (ssel >= (int)states.size()) ssel = std::max(0, (int)states.size() - 1);
+			return MOVED;
+		case Key::Y:
+		{
+			if (!n) return NONE;
+			// a copy beside the state; RetroArch's slot handling ignores ".state.bak"-like names (command.c)
+			std::string to = states[ssel].path + ".bak-" + std::to_string((long long)time(nullptr));
+			FILE* in = fopen(states[ssel].path.c_str(), "rb");
+			FILE* out = in ? fopen(to.c_str(), "wb") : nullptr;
+			if (!in || !out)
+			{
+				if (in) fclose(in);
+				if (out) { fclose(out); unlink(to.c_str()); }
+				message = "Couldn't copy that state";
+				return MOVED;
+			}
+			char buf[65536];
+			size_t r = 0;
+			while ((r = fread(buf, 1, sizeof buf, in)) > 0 && fwrite(buf, 1, r, out) == r) {}
+			bool ok = r == 0 && !ferror(in);
+			fclose(in); fclose(out);
+			if (!ok) unlink(to.c_str());
+			message = ok ? "Copied to a backup" : "Couldn't copy that state";
+			scanStates();
+			return MOVED;
+		}
+		case Key::B: case Key::LEFT:
+			page = LIST; armed = -1; message.clear();	// back to the game's own options
+			return MOVED;
+		case Key::START:
+			page = LIST; mOpen = false; return CLOSED;
+		default: return NONE;
+		}
+	}
+
+	void Settings::renderStates()
+	{
+		SPal p = pal(light);
+		std::string help = !message.empty() ? message
+			: states.empty()
+				? "No save states for this game yet. RetroArch writes one when a game quits (Quick resume) and when you save to a slot in-game; they are in banana/states on the card."
+				: "A on a state deletes it (press A again to confirm); Y keeps a copy of it beside the others as a backup. RetroArch loads the game's own state when it starts again (Quick resume).";
+		if (single) help = gameTitle + " \xc2\xb7 " + help;
+
+		if (!single)
+		{
+			be->beginScreen(0);
+			box("screen", false, 0, 0, 640, 480);
+			box("hero", false, 18, 20, 604, 436);
+			icon("gear", 50, 56, 3);
+			text("Save states", true, 17, 170, 62, p.muted, true, 1.4f);
+			text(fit(gameTitle, true, 30, 420), true, 30, 170, 88, p.ink);
+			text(states.empty() ? "None" : std::to_string(states.size()) + (states.size() == 1 ? " state" : " states"), true, 22, 170, 130, p.accent);
+			wrapped(help, 20, 50, 196, 540, 7, p.muted);
+			be->endScreen();
+		}
+
+		be->beginScreen(single ? 0 : 1);
+		box("screen", false, 0, 0, 640, 480);
+		box("bubble", false, 18, 14, 604, 54);
+		text("Save states", true, 22, 38, 28, p.ink);
+		std::string count = states.empty() ? "" : std::to_string(states.size()) + (states.size() == 1 ? " state" : " states");
+		if (!count.empty())
+		{
+			float cw = text(count, true, 17, 0, 0, p.muted, false, 0, true);
+			text(count, true, 17, 602 - cw, 31, p.muted);
+		}
+		for (int r = 0; r < ROWS && r < (int)states.size(); r++)
+		{
+			const SaveState& s = states[r];
+			bool on = r == ssel;
+			float y = 82 + r * 64;
+			box(on ? "pick" : "slot", on, 18, y, 604, 56);
+			Color c = on ? p.onPick : p.muted;
+			text(fit(s.label, true, 20, 320), true, 20, 38, y + 16, c);
+			float dw = text(s.detail, true, 17, 0, 0, c, false, 0, true);
+			text(s.detail, true, 17, 586 - dw, y + 18, on ? p.onPickAccent : c);
+		}
+		if (states.empty()) text("No save states for this game.", true, 20, 38, 98, p.muted);
+		float bw = faceWidth("B", "Back");
+		face("B", "Back", 18, bw);
+		if (!states.empty())
+		{
+			std::string act = armed == 2000 + ssel ? "Confirm" : "Delete";
+			float aw = faceWidth("A", act);
+			face("A", act, 622 - aw, aw);
+			float yw = faceWidth("Y", "Copy");
+			face("Y", "Copy", 320 - yw / 2, yw);
 		}
 		if (single) footer(help, p.muted);
 		be->endScreen();

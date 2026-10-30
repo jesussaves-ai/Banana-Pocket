@@ -51,7 +51,7 @@ The launcher runs in its own session (`setsid`), with signals at their defaults 
 |---|---|
 | Games | `/data/roms/<system>` (`folder` in `systems.conf`); `.zip` ROMs are the emulator's to read |
 | BIOS files | `/data/bios` |
-| Saves and states | `/data/saves/<system>`, `/data/states/<system>` |
+| Saves and states | `/data/saves/<core>/`, `/data/states/<core>/` (RetroArch sorts both per core, not per system: `sort_savefiles_enable`, `sort_savestates_enable`) |
 | RetroArch's own files | `/data/retroarch` (config, remaps, core options, playlists; `HOME`/`XDG_CONFIG_HOME` point there, never the read-only root) |
 | Logs | `/data/banana/logs/retroarch.log` (the one thing worth having after a game that would not start) |
 | Screenshots | `/data/screenshots` |
@@ -75,9 +75,11 @@ core instead of `systems.conf`'s, e.g. mGBA for the Game Boy Advance for its Ret
 menu afterwards is kept until the setting changes here again.
 
 A single **game** overrides both: **X** on a game in the library opens its own Game options (the emulator and the
-shader), kept in `banana/pergame.conf`. `banana-ui` exports the pair for the game it starts (`BANANA_CORE`,
-`BANANA_SHADER`) and `run-retroarch` prefers them over the system's `core.<system>` and the global shader; a game
-with neither follows the system, exactly as before. The shader is RetroArch's global preset, a reference
+shader), kept in `banana/pergame.conf`. The same page has **Save states**, which lists the states the game has
+(`banana/states`, RetroArch's savestate directory, sorted per core): A deletes one (press A again) and Y keeps a
+timestamped backup copy beside it, which RetroArch's own slot handling ignores. `banana-ui` exports the pair for the
+game it starts (`BANANA_CORE`, `BANANA_SHADER`) and `run-retroarch` prefers them over the system's `core.<system>` and
+the global shader; a game with neither follows the system, exactly as before. The shader is RetroArch's global preset, a reference
 to one of the image's **Slang** presets in `/usr/share/libretro/shaders/slang` (copied to the card they were hundreds
 of MB of small files in exFAT's large clusters and a long first start). Slang, not GLSL: the game's video driver is
 Vulkan, whose shader backend is Slang, and a GLSL preset under it crashes RetroArch (a backend mismatch).

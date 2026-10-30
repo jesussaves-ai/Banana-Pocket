@@ -585,7 +585,7 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 				const SystemDef& sd = lib.systemOf(g);
 				std::string rel = lib.gameAt(g).rel;
 				auto ov = lib.overrideOf(sd.id, rel);
-				settings.openGame(sd.id, rel, lib.gameAt(g).title, ov.first, ov.second);
+				settings.openGame(sd.id, rel, lib.gameAt(g).path, lib.gameAt(g).title, ov.first, ov.second);
 				logf("press x: game options open (%s/%s)", sd.id.c_str(), rel.c_str());
 				continue;
 			}
@@ -1305,7 +1305,7 @@ int main(int argc, char** argv)
 			std::string rel = lib.gameAt(g).rel;
 			auto ov = lib.overrideOf(sd.id, rel);
 			settingsView.setVariant(settings["theme"]);
-			settingsView.openGame(sd.id, rel, lib.gameAt(g).title, ov.first, ov.second);
+			settingsView.openGame(sd.id, rel, lib.gameAt(g).path, lib.gameAt(g).title, ov.first, ov.second);
 			rep.key = Key::NONE;
 			sound.play("select");
 			dirty = true;

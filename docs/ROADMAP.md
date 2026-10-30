@@ -15,4 +15,4 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist).
 
 ## Later
 - [x] RetroAchievements progress display on home shelf.
-- [ ] Save-state browser (browse, copy and delete a game's states from the menu).
+- [x] Save-state browser (browse, copy and delete a game's states from the menu).
