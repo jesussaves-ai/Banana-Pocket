@@ -10,7 +10,7 @@
 ## 2. Hardware Scope (Strict: Retroid Pocket Classic / SM4450)
 - **SoC & GPU:** Qualcomm Snapdragon G1 Gen 2 (`SM4450`, `policy0` 6x A55 + `policy6` 2x A78), Adreno `a613` GPU (`msm` + Freedreno).
 - **Display:** Single 1240x1080 AMOLED panel (`CH13726A`, `rotation = <90>`). `banana-ui` renders on CPU (`src/soft.cpp`) to KMS dumb buffers with 4x4 transpose rotation; games run via `cage` kiosk compositor.
-- **Audio:** Qualcomm AudioReach (`sc8280xp`/q6apm) + `WCD937x` + dual `AW88166` amps. Use ALSA C mixer API (never fork `amixer`) before PCM open; release PCM before game handover; control volume via `Left PCM`/`Right PCM` amp gain (`0..511`).
+- **Audio:** Qualcomm AudioReach (`sc8280xp`/q6apm) + `WCD937x` + dual `AW88166` amps. In `banana-ui`/`bananad`, set the route with the ALSA C mixer API (never fork `amixer`) before opening the PCM (the shell launchers `volume` and `run-retroarch` do fork `amixer`: they run before/around the open, out of process); release PCM before game handover; control volume via `Left PCM`/`Right PCM` amp gain (`0..511`).
 - **Input & Power:** Stickless slate (no `SW_LID`, no RTC `wakealarm`). `rsinput` MCU gamepad + `FT5452` touch + power/vol keys.
 
 ## 3. Architecture & Minimalism
