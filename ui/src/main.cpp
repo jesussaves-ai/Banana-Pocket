@@ -1093,6 +1093,15 @@ int main(int argc, char** argv)
 		if (isLayoutTheme(layout)) { applyTheme(theme, settings["accent"]); return new LayoutMenu(&lib, &be, layout, scv, o.assets + "/fonts", o.banana + "/fonts", canvasW, canvasH); }
 		return new RndsMenu(&lib, &be, o.assets, scv, applyTheme(theme, settings["accent"]) == "light" ? "light" : "dark");
 	};
+	// The theme the menu actually draws with. On the one panel a colour theme (not a layout, not Carts) is forced to
+	// the Pocket layout, so Settings has to follow *that* value, not the raw setting: otherwise the menu shows Pocket
+	// and Settings shows the colour theme's palette, and the two disagree.
+	auto menuTheme = [&]() -> std::string
+	{
+		std::string t = settings["theme"], l = themePath(t);
+		if (single && t != "carts" && !isLayoutTheme(l)) return "file:/usr/share/banana/themes/pocket.json";
+		return t;
+	};
 	std::atomic<bool> ready{ false };
 	std::thread loader([&]
 	{
@@ -1141,7 +1150,7 @@ int main(int argc, char** argv)
 	settingsView.setFontDir(o.banana + "/fonts");
 	settingsView.setSingle(single, canvasH);
 	settingsView.searchCount = [&](const std::string& q) { return lib.countMatches(q); };
-	settingsView.setVariant(settings["theme"]);	// (Carts: Inter)
+	settingsView.setVariant(menuTheme());	// (Carts: Inter)
 	settingsView.setOverride = [&](const std::string& s, const std::string& r, const std::string& c, const std::string& sh)
 		{ lib.setOverride(s, r, c, sh); };
 	LowBattery low;
@@ -1212,6 +1221,7 @@ int main(int argc, char** argv)
 			ui->setLog([](const std::string& m) { logf("%s", m.c_str()); });
 			worker.attach(uiPtr);
 			ui->setHome(sys);
+			settingsView.setVariant(menuTheme());	// the menu may have been forced to the Pocket layout above
 			sound.play("select");
 			break;
 		}
@@ -1277,7 +1287,7 @@ int main(int argc, char** argv)
 			std::lock_guard<std::mutex> l(worker.uiLock);
 			if (ui->view() == rnds::UI::LAUNCH) return;
 			ui->touchCancel();
-			settingsView.setVariant(settings["theme"]);
+			settingsView.setVariant(menuTheme());
 			settingsView.openSearch(lib.searchQuery());
 			rep.key = Key::NONE;
 			sound.play("select");
@@ -1289,7 +1299,7 @@ int main(int argc, char** argv)
 			std::lock_guard<std::mutex> l(worker.uiLock);
 			if (ui->view() == rnds::UI::LAUNCH) return;
 			ui->touchCancel();
-			settingsView.setVariant(settings["theme"]);
+			settingsView.setVariant(menuTheme());
 			settingsView.open();
 			rep.key = Key::NONE;
 			sound.play("select");
@@ -1304,7 +1314,7 @@ int main(int argc, char** argv)
 			const SystemDef& sd = lib.systemOf(g);
 			std::string rel = lib.gameAt(g).rel;
 			auto ov = lib.overrideOf(sd.id, rel);
-			settingsView.setVariant(settings["theme"]);
+			settingsView.setVariant(menuTheme());
 			settingsView.openGame(sd.id, rel, lib.gameAt(g).path, lib.gameAt(g).title, ov.first, ov.second);
 			rep.key = Key::NONE;
 			sound.play("select");

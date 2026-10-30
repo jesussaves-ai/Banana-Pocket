@@ -38,3 +38,8 @@ itself rebuild the package. Buildroot sets `<pkg>`'s `.stamp_patched` once and d
 
 (For RetroArch that is `retroarch-rebuild`; check the result, e.g. `grep -a BANANA_RA_CHEEVOS
 output/retroid-pocket-classic/build/retroarch-*/retroarch`.)
+
+**Removing a file** from the rootfs overlay (`system/rootfs/...`) does not remove it from `output/<board>/target`:
+Buildroot copies the overlay over `target/` without pruning, so a removed file stays and is baked into the next image
+(a removed theme, a deleted binary -- anything). After removing one, delete it from `target/` as well, or wipe
+`target/` for a clean slate, and rebuild.
