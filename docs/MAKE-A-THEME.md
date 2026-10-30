@@ -74,7 +74,7 @@ A colour theme can name its own files too:
 {
   "background": { "top": "cherry/top.png", "bottom": "cherry/bottom.png" },
   "logo": "cherry/logo.png",
-  "icons": { "nds": "cherry/ds.png", "gba": "cherry/gba.png" },
+  "icons": { "gba": "cherry/gba.png", "psx": "cherry/psx.png" },
   "fonts": { "regular": "cherry/MyFont.ttf", "medium": "cherry/MyFont-Medium.ttf" },
   "sounds": { "scroll": "cherry/tick.wav", "fav": "off" }
 }

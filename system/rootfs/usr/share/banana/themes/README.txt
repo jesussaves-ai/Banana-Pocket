@@ -30,9 +30,9 @@ example's file name replaces that example.
         "medium": "mine/MyFont-Medium.ttf"
       },
       "logo": "mine/logo.png",     the logo at the top of the bottom screen (fitted into its box)
-      "icons": {                   a system's icon (PNG, about 128 x 128), by the system's id: nds, gba, gbc,
-        "nds": "mine/ds.png",      gb, snes, nes, megadrive, n64, psx, pico-8, ports, ... (the folder names
-        "gba": "mine/gba.png"      in roms/, and banana/systems.conf.default lists them all)
+      "icons": {                   a system's icon (PNG, about 128 x 128), by the system's id: gba, gbc,
+        "gba": "mine/gba.png",     gb, snes, nes, megadrive, n64, psx, ports, ... (the folder names
+        "psx": "mine/psx.png"      in roms/, and banana/systems.conf.default lists them all)
       },
       "sounds": {                  the menu's sounds (WAV): scroll, select, back, fav, ready, insert; "off"
         "scroll": "mine/tick.wav", for none (they change at the next start of the menu)

@@ -473,7 +473,7 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 		return stbi_write_png(path.c_str(), o.w, o.h, 3, rgb.data(), o.w * 3) != 0;
 	};
 	ui.setHome(0);
-	// whether this handheld has the DS shelf decides which pages exist at all: build() runs in the constructor
+	// Settings builds its list in the constructor (which runs here), so the theme variant is set just after it
 	Settings settings(&be, o.assets, o.data, sc, variant);
 	settings.setSingle(o.single, canvasH);
 	settings.setSync(true);

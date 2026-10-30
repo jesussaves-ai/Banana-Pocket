@@ -18,7 +18,7 @@ namespace banana
 	std::string settingDefault(const std::string& key);
 
 	// Which half of settings.conf an action resets. System: the menu's own keys (theme, power, network, scraper).
-	// Emulator: the emulators' keys (ra_shader, ra_audio_latency, ra_vsync, nds_emulator, core.<system>).
+	// Emulator: the emulators' keys (ra_shader, ra_audio_latency, ra_vsync, core.<system>).
 	enum class ResetScope { System, Emulator };
 
 	// True when settings.conf's key belongs to an emulator (the RetroArch cores and the emulator's own settings).
