@@ -67,6 +67,9 @@ static double nowMs()
 	return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
 }
 
+// usleep is obsolete in POSIX.1-2008; nanosleep is its replacement
+static void sleepUs(long us) { timespec ts = { us / 1000000, (us % 1000000) * 1000 }; nanosleep(&ts, nullptr); }
+
 static void logf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 static void logf(const char* fmt, ...)
 {
@@ -763,7 +766,7 @@ static void playSplash(Display& disp, SoftBackend& be, const Options& o, const s
 {
 	if (!on || !gSplash.load(o.splash, o.banana + "/banana-48.png", variant, be.width(), be.height()))
 	{
-		while (!ready) usleep(2000);
+		while (!ready) sleepUs(2000);
 		return;
 	}
 	gSplash.onCue = [&sound](const std::string& n) { sound.play(n); };
@@ -776,7 +779,7 @@ static void playSplash(Display& disp, SoftBackend& be, const Options& o, const s
 		gSplash.draw(be.canvas(0), t, r);
 		showFrame(disp, be, sig);
 		int wait = gSplash.nextFrame(nowMs() - t0, ready);
-		if (wait > 16) usleep(std::min(wait, 50) * 1000);	// waiting on the library: look again now and then
+		if (wait > 16) sleepUs(std::min(wait, 50) * 1000);	// waiting on the library: look again now and then
 	}
 }
 
@@ -1056,7 +1059,7 @@ int main(int argc, char** argv)
 	for (int tries = 0; !disp.openSingle(o.top, err); tries++)
 	{
 		if (tries >= 100) { logf("%s", err.c_str()); return 1; }
-		usleep(50000);
+		sleepUs(50000);
 	}
 	SoftBackend be(disp.width(), disp.height());
 	logf("panel %dx%d (%d)", disp.width(), disp.height(), disp.panels());
@@ -1399,7 +1402,7 @@ int main(int argc, char** argv)
 		long secs = (long)((nowMs() - start) / 1000);
 		if (system("banana-perf ui") != 0) {}
 		logf("game ended after %ld s (status %d)", secs, status);
-		for (int tries = 0; !disp.openSingle(o.top, err) && tries < 100; tries++) usleep(50000);
+		for (int tries = 0; !disp.openSingle(o.top, err) && tries < 100; tries++) sleepUs(50000);
 		be.invalidate();
 		input.open(disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());
 		std::lock_guard<std::mutex> l(worker.uiLock);
@@ -1673,7 +1676,7 @@ int main(int argc, char** argv)
 						// (a DPU encoder that timed out going down) is only cleared by a modeset, so take the
 						// panel again rather than redraw into a dead one
 						disp.close();
-						for (int tries = 0; !disp.openSingle(o.top, err) && tries < 50; tries++) usleep(20000);
+						for (int tries = 0; !disp.openSingle(o.top, err) && tries < 50; tries++) sleepUs(20000);
 						std::lock_guard<std::mutex> l(worker.uiLock);
 						be.invalidate(); ui->dataChanged(); dirty = true; batteryDue = true; guard.wake(nowMs(), &sound); sound.setBgm(settings["bgm"] != "off"); sound.warm();
 					}

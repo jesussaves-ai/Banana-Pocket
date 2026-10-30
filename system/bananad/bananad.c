@@ -46,6 +46,9 @@
 
 #define MAXDEV 32
 
+/* usleep is obsolete in POSIX.1-2008; nanosleep is its replacement */
+static void sleep_us(long us) { struct timespec ts = { us / 1000000, (us % 1000000) * 1000 }; nanosleep(&ts, NULL); }
+
 static struct {
 	char mixer[64];			/* ALSA simple control the volume keys change; "auto": the playing card's own */
 	int volume_step;		/* percent */
@@ -369,7 +372,7 @@ static void suspend_now(const char *why)
 	if (pg > 0) kill(-pg, SIGSTOP);	/* an emulator's dynarec mustn't run on while the clocks drop */
 	/* the menu's ambient loop, if any: stop it and have it release the DSP before the ADSP sleeps (SIGHUP), and give
 	 * it a moment to close the device; then darken the panel and mute the codec so nothing flashes or pops */
-	if (!game) { pid_t u = ui_pid(); if (u > 0) { kill(u, SIGHUP); usleep(200000); } }
+	if (!game) { pid_t u = ui_pid(); if (u > 0) { kill(u, SIGHUP); sleep_us(200000); } }
 	sleep_quiet_begin();
 	hooks("pre", 0);
 	sync();
@@ -396,7 +399,7 @@ static void suspend_now(const char *why)
 			/* it didn't suspend: devices one at a time, then the lighter s2idle, then give up and blank the panel */
 			failures++;
 			sleep_log("suspend failed (%s)%s", strerror(err), sleep_fallback < 2 ? ": trying the safer way" : "");
-			if (sleep_fallback < 2 && failures <= 2) { sleep_fallback++; sleep_mode(); usleep(200000); continue; }
+			if (sleep_fallback < 2 && failures <= 2) { sleep_fallback++; sleep_mode(); sleep_us(200000); continue; }
 			woke = "failed";
 			/* It never slept: leave the panel dark -- that is what a sleep would have looked like, and the
 			 * next press brings it back (see panel_blanked in handle()) -- and let the game run again, because
@@ -466,7 +469,7 @@ static void shutdown_now(const char *why)
 	if (game) {
 		pid_t pg = getpgid(game);
 		kill(pg > 0 ? -pg : game, SIGTERM);	/* let the emulator write its saves */
-		for (int i = 0; i < 50 && kill(game, 0) == 0; i++) usleep(100000);
+		for (int i = 0; i < 50 && kill(game, 0) == 0; i++) sleep_us(100000);
 	}
 	sync();
 	/* busybox init runs /etc/init.d/rcK (unmount, sync) on SIGUSR2 = poweroff */
@@ -637,7 +640,7 @@ static int headphones_in_settled(void)
 {
 	int a = headphones_in();
 	for (int i = 0; i < 6; i++) {
-		usleep(200000);
+		sleep_us(200000);
 		int b = headphones_in();
 		if (a == b) return b;
 		a = b;
@@ -736,7 +739,7 @@ static void audio_setup(void)
 	/* rcS starts us right after the card appears and the DSP makes its audioreach controls a moment later, so on the
 	 * RPC look again for a few seconds rather than give the route and the "PCM" level up on the first look. On any
 	 * other machine there is no such control to wait for, and waiting would only stall the start. */
-	for (int i = 0; on_rpc() && card_ar < 0 && i < 40; i++) { usleep(100000); audio_find_cards(); }
+	for (int i = 0; on_rpc() && card_ar < 0 && i < 40; i++) { sleep_us(100000); audio_find_cards(); }
 	if (card_play < 0) { audio_route(); return; }	/* no sound card at all (QEMU, a host with none): nothing to set */
 	if (card_ar < 0) say("sound: no audioreach card (the volume keys and the route have nothing to drive)");
 	else say("sound: the audioreach card is %d", card_ar);
@@ -795,7 +798,7 @@ static void audio_setup(void)
 			audio_route_ar();
 			amixer_get(card_ar, route, val, sizeof val);
 			if (strstr(val, "on")) break;
-			usleep(100000);
+			sleep_us(100000);
 			tries++;
 		}
 		if (tries == 30)
@@ -1412,7 +1415,7 @@ int main(int argc, char **argv)
 		if (ino_at >= 0 && (pf[ino_at].revents & POLLIN)) {
 			char buf[4096];
 			while (read(ino, buf, sizeof buf) > 0) {}
-			usleep(200000);	/* udev/mdev sets the node's permissions */
+			sleep_us(200000);	/* udev/mdev sets the node's permissions */
 			open_inputs();
 		}
 

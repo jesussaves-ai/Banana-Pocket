@@ -13,9 +13,13 @@
 #include <alsa/asoundlib.h>
 #include <sys/stat.h>
 #endif
+#include <time.h>
 
 namespace banana
 {
+// usleep is obsolete in POSIX.1-2008; nanosleep is its replacement
+static void sleepUs(long us) { timespec ts = { us / 1000000, (us % 1000000) * 1000 }; nanosleep(&ts, nullptr); }
+
 // Are the RPC's DSP frontends all free right now? /proc says so, and "closed"/"disconnected" are the two states in
 // which a stream is not holding the graph. The DSP tears a graph down after the close returns, so a route written
 // straight after closing a stream can be written to a graph that is on its way out.
@@ -236,7 +240,7 @@ static bool dspFrontendsFree()
 		/* the DSP gives one stream per frontend: the game that is about to start opens the same one, so wait for the
 		 * thread to close it (it does within a frame or two) instead of racing it -- RetroArch's ALSA driver asserts
 		 * on a handle it couldn't open */
-		for (int i = 0; i < 80 && devOpen; i++) usleep(5000);
+		for (int i = 0; i < 80 && devOpen; i++) sleepUs(5000);
 		cv.notify_all();
 		// wait until the device is closed
 		for (int i = 0; i < 100; i++)
