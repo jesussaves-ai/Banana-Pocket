@@ -2,7 +2,6 @@
 /.buildroot/
 /ui/banana-ui
 /ui/banana-scrape
-/ui/banana-leaseshim.so
 /ui/tests/out/
 /system/bananad/bananad
 *.o

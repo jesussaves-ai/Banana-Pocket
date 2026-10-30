@@ -47,8 +47,6 @@ namespace banana
 		bool animating() const override;
 		void setLog(std::function<void(const std::string&)> log) override;
 		bool ownLocking() const override { return true; }	// (the jobs share only the queue, under jm)
-		// what was wrong with the theme (shown on the top screen with "debug": true, and logged)
-		const std::vector<std::string>& errors() const { return mErrors; }
 
 		struct Node;
 		struct Impl;

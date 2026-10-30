@@ -17,13 +17,9 @@ namespace banana
 		// brightness: the panel's .../brightness file; maximum: its .../max_brightness. Empty: no panel to guard.
 		void attach(const std::string& brightness, const std::string& maximum) { bl = brightness; blMax = maximum; ensureOn(); }
 		bool attached() const { return !bl.empty(); }
-		// the idle thresholds in ms (the test shortens them)
-		void setThresholds(int dim, int blank) { dimMs = dim; blankMs = blank; }
 		void input(double now) { lastInput = now; }
 		int stage() const { return st; }			// 0 awake, 1 dimmed, 2 blanked
-		bool engaged() const { return st != 0; }
 		int level() const { int c = -1; std::ifstream(bl) >> c; return c; }
-		int saved() const { return savedBright; }
 
 		// apply the guard's step for this moment; true when the stage changed
 		bool tick(double now, Sound* sound)

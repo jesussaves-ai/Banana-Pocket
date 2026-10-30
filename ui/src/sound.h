@@ -35,7 +35,6 @@ namespace banana
 		// level in thousandths (0: silent but the device stays open, e.g. the burn-in guard's blank stage)
 		void setBgm(bool on);
 		void setBgmGain(int permille);
-		bool hasBgm() const { return bgmLoaded; }
 		bool enabled = true;
 
 	private:

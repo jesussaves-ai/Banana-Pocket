@@ -17,12 +17,8 @@ namespace banana
 	// The value a key has when the card has no line for it ("" for a key the schema doesn't know).
 	std::string settingDefault(const std::string& key);
 
-	// True when settings.conf accepts value for key. A key the schema doesn't know is accepted: a setting written by
-	// a newer Banana is kept rather than thrown away by an older menu.
-	bool settingValid(const std::string& key, const std::string& value);
-
 	// Which half of settings.conf an action resets. System: the menu's own keys (theme, power, network, scraper).
-	// Emulator: the emulators' keys (ra_shader, ra_audio_latency, ra_vsync, nds_emulator, quick_resume, core.<system>).
+	// Emulator: the emulators' keys (ra_shader, ra_audio_latency, ra_vsync, nds_emulator, core.<system>).
 	enum class ResetScope { System, Emulator };
 
 	// True when settings.conf's key belongs to an emulator (the RetroArch cores and the emulator's own settings).

@@ -244,11 +244,6 @@ namespace banana
 
 	float cartAspect(const std::string&) { return HX / HY; }
 
-	void cartLabelSize(float& w, float& bandH, float& artH)
-	{
-		w = 2 * LHX; bandH = BAND; artH = 2 * LHY - BAND;
-	}
-
 	rnds::Bitmap renderCart(const std::string& system, const rnds::Bitmap& label, const CartPose& pose, const rnds::Bitmap& icon, const rnds::Bitmap& bandText)
 	{
 		const int SS = 2;

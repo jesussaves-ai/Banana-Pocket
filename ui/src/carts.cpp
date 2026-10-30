@@ -32,7 +32,6 @@ namespace banana
 			for (const char* k : { "nds", "gba", "gb", "gbc", "nes", "snes", "n64", "megadrive", "psx" }) if (id == k) return id;
 			return "other";
 		}
-		std::string lowerOf(std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; }
 		const float TOP_FLOOR = 352;		// the top screen's floor (the large cartridge stands on it)
 
 		// a small hash for the backgrounds' grain (the same every time: the pictures are made once)

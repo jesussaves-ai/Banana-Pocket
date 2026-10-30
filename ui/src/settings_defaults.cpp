@@ -42,7 +42,6 @@ namespace banana
 			{ "clock", "24h", TEXT, nullptr, 0, 0 },
 			{ "splash", "on", ENUM, ON_OFF, 0, 0 },
 			{ "wifi", "on", ENUM, ON_OFF, 0, 0 },
-			{ "quick_resume", "off", ENUM, ON_OFF, 0, 0, true },
 			{ "sd2_roms", "on", ENUM, ON_OFF, 0, 0 },
 			{ "ra_shader", "off", ENUM, SHADERS, 0, 0, true },
 			{ "ra_audio_latency", "64", ENUM, LATENCY, 0, 0, true },
@@ -190,11 +189,6 @@ namespace banana
 		readConf("/etc/banana/settings.conf", t);
 		auto it = t.find(key);
 		return it == t.end() ? defaultFor(key) : it->second;
-	}
-
-	bool settingValid(const std::string& key, const std::string& value)
-	{
-		return validKey(key, unquote(value));
 	}
 
 	bool settingIsEmulator(const std::string& key)

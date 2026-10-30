@@ -28,6 +28,4 @@ namespace banana
 	const float CART_MARGIN = 0.03f / 1.06f;
 	// the card seen straight on: width / height (the same for every system)
 	float cartAspect(const std::string& system);
-	// the label's size in millimetres below the band (for rendering the band's text and covering the art to fit)
-	void cartLabelSize(float& w, float& bandH, float& artH);
 }
