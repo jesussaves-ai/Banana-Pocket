@@ -27,3 +27,14 @@ The Wi-Fi is the **WCN3950** on `ath10k_snoc` (the DT's `qcom,wcn3990-wifi`): th
 `ath10k/WCN3990/hw1.0/{firmware-5.bin,board-2.bin,wlanmdsp.mbn}`, and the WPSS remoteproc firmware is
 `qcom/sm4450/RPClassic/wpss.mbn`. `rcS` loads the driver (`modprobe ath10k_snoc`); the regulatory database is the
 `wireless-regdb` package. (No RTL8821CS: that was the RG DS.)
+
+**Adding a patch** to `buildroot/patches/<pkg>/` (or `buildroot/buildroot-patches/` for Buildroot itself) does not by
+itself rebuild the package. Buildroot sets `<pkg>`'s `.stamp_patched` once and does not notice a new patch file, and
+`make` does not track source mtimes, so the patch lands in the extracted source but the binary is not rebuilt --
+`make retroid-pocket-classic` then ships the old binary. After adding one:
+
+    make -C output/retroid-pocket-classic <pkg>-rebuild      # re-applies the patch and rebuilds
+    make retroid-pocket-classic                              # reassemble the image
+
+(For RetroArch that is `retroarch-rebuild`; check the result, e.g. `grep -a BANANA_RA_CHEEVOS
+output/retroid-pocket-classic/build/retroarch-*/retroarch`.)
