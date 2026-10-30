@@ -4,10 +4,13 @@ Two things stand between a stock Retroid Pocket Classic and BananaOS: the handhe
 Linux card (that is **OpenABL**, which this device may or may not already have), and the card needs the Banana image.
 This page walks both, from a stock Android handheld.
 
-> **Before anything else.** Flashing a bootloader is the one step here that can brick the device, and it is only
-> needed once. If your handheld already shows the OpenABL menu (Step 1), skip to Step 3 and flash nothing. Getting
-> the **wrong chipset's** ABL (`abl_signed-<other>.elf`) is the classic way to brick it; the Retroid Pocket Classic is
-> **SM4450**.
+> [!CAUTION]
+> <span style="color:red">**A Retroid Pocket Classic (Qualcomm Snapdragon G1 Gen 2 / SM4450, board "Rev Q" — the one
+> this build targets).**</span> Getting the **wrong chipset's** ABL (`abl_signed-<other>.elf`) is the classic way to
+> brick the device, and flashing a bootloader is the one step here that can. It is only needed once — if your handheld
+> already shows the bootloader menu (Step 1), skip to Step 3 and flash nothing.
+>
+> **I am not responsible if you accidentally brick your device.**
 
 ## What you need
 
