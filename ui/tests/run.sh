@@ -230,6 +230,20 @@ for size in 640x480 1024x768; do
     done
     # golden: the layout theme's key screens too
     for s in home lib launch; do golden "layout-$s-top" "$OUT/$size-layout-$s-top.png"; done
+    # The one panel offers the layout themes only: a colour theme (Dark/Light) is forced to the Pocket layout there,
+    # so they were rows that changed nothing. From a stored dark the Theme row reads Pocket, and stepping right
+    # picks the next layout (not Light) -- which the value it writes proves.
+    tllog=$OUT/$size-themelist.log
+    mkdir -p "$FX/data/themes"
+    cp -f "$HERE/../system/rootfs/usr/share/banana/themes/"*.json "$FX/data/themes/"
+    printf 'theme = dark\n' > "$FX/data/settings.conf"
+    BANANA_THEMES="$FX/data/themes" "$HERE/banana-ui" --headless "$OUT/$size-themelist-" --size 640x557 --single --assets "$HERE/assets/rnds" \
+        --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
+        --script "press start; press a; press right; shot list; wait 1" 2> "$tllog" ||
+        { echo "FAIL $size: banana-ui (theme list) exited $?"; fail=1; }
+    grep -q '^theme = user:pocket-ocean$' "$FX/data/settings.conf" || { echo "FAIL $size: the one-panel theme list: $(grep '^theme' "$FX/data/settings.conf")"; fail=1; }
+    [ -s "$OUT/$size-themelist-list-top.png" ] || { echo "FAIL $size: no themelist shot"; fail=1; }
+    rm -rf "$FX/data/themes"; printf 'theme = dark\n' > "$FX/data/settings.conf"
     grep 'bench:' "$log" | sed "s/^banana-ui: /$size /"
     grep 'boot-metrics:' "$log" | sed "s/^banana-ui: /$size /"
 done

@@ -362,10 +362,25 @@ namespace banana
 	{
 		if (it.key == "theme")
 		{
-			// the themes as they are on the card now: one copied over file sharing while the menu runs is listed the
-			// next time Settings opens (the list was made once, when banana-ui started)
-			it.names = { "Dark", "Light", "Carts" }; it.values = { "dark", "light", "carts" };
+			// The themes as they are on the card now: one copied over file sharing while the menu runs is listed the
+			// next time Settings opens (the list was made once, when banana-ui started). On the one panel a colour
+			// theme is forced to the Pocket layout (main.cpp, menuTheme), so Dark and Light would be rows that change
+			// nothing: there the list is the layout themes (and Carts) only.
+			it.names = single ? std::vector<std::string>{ "Carts" } : std::vector<std::string>{ "Dark", "Light", "Carts" };
+			it.values = single ? std::vector<std::string>{ "carts" } : std::vector<std::string>{ "dark", "light", "carts" };
 			for (auto& t : userThemes()) { it.names.push_back(t.name); it.values.push_back(t.value); }
+			if (single)
+			{
+				it.help = "The look of the menu, drawn from a theme's .json: the Pocket layout and its colour variations, or Carts (experimental). Your own go in banana/themes on the card (banana/themes/README.txt says how).";
+				std::string v = getConfValue(it.file, it.key, "dark");
+				if (v == "dark" || v == "light")
+				{
+					// a stored Dark/Light (the default, or a two-panel card) draws the Pocket layout here: show that
+					it.at = 0;
+					for (size_t i = 0; i < it.values.size(); i++) if (it.values[i] == "user:pocket") it.at = (int)i;
+					return;
+				}
+			}
 		}
 		if (it.key == "accent")
 		{

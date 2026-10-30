@@ -11,8 +11,9 @@
 
 namespace banana
 {
-	static const char* CARD_DIR = "/data/banana/themes";
 	static const char* IMAGE_DIR = "/usr/share/banana/themes";
+	// the card's themes folder; BANANA_THEMES points somewhere else (the headless test)
+	static const char* cardDir() { const char* e = getenv("BANANA_THEMES"); return e && *e ? e : "/data/banana/themes"; }
 
 	// ---- a small JSON reader: objects, strings, numbers, true/false/null, arrays skipped; enough for a theme --------
 	struct Json
@@ -110,7 +111,7 @@ namespace banana
 
 	static std::string pathFor(const std::string& stem)
 	{
-		std::string p = std::string(CARD_DIR) + "/" + stem + ".json";
+		std::string p = std::string(cardDir()) + "/" + stem + ".json";
 		if (std::ifstream(p)) return p;
 		return std::string(IMAGE_DIR) + "/" + stem + ".json";
 	}
@@ -125,7 +126,7 @@ namespace banana
 	std::vector<UserTheme> userThemes()
 	{
 		std::vector<UserTheme> r;
-		for (const char* dir : { CARD_DIR, IMAGE_DIR })
+		for (const char* dir : { cardDir(), IMAGE_DIR })
 		{
 			DIR* d = opendir(dir);
 			if (!d) continue;
