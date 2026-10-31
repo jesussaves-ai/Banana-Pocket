@@ -284,6 +284,7 @@ struct App
 
 	pid_t mpv = -1;
 	int ipc = -1;
+	bool paused = false;				// the play/pause the indicators show (toggled with the command we send)
 
 	std::mutex searchLock;
 	std::thread searchThread;
@@ -456,6 +457,13 @@ struct App
 		std::string msg = command + "\n";
 		if (write(ipc, msg.data(), msg.size()) < 0) {}
 	}
+	// a transient on-screen indicator, drawn by mpv over the video (its window covers ours): it hides itself after
+	// `ms`, so a tap or a d-pad seek shows what it did without a control bar to hide
+	void showInd(const std::string& t, int ms = 700)
+	{
+		if (ipc < 0) return;
+		ipcSend("{\"command\":[\"show-text\",\"" + jsonEsc(t) + "\"," + std::to_string(ms) + "]}");
+	}
 	void connectIpc()
 	{
 		if (ipc >= 0) return;
@@ -494,7 +502,7 @@ struct App
 			// nothing over the video (mpv's window covers it), so playback is driven by *large* touch zones on the
 			// screen, mapped by banana-tube's own (verified) evdev touch: see tapAt's PLAYING case. osd-playing-msg
 			// shows the (gamepad) controls briefly at the start.
-			"--no-osc", "--osd-level=1",
+			"--no-osc", "--osd-level=1", "--osd-font-size=90", "--osd-duration=700",
 			"--osd-playing-msg=A play/pause  (touch: left/right seek -/+ 10s, centre pause, top-left stop)",
 			"--fullscreen", "--keep-open=no", "--force-window=yes",
 			"--msg-level=all=warn",
@@ -516,6 +524,7 @@ struct App
 		if (pid < 0) { status = "Could not start mpv"; return; }
 		mpv = pid;
 		mode = Mode::PLAYING;
+		paused = false;
 		status = "Playing: " + it.title;
 	}
 	// graceful stop: ask mpv to quit (so it releases ALSA cleanly), then TERM, then KILL. A hard kill mid-stream
@@ -582,6 +591,8 @@ struct App
 		{
 			connectIpc();
 			ipcSend("{\"command\":[\"cycle\",\"pause\"]}");
+			paused = !paused;
+			showInd(paused ? "||  Paused" : ">  Playing", 900);
 		}
 	}
 	void move(int dx, int dy)
@@ -610,8 +621,8 @@ struct App
 		else if (mode == Mode::PLAYING)
 		{
 			connectIpc();
-			if (dy != 0) ipcSend(dy < 0 ? "{\"command\":[\"seek\",\"10\"]}" : "{\"command\":[\"seek\",\"-10\"]}");
-			if (dx != 0) ipcSend(dx < 0 ? "{\"command\":[\"seek\",\"-60\"]}" : "{\"command\":[\"seek\",\"60\"]}");
+			if (dy != 0) { ipcSend(dy < 0 ? "{\"command\":[\"seek\",\"10\"]}" : "{\"command\":[\"seek\",\"-10\"]}"); showInd(dy < 0 ? ">>  +10s" : "<<  -10s"); }
+			if (dx != 0) { ipcSend(dx < 0 ? "{\"command\":[\"seek\",\"-60\"]}" : "{\"command\":[\"seek\",\"60\"]}"); showInd(dx < 0 ? "<<  -60s" : ">>  +60s"); }
 		}
 	}
 	void page(int dir)
@@ -695,9 +706,9 @@ struct App
 			//   the rest        play / pause
 			connectIpc();
 			if (x < W * 18 / 100 && y < H * 18 / 100) { logLine("player -> stop"); stopPlayback(); mode = Mode::RESULTS; status = "Stopped"; }
-			else if (x < W * 28 / 100) { logLine("player -> seek -10"); ipcSend("{\"command\":[\"seek\",\"-10\"]}"); }
-			else if (x > W * 72 / 100) { logLine("player -> seek +10"); ipcSend("{\"command\":[\"seek\",\"10\"]}"); }
-			else { logLine("player -> play/pause"); ipcSend("{\"command\":[\"cycle\",\"pause\"]}"); }
+			else if (x < W * 28 / 100) { logLine("player -> seek -10"); ipcSend("{\"command\":[\"seek\",\"-10\"]}"); showInd("<<  -10s"); }
+			else if (x > W * 72 / 100) { logLine("player -> seek +10"); ipcSend("{\"command\":[\"seek\",\"10\"]}"); showInd(">>  +10s"); }
+			else { logLine("player -> play/pause"); ipcSend("{\"command\":[\"cycle\",\"pause\"]}"); paused = !paused; showInd(paused ? "||  Paused" : ">  Playing", 900); }
 		}
 	}
 
