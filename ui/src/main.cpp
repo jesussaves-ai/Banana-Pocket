@@ -51,6 +51,8 @@
 #include <sys/eventfd.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <linux/netlink.h>
+#include <sys/socket.h>
 #include <sys/inotify.h>
 #include <sys/wait.h>
 #include <thread>
@@ -468,6 +470,42 @@ static int shutdownPercent(const std::string& data)
 {
 	return atoi(getConfValue(data + "/bananad.conf", "battery_shutdown_percent",
 		getConfValue("/etc/banana/bananad.conf", "battery_shutdown_percent", "3")).c_str());
+}
+
+// ---- the charger's uevents -----------------------------------------------------------------------------------------
+// The menu asks /sys for the battery once a minute (and after a press), so a cable going in used to sit unnoticed
+// until something else redrew the top bar. Watch the kernel's uevent group instead: a power_supply event is the
+// charger going in or out, which repaints the battery (and its bolt) and brings the plug notice up at once.
+static int powerUeventOpen()
+{
+	int fd = socket(AF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, NETLINK_KOBJECT_UEVENT);
+	if (fd < 0) return -1;
+	struct sockaddr_nl a = {};
+	a.nl_family = AF_NETLINK;
+	a.nl_groups = 1;	// the kernel's uevents
+	if (bind(fd, (struct sockaddr*)&a, sizeof a) < 0) { close(fd); return -1; }
+	return fd;
+}
+
+// true when what was queued includes a power_supply event (the rest of the group is dropped: input, mmc...)
+static bool powerUeventDrain(int fd)
+{
+	char buf[8192];
+	bool hit = false;
+	for (;;)
+	{
+		ssize_t n = read(fd, buf, sizeof buf - 1);
+		if (n <= 0) break;
+		buf[n] = 0;
+		for (ssize_t i = 0; i < n; )
+		{
+			const char* s = buf + i;
+			size_t l = strnlen(s, (size_t)(n - i));
+			if (l && !strncmp(s, "SUBSYSTEM=power_supply", 22)) hit = true;
+			i += (ssize_t)l + 1;
+		}
+	}
+	return hit;
 }
 
 // ---- headless: the same UI rendered to PNGs, for tests and screenshots ------------------------------------------
@@ -1208,6 +1246,7 @@ int main(int argc, char** argv)
 	bool batteryDue = true;
 	if (firstSetup) { settingsView.setup(); logf("first-time setup"); }
 	RomWatch roms;
+	int powerFd = powerUeventOpen();	// the charger's uevents: repaint at once (see powerUeventOpen)
 	roms.watch(lib.watchDirs());
 	// the volume and brightness keys' level card, 1.5 s from the last key (bananad changes the level and says so)
 	std::string osdLabel;
@@ -1731,7 +1770,7 @@ int main(int argc, char** argv)
 		struct pollfd fds[40];
 		int nf = 0;
 		auto addFd = [&](int fd) { if (fd >= 0 && nf < (int)(sizeof fds / sizeof fds[0])) { fds[nf].fd = fd; fds[nf].events = POLLIN; fds[nf].revents = 0; nf++; } };
-		addFd(sigPipe[0]); addFd(worker.wakeFd); addFd(roms.fd); addFd(launchWatch);
+		addFd(sigPipe[0]); addFd(worker.wakeFd); addFd(roms.fd); addFd(launchWatch); addFd(powerFd);
 		if (disp.isOpen()) addFd(disp.pollFd());
 		nf = input.fillFds(fds, nf, (int)(sizeof fds / sizeof fds[0]));
 		if (timeout == 0) timeout = 1;	// a deadline that is due is handled above; never spin on poll(2)
@@ -1776,6 +1815,15 @@ int main(int argc, char** argv)
 							dirty = true;
 						}
 					}
+				}
+			}
+			else if (p.fd == powerFd)
+			{
+				if (powerUeventDrain(powerFd))
+				{
+					lib.forgetPower();	// the read below must see the new state, not the cached one
+					batteryDue = true;
+					dirty = true;
 				}
 			}
 			else if (p.fd == roms.fd)

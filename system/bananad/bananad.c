@@ -1251,7 +1251,7 @@ static void vibrate(int ms)
 		if (strstr(name, "vib")) fd = f; else close(f);
 	}
 	closedir(d);
-	if (fd < 0) return;
+	if (fd < 0) { say("vibrator: no FF input"); return; }
 	struct ff_effect fx;
 	memset(&fx, 0, sizeof fx);
 	fx.type = FF_RUMBLE;
@@ -1291,7 +1291,7 @@ static void leds_update(void)
 	if (!battery_state(bat, sizeof bat, &pct, &charging)) pct = 100;
 	int plugged = charger_online();
 	static int prev_plugged = -1;
-	if (prev_plugged == 0 && plugged) vibrate(180);	/* the cable went in (not at boot, nor on unplug) */
+	if (prev_plugged == 0 && plugged) vibrate(300);	/* the cable went in (not at boot, nor on unplug) */
 	prev_plugged = plugged;
 	if (plugged) charging = 1;	/* plugged in counts as charging (see charger_online) */
 	int level = cfg.led_brightness;

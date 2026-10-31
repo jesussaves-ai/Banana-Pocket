@@ -86,6 +86,7 @@ namespace banana
 		// the battery: percent (-1 unknown) and whether it is charging (or full on the charger)
 		struct Power { int percent = -1; bool charging = false; };
 		Power power();
+		void forgetPower() { powerAt = 0; }	// a power_supply uevent: the next power() reads /sys again, not the last 2 s
 		Power testPower;	// headless: used instead of /sys when its percent is set
 		Power powerSeen;	// the last reading of /sys and when (power(), online(): at most every 2 s)
 		double powerAt = 0, onlineAt = 0;
