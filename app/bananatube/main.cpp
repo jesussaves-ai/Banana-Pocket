@@ -502,10 +502,11 @@ struct App
 		// is why the buttons stayed small and --osd-scale also left the OSC's hitboxes unmoved (touch looked offset).
 		// Scaling the OSC itself keeps its drawing and its hit-testing in the same geometry. Tunable on the card
 		// (default 2.0x) via /data/banana/bananatube/osd-scale.
-		float osc = 2.0f;
+		float osc = 3.0f;
 		if (FILE* f = fopen("/data/banana/bananatube/osd-scale", "r")) { if (fscanf(f, "%f", &osc) != 1) {} fclose(f); }
 		if (osc < 0.5f) osc = 0.5f;
-		if (osc > 5.0f) osc = 5.0f;
+		if (osc > 6.0f) osc = 6.0f;
+		{ char b[64]; snprintf(b, sizeof b, "player controls: osc-scalefullscreen=%.2f", osc); logLine(b); }
 		char oscbuf[112];
 		snprintf(oscbuf, sizeof oscbuf, "--script-opts=osc-scalefullscreen=%.2f,osc-scalewindowed=%.2f", osc, osc);
 		std::string fmt = std::string("--ytdl-format=") + ytdlFormat;
@@ -711,7 +712,10 @@ struct App
 	int touchFd = -1;
 	int tMinX = 0, tMaxX = 0, tMinY = 0, tMaxY = 0;
 	int tX = 0, tY = 0;
-	bool tDown = false, tWasDown = false, tPos = false, tDefer = false;	// tPos: a position arrived; tDefer: waited one report
+	bool tDown = false, tWasDown = false;
+	bool tXse = false, tYse = false, tLatched = false;	// both axes seen for this contact; its press point latched
+	int tDownX = 0, tDownY = 0;							// the latched press point (raw)
+	Uint32 tLastFire = 0;								// one tap per gesture; swallows a finger's chatter
 	int panelW = 1080, panelH = 1240, panelRot = 90;
 	bool flipX = false, flipY = false;	// extra calibration, from /data/banana/bananatube/touch.conf
 
@@ -770,22 +774,53 @@ struct App
 		}
 		closedir(d);
 	}
-	void mapTouch(int& x, int& y, int W, int H)
+	void mapTouch(int rx, int ry, int W, int H, int& x, int& y)
 	{
 		float sx = tMaxX > tMinX ? (float)panelW / (tMaxX - tMinX + 1) : 1;
 		float sy = tMaxY > tMinY ? (float)panelH / (tMaxY - tMinY + 1) : 1;
-		float px = (tX - tMinX) * sx, py = (tY - tMinY) * sy;
-		int rx, ry;
+		float px = (rx - tMinX) * sx, py = (ry - tMinY) * sy;
+		int rxi, ryi;
 		switch (panelRot)
 		{
-		case 90:  rx = (int)py; ry = (int)(panelW - 1 - px); break;
-		case 270: rx = (int)(panelH - 1 - py); ry = (int)px; break;
-		case 180: rx = (int)(panelW - 1 - px); ry = (int)(panelH - 1 - py); break;
-		default:  rx = (int)px; ry = (int)py; break;
+		case 90:  rxi = (int)py; ryi = (int)(panelW - 1 - px); break;
+		case 270: rxi = (int)(panelH - 1 - py); ryi = (int)px; break;
+		case 180: rxi = (int)(panelW - 1 - px); ryi = (int)(panelH - 1 - py); break;
+		default:  rxi = (int)px; ryi = (int)py; break;
 		}
-		if (flipX) rx = W - 1 - rx;
-		if (flipY) ry = H - 1 - ry;
-		x = rx; y = ry;
+		if (flipX) rxi = W - 1 - rxi;
+		if (flipY) ryi = H - 1 - ryi;
+		x = rxi; y = ryi;
+	}
+	// The touch state machine: one gesture, at most one tap. A tap fires on RELEASE, at a press point latched only
+	// once BOTH axes have been seen for this contact -- so a down packet carrying only X (or only Y) can never fire
+	// with the previous axis's value (the "66d" that jumped a row before settling), and no frame while the finger is
+	// held fires again (the "ghh" a finger's roll used to produce). A repeat tap at the same spot sends no new axis
+	// and falls back to the last position; a 120 ms cooldown swallows BTN_TOUCH chatter. Returns true (with outX,
+	// outY in the UI's own space) when a tap should be handled.
+	bool feedTouch(int type, int code, int value, int W, int H, Uint32 now, int& outX, int& outY)
+	{
+		if (type == EV_ABS && (code == ABS_MT_POSITION_X || code == ABS_X)) { tX = value; tXse = true; return false; }
+		if (type == EV_ABS && (code == ABS_MT_POSITION_Y || code == ABS_Y)) { tY = value; tYse = true; return false; }
+		if (type == EV_ABS && code == ABS_MT_TRACKING_ID) { if (value < 0) tDown = false; return false; }
+		if (type == EV_KEY && code == BTN_TOUCH) { tDown = value != 0; return false; }
+		if (type != EV_SYN || code != SYN_REPORT) return false;
+		if (tDown)
+		{
+			if (!tLatched && tXse && tYse) { tDownX = tX; tDownY = tY; tLatched = true; }
+			tWasDown = true;
+			return false;
+		}
+		bool fire = false;
+		if (tWasDown && now - tLastFire >= 120)	// one tap per gesture (and no chatter)
+		{
+			int gx = tLatched ? tDownX : tX, gy = tLatched ? tDownY : tY;	// a repeat tap: no new axis, use the last
+			tDownX = gx; tDownY = gy;
+			mapTouch(gx, gy, W, H, outX, outY);
+			tLastFire = now;
+			fire = true;
+		}
+		tWasDown = false; tXse = tYse = false; tLatched = false;
+		return fire;
 	}
 	void pollTouch()
 	{
@@ -796,31 +831,18 @@ struct App
 		ssize_t n;
 		while ((n = ::read(touchFd, ev, sizeof ev)) > 0)
 		{
+			Uint32 now = SDL_GetTicks();
 			for (int i = 0; i < (int)(n / sizeof(input_event)); i++)
 			{
 				const input_event& e = ev[i];
-				if (e.type == EV_ABS && (e.code == ABS_MT_POSITION_X || e.code == ABS_X)) { tX = e.value; tPos = true; }
-				else if (e.type == EV_ABS && (e.code == ABS_MT_POSITION_Y || e.code == ABS_Y)) { tY = e.value; tPos = true; }
-				else if (e.type == EV_ABS && e.code == ABS_MT_TRACKING_ID && e.value < 0) tDown = false;
-				else if (e.type == EV_KEY && e.code == BTN_TOUCH) tDown = e.value != 0;
-				else if (e.type == EV_SYN && e.code == SYN_REPORT)
+				int x = 0, y = 0;
+				if (feedTouch(e.type, e.code, e.value, W, H, now, x, y))
 				{
-					if (!tDown) { tWasDown = false; tPos = false; tDefer = false; }	// released
-					else if (!tWasDown)
-					{
-						// a down: wait one report for the new position (the driver may send BTN_TOUCH before the point),
-						// then fire even without it (a repeat tap at the same spot sends no new position)
-						if (tPos || tDefer)
-						{
-							int x = 0, y = 0;
-							mapTouch(x, y, W, H);
-							{ char b[96]; snprintf(b, sizeof b, "tap raw %d,%d -> %d,%d (surface %dx%d rot %d)", tX, tY, x, y, W, H, panelRot); logLine(b); }
-							// during playback mpv's fullscreen window owns the screen and reads touch itself (its big OSC)
-							if (mode != Mode::PLAYING) tapAt(x, y);
-							tWasDown = true; tPos = false; tDefer = false;
-						}
-						else tDefer = true;
-					}
+					char b[96];
+					snprintf(b, sizeof b, "tap raw %d,%d -> %d,%d (surface %dx%d rot %d)", tDownX, tDownY, x, y, W, H, panelRot);
+					logLine(b);
+					// during playback mpv's fullscreen window owns the screen and reads touch itself (its big OSC)
+					if (mode != Mode::PLAYING) tapAt(x, y);
 				}
 			}
 		}
@@ -1012,11 +1034,31 @@ struct App
 		};
 		for (auto& c : corners)
 		{
-			tX = c.rx; tY = c.ry;
 			int mx = 0, my = 0;
-			mapTouch(mx, my, 1240, 1080);
+			mapTouch(c.rx, c.ry, 1240, 1080, mx, my);
 			printf("bananatube selftest touch %-4s raw %4d,%4d -> %4d,%4d (expect %4d,%4d): %s\n",
 				c.name, c.rx, c.ry, mx, my, c.ex, c.ey, (mx == c.ex && my == c.ey) ? "ok" : "FAIL");
+		}
+		// the state machine ("66d"/"ghh"): a tap whose down packet carries only X, a wobble while held, then release
+		// -> exactly one tap, at the press point (never the stale-axis cell or the wobble's), and nothing on later
+		// SYN_REPORTs while the finger is down
+		{
+			int fires = 0, fx = 0, fy = 0;
+			auto feed = [&](int t, int c, int v, Uint32 now)
+			{
+				int x = 0, y = 0;
+				if (feedTouch(t, c, v, 1240, 1080, now, x, y)) { fires++; fx = x; fy = y; }
+			};
+			Uint32 now = 1000;
+			tLastFire = 0; tDown = tWasDown = tXse = tYse = tLatched = false;
+			tX = 300; tY = 700;	// the previous tap's point (a stale Y is what the "66d" bug fired with)
+			feed(EV_KEY, BTN_TOUCH, 1, now);
+			feed(EV_ABS, ABS_MT_POSITION_X, 300, now); feed(EV_SYN, SYN_REPORT, 0, now);	// only X so far: must not fire
+			feed(EV_ABS, ABS_MT_POSITION_Y, 700, now); feed(EV_SYN, SYN_REPORT, 0, now);	// both axes: the point is latched
+			feed(EV_ABS, ABS_MT_POSITION_X, 360, now); feed(EV_SYN, SYN_REPORT, 0, now);	// wobble while held: still nothing
+			feed(EV_ABS, ABS_MT_TRACKING_ID, -1, now); feed(EV_SYN, SYN_REPORT, 0, now);	// release: exactly one tap
+			printf("bananatube selftest tap: fires %d at %d,%d (expect 1 at 700,779): %s\n",
+				fires, fx, fy, (fires == 1 && fx == 700 && fy == 779) ? "ok" : "FAIL");
 		}
 		return 0;
 	}

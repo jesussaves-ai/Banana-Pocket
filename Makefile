@@ -18,10 +18,10 @@ BUILDROOT_VERSION = 2026.02.3
 BUILDROOT_DIR ?= $(CURDIR)/.buildroot
 OUT ?= $(CURDIR)/output
 BOARDS = retroid-pocket-classic
-LOCAL_PKGS = banana-ui-rebuild bananad-rebuild
+LOCAL_PKGS = banana-ui-rebuild bananad-rebuild banana-tube-rebuild
 # the in-tree packages' sources: the board target compares these against the built binaries to decide whether to
-# rebuild. `find` is run once, at parse time, so the list is current.
-LOCAL_SRC = $(shell find ui/src ui/rnds system/bananad -type f \( -name '*.cpp' -o -name '*.c' -o -name '*.h' -o -name '*.hpp' \) 2>/dev/null)
+# rebuild. `find` is run once, at parse time, so the list is current. app/bananatube is banana-tube's site.
+LOCAL_SRC = $(shell find ui/src ui/rnds system/bananad app/bananatube -type f \( -name '*.cpp' -o -name '*.c' -o -name '*.h' -o -name '*.hpp' \) 2>/dev/null)
 
 $(BUILDROOT_DIR)/Makefile:
 	git clone --depth 1 --branch $(BUILDROOT_VERSION) https://github.com/buildroot/buildroot $(BUILDROOT_DIR)

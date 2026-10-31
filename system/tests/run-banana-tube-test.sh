@@ -34,6 +34,12 @@ else
         *) bad "touch $c: $line" ;;
         esac
     done
+    # the tap state machine: one gesture = one tap, at the latched press point (the "66d"/"ghh" fix)
+    line=$(printf '%s\n' "$out" | grep 'selftest tap:' | head -n 1)
+    case "$line" in
+    *": ok") ok "one tap per gesture: ${line##*selftest }" ;;
+    *) bad "tap state machine: ${line:-no line}" ;;
+    esac
     # the parsers
     printf '%s\n' "$out" | grep -q 'selftest innertube: ok' && ok "InnerTube videoRenderer parse" || bad "InnerTube parse"
     printf '%s\n' "$out" | grep -q 'selftest split: ok' && ok "yt-dlp --print line split" || bad "yt-dlp line split"
