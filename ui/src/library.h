@@ -19,6 +19,7 @@ namespace banana
 		std::vector<std::string> exts;	// lower case, no dot
 		bool always = false;			// on the shelf with no games (the DS: a fresh card shows where games go)
 		bool flat = false;				// games only in the folder itself (ports: their own folders hold scripts too)
+		bool app = false;				// an application, not a console: scanned from an app manifest (see scanApps)
 	};
 
 	struct Game
@@ -129,10 +130,12 @@ namespace banana
 
 		void loadDefs();
 		void loadLooks();
+		void scanApps();	// app manifests under the app folders (Apps shelf), after systems.conf
 		void loadState();
 		void saveFavs();
 		void saveStats();
 		Look lookOf(const std::string& id) const;
+		std::vector<std::string> appDirs() const;
 		int resumeIndex(const Shelf& s) const;
 		Game* sourceOf(int shelf, int game, int* sys = nullptr);
 	};

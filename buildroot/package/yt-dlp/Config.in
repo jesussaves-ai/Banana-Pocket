@@ -1,0 +1,9 @@
+config BR2_PACKAGE_YT_DLP
+	bool "yt-dlp"
+	depends on BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_FFMPEG
+	help
+	  yt-dlp: the maintained fork of youtube-dl, installed as its official self-contained Python zipapp. Its
+	  Python runtime (with the ssl and zlib modules) and ffmpeg for the audio/video mux come from the image.
+
+	  https://github.com/yt-dlp/yt-dlp

@@ -18,6 +18,7 @@
 - **Display (`src/kms.cpp`):** `Display::openSingle()`, 2 KMS dumb buffers, vblank flip, `lease()` refused. Composes in cached RAM; `Display::turn()` copies dirty rects to uncached scanout via 4x4 register transpose (90°).
 - **Renderer (`src/soft.cpp`):** CPU rasterizer. Per-rect draw-list diffing (redraws clipped/changed regions). Textures: transparent/opaque (`memcpy`)/blended (4-px SIMD-style edge blend) runs + cached resampled/sub-pixel phases.
 - **Loop & Workers (`src/main.cpp`, `src/library.cpp`):** 3 niced threads decode/fit PNGs lock-free. Main blocks in `poll()` (input, touch, DRM flip, workers, signals, anim/clock tick). ROM dir watch: `inotify` (2s home debounce).
+- **Apps shelf (`src/library.cpp`, `Library::scanApps`):** scans `/usr/share/banana/apps`, `/data/apps` and `/data/banana/apps` for a folder with a manifest (`app.json`, `app.conf`, or a freedesktop `*.desktop`); each becomes an app system after `systems.conf`'s, one tile on the Apps shelf (the theme's `[app]` mark, else `r.app`). The `banana-tube` app ships this way from `buildroot/package/banana-tube` (manifest + marker under `/usr/share/banana/apps/bananatube`), its launcher `run-bananatube` under cage with the other apps.
 - **Settings (`src/settings*.cpp`):** Merges `/etc/banana/settings.conf` -> `/data/banana/settings.conf`. Live-writes `settings.conf`, `bananad.conf` (+`SIGHUP`), `retroarch.cfg`, POSIX `TZ`.
 - **Game Handover (`cage`):** Writes `/run/banana/game.pid` -> releases DRM/input/ALSA (`Sound::release()`) -> sets clock profile -> runs game in `cage` (Wayland kiosk, DRM master, applies panel orientation for RetroArch/OSD) -> reclaims panel on exit.
 
@@ -37,7 +38,7 @@
 - **Stack:** `sc8280xp`/q6apm DSP + WCD937x + dual AW88166 I2S amps. No sound server/UCM. Config: `/run/banana/asound.conf`.
 - **Rules:**
   1. *Pre-open routing:* DSP latches graph at PCM open. `bananad` writes `/run/banana/audio-route`; `banana-ui` (via ALSA C mixer API, NEVER fork `amixer`) and `run-retroarch` apply route *before* PCM open.
-  2. *Single frontend:* Strict handover between `banana-ui` and games (1-beat delay).
+  2. *Two frontends:* the menu keeps `MultiMedia1`; games open **`MultiMedia2`** (`hw:0,1`) through their own `$HOME/.asoundrc` — the frontend `banana-ui` never opens or releases, so a game's route stays latched (a game that shared `MultiMedia1` latched the route off once the menu had released and reopened it across a game). `audio-handoff` waits out the menu's teardown and re-asserts the route; the **first game after a boot** gets one extra settle (that teardown is the slowest, keyed off a tmpfs marker shared by both launchers). `run-retroarch` bounds a stalled core teardown with a ~1 s watchdog so the menu always returns.
   3. *Volume:* Stream vol latches at open; control AW88166 HW gain (`Left PCM`/`Right PCM` `0..511`, mapped in `/run/banana/mixer`, persisted in `/data/banana/asound.state`). RetroArch SW gain = unity.
 
 ## 6. Network & Services

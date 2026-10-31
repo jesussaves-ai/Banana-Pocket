@@ -19,6 +19,23 @@ BIN=/usr/bin/dolphin-emu-nogui
 # gate on the frontend being claimable. The menu has just let go of the frontend (banana-ui closes its stream when a
 # game starts); the DSP tears that graph down a beat later, and an open in the middle of it leaves the game silent.
 /usr/libexec/banana/audio-handoff
+# The first game launched after a boot is the slowest handover: the menu's stream has been open since boot, and when
+# it goes the DSP resets the card's route controls over a longer teardown than the handoff's settle -- so a core can
+# come up silent that once (seen on Wii and Game Boy, first launch only; a relaunch fixes it). Give just that launch
+# another beat and re-assert the routes. The marker lives on tmpfs and is shared with run-retroarch, so whichever
+# launcher runs first after a boot pays for it once and every later launch stays fast.
+if [ ! -e /run/banana/game-launched ]; then
+    mkdir -p /run/banana 2>/dev/null
+    touch /run/banana/game-launched 2>/dev/null
+    sleep 0.8
+    for ctl in \
+        "SENARY_MI2S_RX Audio Mixer MultiMedia1" \
+        "SENARY_MI2S_RX Audio Mixer MultiMedia2"
+    do
+        want=$(sed -n "s/^${ctl}=//p" /run/banana/audio-route 2>/dev/null | tail -n 1)
+        amixer -q -c 0 cset "name=${ctl}" "${want:-on,on}" 2>/dev/null
+    done
+fi
 
 # the card's config, made from the image's templates the first time (a card from an older Banana gets the missing
 # files filled in without touching what it already has)

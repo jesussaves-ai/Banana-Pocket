@@ -1,0 +1,21 @@
+config BR2_PACKAGE_BANANA_TUBE
+	bool "banana-tube"
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	select BR2_PACKAGE_SDL2
+	select BR2_PACKAGE_SDL2_TTF
+	select BR2_PACKAGE_SDL2_IMAGE
+	select BR2_PACKAGE_LIBCURL
+	select BR2_PACKAGE_MPV
+	# mpv's YouTube support (--ytdl) is its Lua ytdl_hook, compiled only with a Lua interpreter: without one mpv
+	# cannot open a youtube.com URL and banana-tube's playback fails.
+	select BR2_PACKAGE_LUAJIT
+	select BR2_PACKAGE_YT_DLP
+	help
+	  BananaTube: a light YouTube search-and-play client for the Retroid Pocket Classic. One SDL2 window under
+	  cage (a search keyboard and a results list), yt-dlp for the search, and mpv for the video. No browser and no
+	  web view.
+
+	  The app installs its manifest under /usr/share/banana/apps/bananatube, so banana-ui's Apps shelf finds it
+	  with no entry in /etc/banana/systems.conf. The launcher /usr/libexec/banana/run-bananatube ships with the
+	  root filesystem (system/rootfs).

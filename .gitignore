@@ -4,6 +4,7 @@
 /ui/banana-scrape
 /ui/tests/out/
 /system/bananad/bananad
+/app/bananatube/banana-tube
 *.o
 /banana-*.bundle
 

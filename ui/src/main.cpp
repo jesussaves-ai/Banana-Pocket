@@ -570,6 +570,16 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 			logf("sysinfo %s: %d games, %d played, %s, achievements %d/%d", si.id.c_str(), si.games, si.played,
 				si.time.c_str(), si.achA, si.achB);
 		}
+		else if (op == "apps")
+		{
+			// apps: the app systems the registry scanned (Library::scanApps), one line each -- the Apps shelf, as the
+			// test reads it without a rendered tile
+			for (int i = 0; i < lib.systemCount(); i++)
+			{
+				rnds::SysInfo si = lib.system(i);
+				if (si.app) logf("apps %d: %s (%s), %d entries", i, si.id.c_str(), si.name.c_str(), si.games);
+			}
+		}
 		else if (op == "press")
 		{
 			std::string b; cs >> b;
@@ -1059,6 +1069,13 @@ int main(int argc, char** argv)
 	sigaction(SIGHUP, &sa, nullptr);	// bananad before a sleep: hand the sound device over, stop the ambient loop
 	signal(SIGPIPE, SIG_IGN);
 
+	// the sound device: opened as early as possible, before the panel, so the boot splash's first cue (the bunch's
+	// insert) finds the AudioReach card already open and lands on the animation's frame instead of late
+	Sound sound(o.assets + "/sounds");
+	sound.enabled = settings["sounds"] != "off";
+	sound.setBgm(settings["bgm"] != "off");		// the ambient loop, if the card or the image has one
+	if (settings["splash"] != "off" && settings["sounds"] != "off") sound.warm();
+
 	Display disp;
 	std::string err;
 	// the panel's driver may still be probing when init starts us
@@ -1071,14 +1088,8 @@ int main(int argc, char** argv)
 	logf("panel %dx%d (%d)", disp.width(), disp.height(), disp.panels());
 	bootMark("banana-ui: panel open");
 
-	Sound sound(o.assets + "/sounds");
 	FrameStats fstat;
 	ClockBoost boost;
-	sound.enabled = settings["sounds"] != "off";
-	sound.setBgm(settings["bgm"] != "off");		// the ambient loop, if the card or the image has one
-	// the boot splash's insert is the first cue, ~10 s after the kernel, before the AudioReach card can be opened:
-	// warm the device up now so that cue finds it open (independent of the background loop, which may be off)
-	if (settings["splash"] != "off" && settings["sounds"] != "off") sound.warm();
 	lib.onCue = [&sound](const std::string& n) { sound.play(n); };
 
 	// the library and the menu are made on another thread while the boot animation plays
@@ -1135,6 +1146,9 @@ int main(int argc, char** argv)
 		readyCv.notify_all();
 	});
 	playSplash(disp, be, o, variant, settings["splash"] != "off", ready, readyM, readyCv, sound, sigPipe[0]);
+	// the splash is done: free its layers (bgTop is a full screen) before the menu's idle loop, so they are not held
+	// for the whole session (the idle RSS budget)
+	gSplash = Splash();
 	loader.join();
 	Menu* ui = uiPtr.get();
 	ui->setLog([](const std::string& m) { logf("%s", m.c_str()); });
@@ -1431,7 +1445,13 @@ int main(int argc, char** argv)
 		long secs = (long)((nowMs() - start) / 1000);
 		if (system("banana-perf ui") != 0) {}
 		logf("game ended after %ld s (status %d)", secs, status);
-		for (int tries = 0; !disp.openSingle(o.top, err) && tries < 100; tries++) sleepUs(50000);
+		{
+			// take the panel back: a game (or its compositor) may still be letting go of the DRM master, so retry and
+			// say why if it never comes back (a black screen with the menu running under it is exactly this failure)
+			int tries = 0;
+			while (!disp.openSingle(o.top, err) && tries < 400) { if (!tries) logf("panel reopen: %s (retrying)", err.c_str()); sleepUs(50000); tries++; }
+			logf("panel %s after the game (%d tries)", disp.isOpen() ? "back" : "STILL CLOSED", tries);
+		}
 		be.invalidate();
 		input.open(disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());
 		std::lock_guard<std::mutex> l(worker.uiLock);

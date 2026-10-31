@@ -26,8 +26,10 @@ while [ $i -lt 15 ]; do
     sleep 0.1; i=$((i + 1))
 done
 # 2. the teardown finishes a beat after the substream reports closed; give it that beat before the graph is
-#    instantiated again (the fixed settle the wrappers used, kept here).
-sleep 0.4
+#    instantiated again. 0.4 s was too short (the DSP's teardown outlasts it: the route write below gets swallowed,
+#    the game's stream then latches unrouted and is silent for its life, and its audio thread blocks on close -- the
+#    exit hang). 0.8 s is the settle the per-launcher wrappers used before this was factored out, and games had sound.
+sleep 0.8
 
 # 3. write both speaker frontends' route and read each back: the DSP refuses a write until the card's mixer is ready,
 #    so retry. bananad publishes the jack's decision per control in /run/banana/audio-route (speaker on, headphones

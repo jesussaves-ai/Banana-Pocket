@@ -42,6 +42,23 @@ c=${CORE##*/}; c=${c%_libretro.so}
 # the route write and the readiness gate (see audio-handoff); a graph that still outlasts it is covered by the ALSA
 # abort (exit 134) retry below.
 /usr/libexec/banana/audio-handoff
+# The first launch after a boot is the one the DSP is slowest to finish handing over: the menu's stream has been open
+# since boot, and its graph teardown (which resets the card's route controls) can outlast the handoff's settle -- so
+# a core could come up silent that once (seen on Game Boy, first launch only; the same core was fine on later
+# launches). Give just that launch another beat and re-assert both routes before RetroArch opens. The marker is on
+# tmpfs, so it is gone at the next boot and only this launch pays for it.
+if [ ! -e /run/banana/game-launched ]; then
+    mkdir -p /run/banana 2>/dev/null
+    touch /run/banana/game-launched 2>/dev/null
+    sleep 0.8
+    for ctl in \
+        "SENARY_MI2S_RX Audio Mixer MultiMedia1" \
+        "SENARY_MI2S_RX Audio Mixer MultiMedia2"
+    do
+        want=$(sed -n "s/^${ctl}=//p" /run/banana/audio-route 2>/dev/null | tail -n 1)
+        amixer -q -c 0 cset "name=${ctl}" "${want:-on,on}" 2>/dev/null
+    done
+fi
 CFG=/data/retroarch/retroarch.cfg
 [ -f $CFG ] || { mkdir -p /data/retroarch; cp /etc/banana/retroarch.cfg $CFG; }
 mkdir -p /data/saves /data/states /data/screenshots
@@ -388,6 +405,13 @@ fi
 # anything RetroArch keeps that retroarch.cfg doesn't place (remaps, core options, playlists...) under the card's
 # retroarch folder, not ~/.config on the read-only root
 export HOME=/data/retroarch XDG_CONFIG_HOME=/data/retroarch
+# RetroArch plays on the *second* frontend (MultiMedia2, hw:0,1), the one the menu never opens or releases.
+# MultiMedia1 is the menu's: banana-ui holds it for its cues, releases it at a launch and reopens it when the game
+# ends, and across that release/reopen its route handling breaks -- a game opened on MultiMedia1 after the first one
+# latches the switch [off] (measured on the unit: pcm0p RUNNING with the MultiMedia1 route [off] -> silent, and its
+# audio thread then blocks on close, the slow exit). rcS routes MultiMedia2 on at boot and nothing else touches it, so
+# a stream opened on it stays routed. This is run-dolphin's frontend for the same reason.
+printf 'pcm.!default { type plug slave { pcm "hw:0,1" format S16_LE channels 2 rate 48000 } }\n' > "$HOME/.asoundrc" 2>/dev/null
 # cage (the kiosk compositor the game runs in) puts its socket here: a private, 0700 runtime dir on tmpfs.
 export XDG_RUNTIME_DIR=/run/banana/wayland
 mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null
@@ -434,6 +458,25 @@ while :; do
     # manager to hear about a resume). With no cage there is nothing to re-modeset, and the file goes away.
     if [ -x /usr/bin/cage ]; then echo $P > /run/banana/cage.pid; else rm -f /run/banana/cage.pid; fi
     trap 'kill -TERM $P 2>/dev/null' TERM INT HUP
+    # A watchdog: RetroArch prints "Unloading game" as it tears a game down, then exits. On this SoC the teardown can
+    # hang there (the AudioReach PCM or the Vulkan swapchain not letting go) -- the config and SRAM are already saved
+    # by then, so stopping it loses nothing. On this SoC it is the *first* unload line that can block, so key on that
+    # (not the last), with a short grace, and the menu always comes back quickly.
+    (
+        while kill -0 $P 2>/dev/null; do
+            if [ -s "$RL" ] && grep -qaE "Unloading (game|core)" "$RL" 2>/dev/null; then
+                sleep 1.0
+                if kill -0 $P 2>/dev/null; then
+                    echo "run-retroarch: the game is unloading but still up; stopping it" >&2
+                    for r in $(pidof retroarch 2>/dev/null); do kill -TERM $r 2>/dev/null; done
+                    sleep 0.5
+                    for r in $(pidof retroarch 2>/dev/null); do kill -KILL $r 2>/dev/null; done
+                fi
+                break
+            fi
+            sleep 0.3
+        done
+    ) &
     wait $P; S=$?
     while kill -0 $P 2>/dev/null; do wait $P; S=$?; done	# a trap interrupted the wait: until RetroArch has quit
     tries=$((tries + 1))

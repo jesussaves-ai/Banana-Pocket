@@ -1,5 +1,6 @@
 #include "library.h"
 #include "theme.h"
+#include "json.h"
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
@@ -213,6 +214,185 @@ namespace banana
 	{
 		loadDefs();
 		loadLooks();
+		scanApps();
+	}
+
+	// The app folders, in the order they are read: the card's own (/data/banana/apps, where a user drops an app),
+	// the data partition (/data/apps), and the image's (/usr/share/banana/apps). An app is one folder each, with a
+	// manifest -- app.json (Banana's own), app.conf, or a freedesktop *.desktop -- naming what to run.
+	std::vector<std::string> Library::appDirs() const
+	{
+		std::vector<std::string> d;
+		for (const std::string& c : { dataDir + "/apps", std::string("/data/apps"), std::string("/usr/share/banana/apps") })
+			if (std::find(d.begin(), d.end(), c) == d.end()) d.push_back(c);
+		return d;
+	}
+
+	// a key = value manifest (app.conf, or a freedesktop .desktop): the keys lower-cased, last one wins. A .desktop
+	// writes keys in any case (Name, Exec), and a repeated key is not what a hand-written manifest means, so the
+	// plain lines are enough -- this is not a .desktop spec parser, only the four fields an app needs.
+	static std::map<std::string, std::string> readKeyVals(const std::string& path)
+	{
+		std::map<std::string, std::string> kv;
+		std::ifstream f(path);
+		std::string ln;
+		while (std::getline(f, ln))
+		{
+			ln = trim(ln);
+			if (ln.empty() || ln[0] == '#' || ln[0] == '[') continue;
+			size_t eq = ln.find('=');
+			if (eq == std::string::npos) continue;
+			kv[lower(trim(ln.substr(0, eq)))] = trim(ln.substr(eq + 1));
+		}
+		return kv;
+	}
+
+	// a manifest's ext list, split on spaces/commas, lower case and without a leading dot
+	static void parseExts(const std::string& v, std::vector<std::string>& out)
+	{
+		std::string s = v;
+		for (auto& c : s) if (c == ',') c = ' ';
+		std::istringstream is(s);
+		std::string e;
+		while (is >> e)
+		{
+			e = lower(e);
+			if (!e.empty() && e[0] == '.') e = e.substr(1);
+			if (!e.empty()) out.push_back(e);
+		}
+	}
+
+	// Scan the app folders for manifests and add one app system each, after everything systems.conf lists. The tile
+	// is a normal system tile (the theme's [app] marker gives it its look); its one entry is the manifest's marker
+	// file, so A on the tile runs the launcher with %ROM% set to it, exactly as an app in systems.conf does. An id
+	// systems.conf already uses is left to systems.conf (a system that says so wins over a scanned manifest).
+	void Library::scanApps()
+	{
+		std::set<std::string> taken;
+		for (auto& d : defs) taken.insert(lower(d.id));
+		std::vector<SystemDef> apps;
+		std::map<std::string, Look> appLooks;
+		for (const std::string& root : appDirs())
+		{
+			DIR* dp = opendir(root.c_str());
+			if (!dp) continue;
+			std::vector<std::string> names;
+			while (dirent* e = readdir(dp))
+				if (e->d_name[0] != '.') names.push_back(e->d_name);
+			closedir(dp);
+			std::sort(names.begin(), names.end());
+			for (const std::string& n : names)
+			{
+				std::string dir = root + "/" + n;
+				struct stat st;
+				if (stat(dir.c_str(), &st) || !S_ISDIR(st.st_mode)) continue;
+				SystemDef def;
+				def.folder = dir;
+				def.id = lower(n);
+				def.name = n;
+				def.perf = "balanced";
+				def.always = true;	// the tile shows even with no marker (an app that failed to install says so)
+				def.flat = true;
+				def.app = true;
+				bool hasIcon = false;
+				// the manifest's own look, merged with the theme's line for this id (systems.cfg: bananatube's
+				// video.png) once the id is known -- a manifest that gives only an accent keeps the theme's icon,
+				// and one that gives neither is left to the theme / the `*` fallback
+				Look look;
+				look.app = true;
+				std::string j = dir + "/app.json", c = dir + "/app.conf";
+				if (exists(j))
+				{
+					std::string why;
+					JPtr doc = readJsonFile(j, &why);
+					if (doc && doc->isObj())
+					{
+						def.id = lower(doc->str("id", def.id));
+						def.name = doc->str("name", def.name);
+						def.maker = doc->str("maker", def.maker);
+						def.run = doc->str("run", def.run);
+						def.perf = doc->str("perf", def.perf);
+						parseExts(doc->str("ext", ""), def.exts);
+						std::string icon = doc->str("icon", "");
+						if (!icon.empty())
+						{
+							std::string p = icon[0] == '/' ? icon : dir + "/" + icon;
+							if (exists(p)) { look.icon = p; hasIcon = true; }
+						}
+						std::string accent = doc->str("accent", "");
+						if (accent.size() == 7 && accent[0] == '#') { look.accent = rnds::Color::hex((uint32_t)strtoul(accent.c_str() + 1, nullptr, 16)); look.hasAccent = true; }
+					}
+				}
+				else if (exists(c))
+				{
+					auto kv = readKeyVals(c);
+					if (kv.count("id")) def.id = lower(kv["id"]);
+					if (kv.count("name")) def.name = kv["name"];
+					if (kv.count("maker")) def.maker = kv["maker"];
+					if (kv.count("run")) def.run = kv["run"];
+					if (kv.count("perf")) def.perf = kv["perf"];
+					if (kv.count("ext")) parseExts(kv["ext"], def.exts);
+					if (kv.count("icon"))
+					{
+						std::string icon = kv["icon"];
+						std::string p = icon[0] == '/' ? icon : dir + "/" + icon;
+						if (exists(p)) { look.icon = p; hasIcon = true; }
+					}
+					if (kv.count("accent") && kv["accent"].size() == 7 && kv["accent"][0] == '#')
+					{ look.accent = rnds::Color::hex((uint32_t)strtoul(kv["accent"].c_str() + 1, nullptr, 16)); look.hasAccent = true; }
+				}
+				else
+				{
+					// a freedesktop .desktop in the folder: Exec names the command, the file itself is the entry
+					std::string file;
+					if (DIR* dd = opendir(dir.c_str()))
+					{
+						while (dirent* e = readdir(dd))
+						{
+							std::string en = e->d_name;
+							if (en.size() > 8 && lower(en).compare(en.size() - 8, 8, ".desktop") == 0) { file = dir + "/" + en; break; }
+						}
+						closedir(dd);
+					}
+					if (file.empty()) continue;
+					auto kv = readKeyVals(file);
+					if (!kv.count("exec")) continue;
+					def.name = kv.count("name") ? kv["name"] : def.name;
+					def.maker = kv.count("comment") ? kv["comment"] : def.maker;
+					// strip the Exec field codes a desktop launcher would expand (%U, %f, ...): we run it as it is
+					std::string exec = kv["exec"];
+					std::string cleaned;
+					for (std::istringstream is(exec); is >> cleaned;)
+					{
+						if (cleaned.size() == 2 && cleaned[0] == '%') continue;
+						def.run += def.run.empty() ? cleaned : " " + cleaned;
+					}
+					def.exts.push_back("desktop");
+					std::string icon = kv.count("icon") ? kv["icon"] : "";
+					if (!icon.empty() && icon[0] == '/' && exists(icon)) { look.icon = icon; hasIcon = true; }
+				}
+				if (def.exts.empty()) def.exts.push_back("app");
+				if (def.run.empty()) continue;	// nothing to start: not an app
+				if (taken.count(def.id)) continue;	// systems.conf's own, or one already scanned
+				taken.insert(def.id);
+				if (hasIcon || look.hasAccent)
+				{
+					Look base = lookOf(def.id);
+					base.app = true;
+					if (hasIcon) base.icon = look.icon;
+					if (look.hasAccent) { base.accent = look.accent; base.hasAccent = true; }
+					appLooks[def.id] = base;
+				}
+				apps.push_back(def);
+			}
+		}
+		std::sort(apps.begin(), apps.end(), [](const SystemDef& a, const SystemDef& b) { return a.id < b.id; });
+		for (auto& a : apps)
+		{
+			defs.push_back(a);
+			auto it = appLooks.find(a.id);
+			if (it != appLooks.end()) looks[a.id] = it->second;
+		}
 	}
 
 	// systems.conf: [id] sections of key = value (name, maker, folder, ext, run, perf, always, flat)
@@ -511,6 +691,7 @@ namespace banana
 				if (!d.flat) gameDirs(dir, 0, r);	// the folders games are found in too (listRoms looks 2 deep)
 			}
 		}
+		for (auto& d : appDirs()) r.push_back(d);	// an app folder added to one of these: a new scan
 		return r;
 	}
 
@@ -757,7 +938,7 @@ namespace banana
 			if (mk != looks.end()) r.accent = mk->second.accent;
 		}
 		r.icon = themedIcon(s.def.id, look.icon);	// a user theme's own icon for the system (theme.h)
-		r.app = look.app;
+		r.app = look.app || s.def.app;
 		r.games = (int)s.games.size();
 		long secs = 0;
 		for (auto& g : s.games) { if (g.plays > 0) r.played++; secs += g.seconds; }

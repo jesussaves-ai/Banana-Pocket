@@ -1,0 +1,63 @@
+#!/bin/sh
+# BananaTube: the YouTube client, as a Wayland client in cage (the kiosk compositor), exactly as a port or RetroArch
+# runs. cage turns the output with the panel's own "panel orientation" property, so banana-tube's SDL window comes
+# out upright on this handheld's portrait-native panel instead of a quarter turn off. This is the app (not a game in
+# ports/): the launcher owns the same contract run-retroarch/run-dolphin do -- the panel, the audio route -- for the
+# one non-game application that wants them.
+#   run-bananatube [<marker>]        the marker is what banana-ui found (the app's one entry); unused here
+BIN=/usr/bin/banana-tube
+[ -x "$BIN" ] || { echo "run-bananatube: no $BIN" >&2; exit 1; }
+
+# The AudioReach handoff, shared with run-retroarch and run-dolphin: wait for the menu's cue stream to go, write the
+# DSP route and gate on the frontend being claimable. banana-ui has just let go of the frontend; the DSP tears that
+# graph down a beat later, and an open in the middle of it leaves mpv silent.
+/usr/libexec/banana/audio-handoff
+
+# The app's files (yt-dlp's cache, a log) go on the card; the read-only root must not be written. A HOME of its
+# own carries the app's ALSA default: MultiMedia2 (hw:0,1), the *second* AudioReach frontend. The menu keeps
+# MultiMedia1 open while it waits, and a frontend whose graph the DSP tears down (the menu releasing its stream at
+# launch) has its route switches refused/reset to off -- a stream opened on it stays unrouted and silent. The second
+# frontend is not the menu's, so its route stands. This is run-dolphin's exact workaround, for the same reason.
+export HOME=/data/banana/bananatube/home
+mkdir -p "$HOME" /data/banana/bananatube /data/banana/logs 2>/dev/null
+printf 'pcm.!default { type plug slave { pcm "hw:0,1" format S16_LE channels 2 rate 48000 } }\n' > "$HOME/.asoundrc" 2>/dev/null
+# cage puts its socket here: a private, 0700 runtime dir on tmpfs.
+export XDG_RUNTIME_DIR=/run/banana/wayland
+mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null
+# cage's seat (libseat's builtin backend) must not be VT-bound: this kernel has no virtual terminals, and a VT-bound
+# seat makes the kernel's VT switch on suspend wait for a VT that does not exist while bananad has the app's process
+# group SIGSTOPped (run-retroarch's note, the same seat).
+export SEATD_VTBOUND=0
+# SDL2 under cage draws through the Wayland video driver; audio stays ALSA "default" (bananad's asound.conf). There
+# is no PulseAudio/PipeWire here. A card without cage falls back to the KMSDRM driver (below).
+: "${SDL_VIDEODRIVER:=wayland}"; export SDL_VIDEODRIVER
+: "${SDL_AUDIODRIVER:=alsa}"; export SDL_AUDIODRIVER
+# The RPC's pad, mapped for SDL: this handheld's buttons are the Nintendo order (A is the east button, as banana-ui's
+# own menu reads them), not SDL's Xbox order (run-port writes the same line, SDL_sysjoystick.c's evdev code order).
+export SDL_GAMECONTROLLERCONFIG="0300f3f7242f00000100000001000000,Retroid Pocket Classic Gamepad,a:b1,b:b0,x:b2,y:b3,back:b8,guide:b10,start:b9,leftstick:b11,rightstick:b12,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,dpup:b13,dpdown:b14,dpleft:b15,dpright:b16,platform:Linux,"
+
+L=/data/banana/logs/bananatube.log
+[ -s "$L" ] && mv -f "$L" "$L.1"
+# the app in its own session (its process group = $C): a stop from the menu, and mpv (started by banana-tube), reach
+# everything it started. cage is the kiosk compositor; a card without it has banana-tube take the panel on KMS.
+if [ -x /usr/bin/cage ]; then
+    setsid cage -- "$BIN" >"$L" 2>&1 &
+    C=$!
+    echo $C > /run/banana/cage.pid
+else
+    export SDL_KMSDRM_REQUIRE_DRM_MASTER=0
+    setsid "$BIN" >"$L" 2>&1 &
+    C=$!
+    rm -f /run/banana/cage.pid
+fi
+trap 'kill -TERM -$C 2>/dev/null' TERM INT HUP
+wait $C; S=$?
+while kill -0 $C 2>/dev/null; do wait $C; S=$?; done
+# whatever of it is still running (mpv left behind, the app gone): asked to stop, then stopped
+if kill -0 -$C 2>/dev/null; then
+    kill -TERM -$C 2>/dev/null
+    for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 -$C 2>/dev/null || break; sleep 0.2; done
+    kill -KILL -$C 2>/dev/null
+fi
+rm -f /run/banana/cage.pid /run/banana/bananatube.sock
+exit $S

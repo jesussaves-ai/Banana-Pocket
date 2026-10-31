@@ -133,6 +133,31 @@ def main():
             errors.append("%s: theme icon missing: %s" % (sid, looks[sid]))
         print("  %-12s %s" % (sid, run))
 
+    # Banana's own apps, shipped in this tree (app/<id>/app.json): banana-ui's registry scans the installed folder
+    # (/usr/share/banana/apps), so an app is not in systems.conf; check its manifest names a launcher that ships.
+    # The manifest allows // comments (banana-ui's JSON reader), so the two fields are read with a regex, not json.
+    apps_dir = os.path.join(ROOT, "app")
+    if os.path.isdir(apps_dir):
+        for app in sorted(os.listdir(apps_dir)):
+            mf = os.path.join(apps_dir, app, "app.json")
+            if not os.path.isfile(mf):
+                continue
+            with open(mf, encoding="utf-8") as f:
+                text = f.read()
+            m = re.search(r'"run"\s*:\s*"([^"]*)"', text)
+            if not m:
+                errors.append("app %s: no run in app.json" % app)
+                continue
+            run = m.group(1)
+            if "%ROM%" not in run:
+                errors.append("app %s: run has no %%ROM%%: %s" % (app, run))
+            prog = run.split()[0]
+            fs = os.path.join(ROOTFS, prog.lstrip("/"))
+            if not (os.path.isfile(fs) and os.access(fs, os.X_OK)):
+                errors.append("app %s: launcher missing or not executable: %s" % (app, prog))
+                continue
+            print("  %-12s %s" % (app, run))
+
     # a core a Settings row offers as a default must exist too (core.<system> in settings_defaults.cpp)
     with open(DEFAULTS, encoding="utf-8") as f:
         for m in re.finditer(r'\{\s*"core\.([a-z0-9]+)",\s*"([a-z0-9_]+)"', f.read()):
