@@ -40,7 +40,7 @@ mapping `run-port` uses: **A is the east button**).
 | L / R | — | a page back / forward | — |
 | START | run the search | a new search | — |
 | SELECT | — | — | play / pause |
-| touch | tap a key / `Search` | tap a row to focus, tap again to play | mpv's own controls (below) |
+| touch | tap a key / `Search` | tap a row to focus, tap again to play | zones: left/right seek, centre pause, top-left stop |
 
 **Touch:** the panel's touchscreen is the FT5x06 (multitouch, `/dev/input/event*`). SDL2's **Wayland** backend does not
 bind `wl_touch`, so under `cage` the app receives no `SDL_FINGER` and no emulated pointer — `banana-tube` therefore
@@ -51,9 +51,19 @@ once at start) or `BANANA_TUBE_TOUCH_ROT`, so a differently-mounted panel is fix
 hit-testing share one set of geometry functions (`keyRect`/`actRect`/`resultsTop`), so a tap lands on exactly what is
 drawn. `BANANA_TUBE_TOUCH_DEBUG=1` logs each tap's mapped coordinates.
 
-During playback mpv owns the screen (its own fullscreen window under `cage`), so its on-screen controls are the
-player buttons a finger reaches: they are enlarged with `--osd-scale=1.8 --osd-scale-by-window=no`, and mpv maps
-`wl_touch` to a click on them. `banana-tube` ignores evdev taps while playing, so the two do not both act.
+During playback there is **no mpv OSC**: its buttons are tiny and its touch hit-testing drifted on this stack, so
+`banana-tube` runs mpv with `--no-osc` and drives playback itself from its own (verified) evdev touch. mpv's window
+still covers the screen (so the app cannot draw an overlay), and the whole screen becomes the control surface, in four
+large zones:
+
+- **top-left** (top 18% × left 18%): stop and go back to the results;
+- **left 28%**: seek −10 s;
+- **right 28%**: seek +10 s;
+- **the rest (centre)**: play / pause.
+
+`--osd-playing-msg` shows the controls briefly when a video starts. The gamepad still works too (A play/pause, d-pad
+seek, B stop). `banana-tube` never acts on SDL's touch: under `cage` SDL reports a touch as a *pointer* at offset
+coordinates, and acting on both fired a second, wrong tap per gesture (the phantom characters).
 
 
 Playback: `banana-tube` starts `mpv` (full screen under `cage`) and keeps the pad to itself, telling mpv what to do

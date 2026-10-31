@@ -281,7 +281,6 @@ struct App
 	int sel = 0, scroll = 0;
 	bool quit = false;					// the loop's own exit (B on an empty query): SDL_Quit() here would tear SDL
 										// down under a running loop, leaving a frozen/glitched window that never exits
-	Uint32 lastFingerAt = 0;			// a touch also arrives as a mouse click on some stacks: ignore that duplicate
 
 	pid_t mpv = -1;
 	int ipc = -1;
@@ -491,28 +490,18 @@ struct App
 			"--ao=alsa", "--audio-format=s16",
 			"--audio-buffer=0.4",					// small, matched to the AudioReach period
 			"--cache=yes",							// stream from a small buffer so seeks/pauses do not stall
-			// big, touch-friendly on-screen controls: mpv maps wl_touch to a click on its OSC, so these are the
-			// player buttons the handheld's finger reaches during playback. osd-scale-by-window=no keeps them a fixed,
-			// large size instead of scaling to the (already fixed) panel.
-			"--osc=yes",
+			// No mpv OSC: its buttons are tiny and its touch hit-testing drifted on this stack. banana-tube draws
+			// nothing over the video (mpv's window covers it), so playback is driven by *large* touch zones on the
+			// screen, mapped by banana-tube's own (verified) evdev touch: see tapAt's PLAYING case. osd-playing-msg
+			// shows the (gamepad) controls briefly at the start.
+			"--no-osc", "--osd-level=1",
+			"--osd-playing-msg=A play/pause  (touch: left/right seek -/+ 10s, centre pause, top-left stop)",
 			"--fullscreen", "--keep-open=no", "--force-window=yes",
 			"--msg-level=all=warn",
 		};
-		// The OSC's size is `osc-scalefullscreen` (a script-opt), NOT --osd-scale: the OSC ignores --osd-scale, which
-		// is why the buttons stayed small and --osd-scale also left the OSC's hitboxes unmoved (touch looked offset).
-		// Scaling the OSC itself keeps its drawing and its hit-testing in the same geometry. Tunable on the card
-		// (default 2.0x) via /data/banana/bananatube/osd-scale.
-		float osc = 3.0f;
-		if (FILE* f = fopen("/data/banana/bananatube/osd-scale", "r")) { if (fscanf(f, "%f", &osc) != 1) {} fclose(f); }
-		if (osc < 0.5f) osc = 0.5f;
-		if (osc > 6.0f) osc = 6.0f;
-		{ char b[64]; snprintf(b, sizeof b, "player controls: osc-scalefullscreen=%.2f", osc); logLine(b); }
-		char oscbuf[112];
-		snprintf(oscbuf, sizeof oscbuf, "--script-opts=osc-scalefullscreen=%.2f,osc-scalewindowed=%.2f", osc, osc);
 		std::string fmt = std::string("--ytdl-format=") + ytdlFormat;
 		std::vector<char*> av;
 		for (const char* a : argv) av.push_back(const_cast<char*>(a));
-		av.push_back(oscbuf);
 		av.push_back(&fmt[0]);
 		av.push_back(&url[0]);
 		av.push_back(nullptr);
@@ -698,7 +687,17 @@ struct App
 		}
 		else if (mode == Mode::PLAYING)
 		{
-			activate();	// mpv owns the screen here; this only matters if its window is not covering ours
+			// The player controls: no mpv OSC (its buttons are tiny), so the whole screen is the control surface,
+			// mapped by banana-tube's own (verified) evdev touch. Four large zones:
+			//   top-left        stop and go back
+			//   left 28%        seek -10 s
+			//   right 28%       seek +10 s
+			//   the rest        play / pause
+			connectIpc();
+			if (x < W * 18 / 100 && y < H * 18 / 100) { logLine("player -> stop"); stopPlayback(); mode = Mode::RESULTS; status = "Stopped"; }
+			else if (x < W * 28 / 100) { logLine("player -> seek -10"); ipcSend("{\"command\":[\"seek\",\"-10\"]}"); }
+			else if (x > W * 72 / 100) { logLine("player -> seek +10"); ipcSend("{\"command\":[\"seek\",\"10\"]}"); }
+			else { logLine("player -> play/pause"); ipcSend("{\"command\":[\"cycle\",\"pause\"]}"); }
 		}
 	}
 
@@ -841,8 +840,8 @@ struct App
 					char b[96];
 					snprintf(b, sizeof b, "tap raw %d,%d -> %d,%d (surface %dx%d rot %d)", tDownX, tDownY, x, y, W, H, panelRot);
 					logLine(b);
-					// during playback mpv's fullscreen window owns the screen and reads touch itself (its big OSC)
-					if (mode != Mode::PLAYING) tapAt(x, y);
+					// the PLAYING case drives mpv over IPC (there is no OSC); elsewhere it is the app's own UI
+					tapAt(x, y);
 				}
 			}
 		}
@@ -943,26 +942,9 @@ struct App
 					else if (k == SDLK_RIGHT) move(1, 0);
 					else if (k >= 32 && k < 127 && mode == Mode::KEYS) query += static_cast<char>(k);
 				}
-				// touch: SDL_FINGER coords are normalized to the window (multiply by the output size); a stack that has
-				// no SDL touch support delivers the tap as a left mouse click in window coords, which we scale to the
-				// renderer's output size. Either way the point is the one tapAt() hit-tests against the drawn rects.
-				else if (ev.type == SDL_FINGERDOWN)
-				{
-					int W = 0, H = 0;
-					SDL_GetRendererOutputSize(ren, &W, &H);
-					lastFingerAt = SDL_GetTicks();
-					tapAt((int)(ev.tfinger.x * W), (int)(ev.tfinger.y * H));
-				}
-				else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT)
-				{
-					if (SDL_GetTicks() - lastFingerAt > 400)	// not the pointer emulated from the same touch
-					{
-						int W = 0, H = 0, winW = 0, winH = 0;
-						SDL_GetRendererOutputSize(ren, &W, &H);
-						SDL_GetWindowSize(win, &winW, &winH);
-						tapAt(winW > 0 ? ev.button.x * W / winW : ev.button.x, winH > 0 ? ev.button.y * H / winH : ev.button.y);
-					}
-				}
+				// Touch is read from evdev (pollTouch), never through SDL: under cage SDL delivers a touch as a
+				// *pointer* at offset coordinates, and acting on that too fired a second, wrong tap per gesture (the
+				// phantom 'h'/'7' characters). SDL's keyboard events above stay (a desktop keyboard for testing).
 			}
 
 			Uint32 now = SDL_GetTicks();
