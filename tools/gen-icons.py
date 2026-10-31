@@ -84,43 +84,25 @@ class Canvas:
             r = rmax * i / n
             self.px(int(round(cx + r * math.cos(t))), int(round(cy + r * math.sin(t))), c)
 
+    def outline(self, col=OUT):
+        # a 1px border around the whole silhouette: draw the fills first, then this, so a shape made of several
+        # discs/rects gets the one clean outline the house style wants
+        add = []
+        for y in range(H):
+            for x in range(W):
+                if self.p[y][x] != BG:
+                    continue
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < W and 0 <= ny < H and self.p[ny][nx] != BG:
+                        add.append((x, y))
+                        break
+        for x, y in add:
+            self.px(x, y, col)
+
 
 # ---- the icons ----------------------------------------------------------------------------------------------------
 
-def gamegear(c):
-    # a black wide handheld: d-pad left, a big screen, the two buttons right (the Game Gear's shape)
-    c.box(2, 8, 29, 24, BLACK)
-    c.rect(3, 9, 28, 23, DARK)
-    c.rect(3, 9, 28, 10, MID)                       # a top highlight
-    c.box(8, 11, 21, 21, BLACK)                     # screen bezel
-    c.rect(9, 12, 20, 20, TEAL)                     # the backlit screen
-    c.rect(9, 12, 20, 13, CYAN)
-    # the d-pad: a plus
-    c.rect(4, 15, 9, 18, OUT)
-    c.rect(5, 13, 8, 20, OUT)
-    c.rect(5, 16, 8, 17, MID)
-    c.rect(6, 14, 7, 19, MID)
-    # button 1 and 2, stacked
-    c.disc(25, 13, 2, OUT)
-    c.disc(25, 13, 1, RED)
-    c.disc(25, 18, 2, OUT)
-    c.disc(25, 18, 1, BLUE)
-    c.px(23, 22, MID)                               # the speaker
-    c.px(26, 22, MID)
-
-
-def dreamcast(c):
-    # a light grey console, its top lid carrying the orange swirl
-    c.box(2, 13, 29, 25, LIGHT)
-    c.rect(3, 14, 28, 18, HI)                       # the top surface
-    c.rect(3, 19, 28, 24, LIGHT)
-    c.box(3, 21, 28, 25, MID)                       # the front face, darker
-    c.rect(4, 22, 27, 24, GREY)
-    c.disc(15, 16, 7, OUT)                          # the circular lid
-    c.disc(15, 16, 6, HI)
-    c.spiral(15, 16, 5, ORANGE)
-    c.rect(4, 22, 7, 23, DARK)                      # a port on the front
-    c.px(26, 24, DARK)
 
 
 def pcengine(c):
@@ -150,32 +132,10 @@ def atari2600(c):
     c.rect(4, 18, 6, 19, BLACK)                     # a switch
 
 
-def c64(c):
-    # the beige wedge ("breadbin"): a raised back, the dark keyboard on the low front
-    c.box(3, 12, 28, 24, BEIGE)
-    c.rect(4, 13, 27, 19, BEIGEL)                   # the raised back
-    c.rect(4, 19, 27, 23, BEIGE)                    # the keyboard deck
-    c.box(5, 17, 26, 23, DARK)                      # the keyboard recess
-    for y in range(18, 23, 2):
-        for x in range(6, 26, 2):
-            c.px(x, y, BEIGE)
-    c.rect(6, 13, 13, 14, BLUE)                     # the badge
-    c.rect(15, 13, 21, 14, RED)
 
 
-def zxspectrum(c):
-    # the black wedge with the rainbow on the front edge
-    c.box(2, 12, 29, 24, DARK)
-    c.rect(3, 13, 28, 23, DARK)
-    c.rect(3, 13, 28, 14, MID)                      # the top edge
-    c.box(4, 16, 27, 22, BLACK)                     # the rubber-key well
-    for y in range(17, 22, 2):
-        for x in range(5, 27, 2):
-            c.px(x, y, MID)
-            c.px(x + 1, y, OUT)
-    # the rainbow along the front, left to right
-    for i, col in enumerate((RED, ORANGE, YELLOW, GREEN, BLUE)):
-        c.rect(4 + i * 5, 22, 8 + i * 5, 23, col)
+
+
 
 
 def sega32x(c):
@@ -250,12 +210,8 @@ def atarilynx(c):
 
 
 ICONS = {
-    "gamegear": gamegear,
-    "dreamcast": dreamcast,
     "pcengine": pcengine,
     "atari2600": atari2600,
-    "c64": c64,
-    "zxspectrum": zxspectrum,
     "sega32x": sega32x,
     "segacd": segacd,
     "ngp": ngp,
