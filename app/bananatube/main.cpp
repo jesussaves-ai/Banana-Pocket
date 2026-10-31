@@ -503,6 +503,10 @@ struct App
 			// screen, mapped by banana-tube's own (verified) evdev touch: see tapAt's PLAYING case. osd-playing-msg
 			// shows the (gamepad) controls briefly at the start.
 			"--no-osc", "--osd-level=1", "--osd-font-size=90", "--osd-duration=700",
+			// libass here is built without fontconfig ("can't find selected font provider"), so the OSD needs the
+			// libass provider and an explicit fonts dir + family: the image's Inter is the only font, and without
+			// this the indicators render as nothing at all.
+			"--osd-font-provider=none", "--osd-fonts-dir=/usr/share/banana/banana/fonts", "--osd-font=Inter",
 			"--osd-playing-msg=A play/pause  (touch: left/right seek -/+ 10s, centre pause, top-left stop)",
 			"--fullscreen", "--keep-open=no", "--force-window=yes",
 			"--msg-level=all=warn",
