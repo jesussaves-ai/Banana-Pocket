@@ -750,12 +750,18 @@ struct App
 			unsigned long abs[ABS_MAX / (8 * sizeof(long)) + 1] = {};
 			ioctl(fd, EVIOCGBIT(EV_ABS, sizeof abs), abs);
 			auto bit = [&](int n) { return (abs[n / (8 * sizeof(long))] >> (n % (8 * sizeof(long)))) & 1; };
-			if (bit(ABS_MT_POSITION_X) && bit(ABS_MT_POSITION_Y))
+			// multitouch (ABS_MT_POSITION_X/Y), else a single-touch screen or absolute pointer (ABS_X/Y): the RPC's
+			// FT5x06 is multitouch, but a card with a plain touchscreen must work too
+			bool mt = bit(ABS_MT_POSITION_X) && bit(ABS_MT_POSITION_Y);
+			bool st = !mt && bit(ABS_X) && bit(ABS_Y);
+			if (mt || st)
 			{
 				input_absinfo ax = {}, ay = {};
-				ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), &ax);
-				ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), &ay);
+				ioctl(fd, EVIOCGABS(mt ? ABS_MT_POSITION_X : ABS_X), &ax);
+				ioctl(fd, EVIOCGABS(mt ? ABS_MT_POSITION_Y : ABS_Y), &ay);
 				tMinX = ax.minimum; tMaxX = ax.maximum; tMinY = ay.minimum; tMaxY = ay.maximum;
+				if (tMaxX <= tMinX) tMaxX = tMinX + 1;
+				if (tMaxY <= tMinY) tMaxY = tMinY + 1;
 				tX = (tMinX + tMaxX) / 2; tY = (tMinY + tMaxY) / 2;
 				touchFd = fd;
 				break;
@@ -995,12 +1001,23 @@ struct App
 		printf("bananatube selftest query: '%s'\n", query.c_str());
 		back();
 		printf("bananatube selftest quit: %d\n", quit ? 1 : 0);
-		// the touch transform: raw (1077,25) on the 1080x1240 panel, turned 90, is the app surface's top-left (25,2)
+		// the touch transform: the four raw corners of the 1080x1240 panel, turned 90, in the app surface's 1240x1080
+		// space. The kernel's multitouch axes are the panel's own (EVIOCGABS: 0..1079 x 0..1239); rot 90 is
+		// x' = y, y' = 1079 - x.
 		tMinX = 0; tMaxX = 1079; tMinY = 0; tMaxY = 1239; panelRot = 90; flipX = flipY = false;
-		tX = 1077; tY = 25;
-		int mx = 0, my = 0;
-		mapTouch(mx, my, 1240, 1080);
-		printf("bananatube selftest touch: %d,%d (expect 25,2)\n", mx, my);
+		static const struct { int rx, ry, ex, ey; const char* name; } corners[] = {
+			{ 0, 0, 0, 1079, "tl" }, { 1079, 0, 0, 0, "tr" },
+			{ 0, 1239, 1239, 1079, "bl" }, { 1079, 1239, 1239, 0, "br" },
+			{ 1077, 25, 25, 2, "spot" },
+		};
+		for (auto& c : corners)
+		{
+			tX = c.rx; tY = c.ry;
+			int mx = 0, my = 0;
+			mapTouch(mx, my, 1240, 1080);
+			printf("bananatube selftest touch %-4s raw %4d,%4d -> %4d,%4d (expect %4d,%4d): %s\n",
+				c.name, c.rx, c.ry, mx, my, c.ex, c.ey, (mx == c.ex && my == c.ey) ? "ok" : "FAIL");
+		}
 		return 0;
 	}
 

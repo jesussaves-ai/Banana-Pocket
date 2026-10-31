@@ -78,8 +78,8 @@ test: ui
 	system/tests/run-retroarch-test.sh
 	system/tests/run-dolphin-test.sh
 	system/tests/rpc-thermals-test.sh
+	system/tests/run-banana-tube-test.sh
 	ui/tests/run.sh
-	app/bananatube/tests/selftest.sh
 
 # a host-only measurement baseline (the library scan, the menu's start-up and the frame cost) at both canvas
 # sizes; the numbers tell a regression from a change. See ui/tests/bench.sh.
