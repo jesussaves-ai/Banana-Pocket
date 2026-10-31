@@ -76,8 +76,9 @@ brackets until art is made (a 128×128 PNG in `overrides/icons`, wired in `syste
 - **Computers / other consoles** — `intellivision`, `colecovision`, `vectrex`, `odyssey2`/`videopac` (console);
   `msx`, `msx2`, `amiga`, `amstradcpc`, `dos`, `zx81` (computer)
 - **Engines / apps** — `scummvm` (book), `pico-8`, `tic-80` (fantasy), `doom`, `quake` (fantasy)
-- **App/media kinds** already exist: `video` (YouTube/bananatube), `music`, `picture`, `book`, `gear` (settings),
-  `tools`, `apps`, `collection`, `fav`, `search`, `recent`.
+- **Apps / media kinds** — the bundled apps have their own tiles (`bananatube` = the banana TV, `dodakvarter`,
+  `bank`); generic kinds still exist for the rest: `video`, `music`, `picture`, `book`, `gear` (settings), `tools`,
+  `apps`, `collection`, `fav`, `search`, `recent`.
 
 Where the BenJelter pack (the source of the good 32×32 ones) lacks a system, generate it as above; where it has it,
 prefer that (it matches the imported set, and can be upscaled to 128 with nearest).
