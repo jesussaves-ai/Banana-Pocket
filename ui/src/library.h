@@ -99,6 +99,7 @@ namespace banana
 		std::string clockText() override;
 		std::string dateText() override;
 		float battery() override;
+		bool charging() override { return power().charging; }
 		bool online() override;
 		void selectSystem(int i) override { home = i; }
 		void selectGame(int) override {}

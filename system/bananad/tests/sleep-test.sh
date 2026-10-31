@@ -11,7 +11,7 @@ HERE=$(cd "$(dirname "$0")/.." && pwd)
 ROOTFS=$(cd "$HERE/../rootfs" && pwd)
 if [ "$1" != --inside ]; then
     W=$(mktemp -d)
-    cc -O2 -o "$W/bananad" "$HERE/bananad.c"
+    cc -O2 -o "$W/bananad" "$HERE/bananad.c" -lasound
     cc -O2 -o "$W/banana-ui" -x c - <<'EOF'
 #include <signal.h>
 #include <stdio.h>

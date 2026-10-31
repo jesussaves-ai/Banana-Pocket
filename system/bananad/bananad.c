@@ -27,6 +27,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <linux/input.h>
 #include <poll.h>
 #include <signal.h>
@@ -345,6 +346,30 @@ static time_t rtc_alarm(int seconds)
 	return time(NULL) + seconds;
 }
 
+/* Only the power button may wake the handheld. The kernel arms every device that says it can wake -- the rsinput
+ * MCU's serial (988000.serial), the Wi-Fi/ADSP remoteprocs (8a00000/3000000), the charger and USB power supplies
+ * (pmic_glink), gpio-keys (the volume keys), the thermal sensors, mmc0 -- and any of them raising an interrupt during
+ * a sleep is a resume the owner did not ask for (the serial MCU and the Wi-Fi link were the ones seen waking it). So
+ * just before suspending, leave only the PMIC pwrkey armed and disable the rest. The drivers re-arm their own wakeup
+ * on resume, which is why this runs before every sleep rather than once at boot. */
+static void wake_only_power(void)
+{
+	DIR *d = opendir("/sys/class/wakeup");
+	if (!d) return;
+	struct dirent *e;
+	while ((e = readdir(d))) {
+		if (strncmp(e->d_name, "wakeup", 6) != 0) continue;
+		char name[160] = "", p[PATH_MAX + 32], dev[PATH_MAX];
+		snprintf(p, sizeof p, "/sys/class/wakeup/%s/name", e->d_name);
+		read_str(p, name, sizeof name);
+		snprintf(p, sizeof p, "/sys/class/wakeup/%s/device", e->d_name);
+		if (!realpath(p, dev)) continue;	/* a virtual source (mmc0) has no power/wakeup to write */
+		snprintf(p, sizeof p, "%s/power/wakeup", dev);
+		write_file(p, strstr(name, "pwrkey") ? "enabled" : "disabled");
+	}
+	closedir(d);
+}
+
 static void sleep_mode(void)
 {
 	/* deep: suspend to RAM (TF-A turns the SoC off, DRAM in self-refresh); s2idle as the fallback */
@@ -386,6 +411,7 @@ static void suspend_now(const char *why)
 	hooks("pre", 0);
 	sync();
 	sleep_mode();
+	wake_only_power();	/* the power key alone may bring it back (see its comment) */
 	int cycles = 0, rtc_wakes = 0, failures = 0;
 	double asleep = 0;
 	const char *woke = "?";
@@ -394,7 +420,7 @@ static void suspend_now(const char *why)
 		double t_in = mono();
 		struct timespec b0, b1;
 		clock_gettime(CLOCK_BOOTTIME, &b0);	/* BOOTTIME counts the time asleep, MONOTONIC doesn't */
-		if (cycles == 0) sleep_log("sleep (%s): %.0f ms to suspend%s", why, (t_in - t0) * 1000, game ? ", game paused" : "");
+		if (cycles == 0) sleep_log("sleep (%s): %.0f ms to suspend%s, power key only", why, (t_in - t0) * 1000, game ? ", game paused" : "");
 		int r = write_file("/sys/power/state", "mem");
 		int err = errno;
 		/* a signal (SIGHUP from the menu, SIGCHLD) interrupted the write: nothing slept, so retry rather than
@@ -1198,6 +1224,57 @@ static int charger_online(void)
 
 int leds_last = -2;	/* the upper LED's state as last set; -2: set it again */
 static int amber_last = -2;	/* the charging LED's, the same way */
+
+/* The vibrator is the PMIC's PM7250B motor, a module in the image (CONFIG_INPUT_PM8XXX_VIBRATOR=m) that nothing loads
+ * at boot. modprobe it once so the FF input (pm8xxx_vib_ffmemless) exists; already loaded is a no-op. */
+static void vibrator_load(void)
+{
+	char *argv[] = { "modprobe", "pm8xxx_vibrator", NULL };
+	run(argv);
+}
+
+/* a short pulse on the vibrator: upload an FF_RUMBLE effect, play it, stop it. The device is found by its name under
+ * /dev/input (its event number depends on what else probed that boot), so the number does not matter. */
+static void vibrate(int ms)
+{
+	DIR *d = opendir("/dev/input");
+	if (!d) return;
+	struct dirent *e;
+	int fd = -1;
+	while (!fd && (e = readdir(d))) {
+		if (strncmp(e->d_name, "event", 5)) continue;
+		char p[300], name[64] = "";
+		snprintf(p, sizeof p, "/dev/input/%s", e->d_name);
+		int f = open(p, O_RDWR | O_CLOEXEC);
+		if (f < 0) continue;
+		ioctl(f, EVIOCGNAME(sizeof name), name);
+		if (strstr(name, "vib")) fd = f; else close(f);
+	}
+	closedir(d);
+	if (fd < 0) return;
+	struct ff_effect fx;
+	memset(&fx, 0, sizeof fx);
+	fx.type = FF_RUMBLE;
+	fx.id = -1;
+	fx.replay.length = (unsigned short)ms;
+	fx.u.rumble.strong_magnitude = 0xffff;
+	fx.u.rumble.weak_magnitude = 0xffff;
+	if (ioctl(fd, EVIOCSFF, &fx) == 0) {
+		struct input_event ev;
+		memset(&ev, 0, sizeof ev);
+		ev.type = EV_FF;
+		ev.code = fx.id;
+		ev.value = 1;
+		if (write(fd, &ev, sizeof ev) == (ssize_t)sizeof ev) {
+			sleep_us((long)ms * 1000);
+			ev.value = 0;
+			if (write(fd, &ev, sizeof ev) < 0) {}
+		}
+		ioctl(fd, EVIOCRMFF, fx.id);
+	}
+	close(fd);
+}
+
 static void leds_update(void)
 {
 	static char green[300], red[300], amber[300];
@@ -1213,6 +1290,9 @@ static void leds_update(void)
 	int pct = -1, charging = 0;
 	if (!battery_state(bat, sizeof bat, &pct, &charging)) pct = 100;
 	int plugged = charger_online();
+	static int prev_plugged = -1;
+	if (prev_plugged == 0 && plugged) vibrate(180);	/* the cable went in (not at boot, nor on unplug) */
+	prev_plugged = plugged;
 	if (plugged) charging = 1;	/* plugged in counts as charging (see charger_online) */
 	int level = cfg.led_brightness;
 	/* the upper LED: green, red when low, blinking red when critical (not while charging) */
@@ -1464,6 +1544,7 @@ int main(int argc, char **argv)
 	int uev = uevent_open();
 	sd2_scan();	/* a card already in the second slot at boot */
 	load_drivers_present();
+	vibrator_load();	/* so the plug-in's pulse has a motor to use (the module is not loaded at boot) */
 	leds_update();
 	last_input = mono();
 	double next_battery = 0;

@@ -440,6 +440,30 @@ struct LowBattery
 	}
 };
 
+// A charger plugged in or out: a short notice ("Charging" / "On battery") on the same overlay as the low-battery one.
+// The status bar's battery also grows a bolt while charging (rnds::Source::charging, from the same power_supply);
+// bananad plays the vibration.
+struct PlugNotice
+{
+	int seen = -1;	// -1: not known yet (no notice at boot), 0: on battery, 1: charging
+	double until = 0;
+	std::string title, body;
+	int percent = -1;
+	bool showing(double now) const { return until > now; }
+	bool check(const Library::Power& p, double now)
+	{
+		int s = p.charging ? 1 : 0;
+		if (seen < 0 || s == seen) { seen = s; return false; }
+		seen = s;
+		until = now + 4000;
+		percent = p.percent;
+		title = s ? "Charging" : "On battery";
+		body = p.percent >= 0 ? std::to_string(p.percent) + (s ? "% and charging" : "% left")
+			: (s ? "The charger is in" : "The charger is out");
+		return true;
+	}
+};
+
 static int shutdownPercent(const std::string& data)
 {
 	return atoi(getConfValue(data + "/bananad.conf", "battery_shutdown_percent",
@@ -1180,6 +1204,7 @@ int main(int argc, char** argv)
 	settingsView.setOverride = [&](const std::string& s, const std::string& r, const std::string& c, const std::string& sh)
 		{ lib.setOverride(s, r, c, sh); };
 	LowBattery low;
+	PlugNotice plug;
 	bool batteryDue = true;
 	if (firstSetup) { settingsView.setup(); logf("first-time setup"); }
 	RomWatch roms;
@@ -1193,6 +1218,7 @@ int main(int argc, char** argv)
 		if (screen != 0) return;
 		double t = nowMs();
 		if (low.showing(t)) settingsView.notice(low.title, low.body, low.percent);
+		else if (plug.showing(t)) settingsView.notice(plug.title, plug.body, plug.percent);
 		else if (osdUntil > t) settingsView.level(osdLabel, osdPercent);
 		else settingsView.drawToast(t);	// the achievement toasts, over whatever page is up
 	};
@@ -1606,6 +1632,7 @@ int main(int argc, char** argv)
 		{
 			batteryDue = false;
 			if (low.check(lib.power(), shutdownPercent(o.data), now)) dirty = true;
+			if (plug.check(lib.power(), now)) dirty = true;
 		}
 
 		bool want;
@@ -1674,6 +1701,11 @@ int main(int argc, char** argv)
 		if (low.showing(now))
 		{
 			int left = (int)(low.until - now) + 1;
+			if (timeout < 0 || left < timeout) timeout = left;
+		}
+		if (plug.showing(now))
+		{
+			int left = (int)(plug.until - now) + 1;
 			if (timeout < 0 || left < timeout) timeout = left;
 		}
 		if (osdUntil > now)

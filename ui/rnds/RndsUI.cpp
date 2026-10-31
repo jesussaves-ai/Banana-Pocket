@@ -1389,6 +1389,16 @@ namespace rnds
 				float fw = std::round(16 * std::min(1.0f, std::max(0.0f, l)) * s) / s;
 				if (fw > 0)
 					be->fill(std::round(X(bx + 3)), std::round(X(28 + ry)), std::round(X(fw)), std::round(X(8)), INK);
+				if (src->charging())	// the charger is in: a bolt over the icon (a pixel pattern: no font is needed)
+				{
+					static const char *bolt[7] = { "..##", ".##.", "##..", "####", "..##", ".##.", "##.." };
+					float k = std::max(1.0f, std::round(X(1.3f)));
+					float ox = std::round(X(bx + 11)), oy = std::round(X(27 + ry));
+					for (int r = 0; r < 7; r++)
+						for (int c = 0; c < 4; c++)
+							if (bolt[r][c] == '#')
+								be->fill(ox + c * k, oy + r * k, k, k, RED);
+				}
 			};
 			// on the left after the Wi-Fi: "icon only" the battery icon; "icon and text" the percentage and then the icon
 			// ("78% [battery]"), the percentage right-aligned in room for "100%" so nothing moves as it changes, and
