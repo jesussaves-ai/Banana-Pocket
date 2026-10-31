@@ -93,6 +93,27 @@ screen stays black. `banana-tube` therefore tells yt-dlp to prefer **H.264 (`avc
 `av01` (`--ytdl-format=…[vcodec^=avc1]…/[vcodec^=vp9]…/[vcodec!*=av01]…`). Both decode far faster than realtime
 here (measured ~120 fps for a 720p 120-frame decode); AV1 does not decode at all.
 
+## Using it on the touchscreen
+
+Step by step, with a finger:
+
+1. **Open it** — on the Apps shelf, tap the **YouTube** tile (or press A on it).
+2. **Search** — tap the on-screen letters to type, then tap **Search** (bottom row). Each tap types exactly one
+   character. `Del` backspaces, `Shift` switches case.
+3. **Pick a video** — tap a result row once to focus it (it gets the highlight ring), then tap it again to play. Its
+   thumbnail and duration are on the left/right of the row.
+4. **While it plays** (mpv owns the screen; a big indicator flashes on each tap and hides by itself):
+   - **centre of the screen** → play / pause (`||  Paused` / `>  Playing`)
+   - **left third** → seek back 10 s (`<<  -10s`)
+   - **right third** → seek forward 10 s (`>>  +10s`)
+   - **top-left corner** → stop and return to the results
+5. **Leave** — tap the **top-left corner** to stop the video (back to the results), then tap **Back** (top-left of
+   the results) to the keyboard, then **Back** again to the menu; or just press **B** on the pad, which backs out one
+   step each time. **Stop** the whole app with **B** from the keyboard, or `Select + Start`.
+
+The pad does the same jobs everywhere (d-pad to move/seek, **A** select/play/pause, **B** back, **L/R** page, **START**
+search), so the touchscreen and the buttons can be mixed freely.
+
 ## Audio
 
 `run-bananatube` calls `/usr/libexec/banana/audio-handoff` once, before `banana-tube` (and so before mpv): the menu

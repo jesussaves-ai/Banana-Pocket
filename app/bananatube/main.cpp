@@ -1094,8 +1094,8 @@ struct App
 		else drawResults(W, H, fg, dim, acc, selbg);
 
 		SDL_Color hint { 120, 126, 138, 255 };
-		const char* help = mode == Mode::PLAYING ? "A play/pause   d-pad seek   B stop"
-			: mode == Mode::RESULTS ? "A play   B back   L/R page   START new search"
+		const char* help = mode == Mode::PLAYING ? "A play/pause   touch: centre pause, left/right seek, top-left stop   B stop"
+			: mode == Mode::RESULTS ? "A play   B back   L/R page   START search   |   player touch: centre pause, sides seek, top-left stop"
 			: "A type   B back   START search   Y shift";
 		drawText(help, fSmall, hint, W * 4 / 100, H * 94 / 100, W * 92 / 100);
 	}
