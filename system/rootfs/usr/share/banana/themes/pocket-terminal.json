@@ -48,7 +48,10 @@
         { "type": "rect", "right": 134, "y": 13, "w": 26, "h": 12, "radius": 2, "border": 2, "borderColor": "=soft",
           "visible": "=battery >= 0" },
         { "type": "rect", "right": 137, "y": 16, "w": "=20 * battery / 100", "h": 6, "radius": 1,
-          "fill": "=battery < 20 ? '#ff5a5a' : gold", "visible": "=battery >= 0" }
+          "fill": "=battery < 20 ? '#ff5a5a' : gold", "visible": "=battery >= 0" },
+        // the charger is in: a bolt over the battery (the same as the menu's own top bar)
+        { "type": "image", "src": "bolt.png", "fit": "pixelContain", "right": 143, "y": 12, "w": 10, "h": 14,
+          "visible": "=charging" }
       ]
     },
     // the raised bezel the DS bottom screen sits in
