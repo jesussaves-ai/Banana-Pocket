@@ -1,0 +1,85 @@
+pipewire: re-apply the UCM verb right before snd_pcm_open on q6apm
+
+On the SM4450 AudioReach (q6apm) card the DSP rejects an FE<->BE mixer write
+(e.g. "SENARY_MI2S_RX Audio Mixer MultiMedia1", "RX_CODEC_DMA_RX_0 Audio Mixer
+MultiMedia2") while that front-end's graph is instantiated, and it clears the
+switch when the graph is torn down.  The routes live in the UCM verb's
+EnableSequence, but ACP runs the sequences only once -- at profile/port
+activation -- and its probe opens and closes every mapping's PCM
+(acp_card_new -> pa_alsa_profile_set_probe -> mapping_open_pcm ->
+profile_finalize_probing) just before that.  By the time the sink/source node
+opens its PCM and holds it RUNNING the switch is off and nothing re-sets it: an
+external alsaucm/amixer write lands while the graph is live and is rejected, and
+alsa-lib's set_device()/set_verb_user() no-op for an already-enabled device /
+already-active verb.
+
+So re-apply the card's UCM verb here, in the node's own open path, while the PCM
+is still closed and immediately before snd_pcm_open() instantiates the graph.
+The manager is forced back to _Inactive first, so the second and later opens of a
+session run the sequence too instead of being skipped by set_verb_user()'s
+same-verb early-return.
+
+--- a/spa/plugins/alsa/alsa-pcm.c
++++ b/spa/plugins/alsa/alsa-pcm.c
+@@ -1114,6 +1114,52 @@
+ 	return 0;
+ }
+ 
++/* Banana: on the SM4450 AudioReach (q6apm) card the DSP only accepts an FE<->BE
++ * mixer write (e.g. "SENARY_MI2S_RX Audio Mixer MultiMedia1") while that
++ * front-end's graph is NOT instantiated, and it clears the switch when the graph
++ * is torn down.  The routes live in the UCM verb's EnableSequence, but ACP runs
++ * the sequences only once -- at profile/port activation -- and its probe opens
++ * and closes every mapping's PCM (acp_card_new -> pa_alsa_profile_set_probe)
++ * just before that, so by the time this node opens the PCM the switch is off and
++ * nothing re-sets it.  A later alsaucm/amixer write is rejected (the graph is
++ * live), and alsa-lib no-ops for an already-enabled device / active verb.  So
++ * re-apply the card's UCM verb here, in the node's own open path, while the PCM
++ * is still closed and immediately before snd_pcm_open() instantiates the graph.
++ * The manager is forced back to _Inactive first so that the second and later
++ * opens of a session also run the sequence instead of being skipped. */
++static void ucm_reapply_verb(struct state *state)
++{
++	struct card *c = state->card;
++	const char *value = NULL;
++	const char **verbs = NULL;
++	const char *verb = NULL;
++	int err, n;
++
++	if (c == NULL || c->ucm == NULL)
++		return;
++
++	if (snd_use_case_get(c->ucm, "_verb", &value) == 0)
++		verb = value;
++	n = snd_use_case_verb_list(c->ucm, &verbs);
++	if (verb == NULL && n > 0)
++		verb = verbs[0];
++
++	if (verb != NULL) {
++		if ((err = snd_use_case_set(c->ucm, "_verb",
++					    SND_USE_CASE_VERB_INACTIVE)) < 0)
++			spa_log_warn(state->log, "UCM: reset verb failed: %s",
++					snd_strerror(err));
++		if ((err = snd_use_case_set(c->ucm, "_verb", verb)) < 0)
++			spa_log_warn(state->log, "UCM: re-apply verb '%s' failed: %s",
++					verb, snd_strerror(err));
++		else
++			spa_log_info(state->log, "UCM: re-applied verb '%s' before open", verb);
++	}
++	if (verbs)
++		snd_use_case_free_list(verbs, n);
++	free((void*)value);
++}
++
+ int spa_alsa_open(struct state *state, const char *params)
+ {
+ 	int err;
+@@ -1129,6 +1175,8 @@
+ 
+ 	spa_log_info(state->log, "%p: ALSA device open '%s' %s", state, device_name,
+ 			state->stream == SND_PCM_STREAM_CAPTURE ? "capture" : "playback");
++	if (state->open_ucm)
++		ucm_reapply_verb(state);
+ 	CHECK(snd_pcm_open(&state->hndl,
+ 			   device_name,
+ 			   state->stream,
