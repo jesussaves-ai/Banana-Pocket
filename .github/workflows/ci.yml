@@ -1,6 +1,9 @@
 name: CI
 on:
   push:
+    # only main: a release tag is the same tree the push already ran, and the local build makes the images -- a tag
+    # run would just repeat the checks (and a red one there is another email for nothing)
+    branches: [ main ]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -28,7 +31,9 @@ jobs:
         run: |
           make -C system/bananad CFLAGS="-O2 -Werror"
           make -C system/bananad clean
-          make -C system/bananad CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Werror"
+          # the runner has no aarch64 libasound to link against; the Buildroot build links the real one. Check the
+          # aarch64 compile (the flags the Makefile adds), which is what catches an aarch64-only break.
+          aarch64-linux-gnu-gcc -O2 -Werror -Wall -Wextra -Wno-unused-parameter -c system/bananad/bananad.c -o /tmp/bananad-aarch64.o
       - name: Sleep (bananad against a made-up /sys in its own namespaces)
         run: sudo system/bananad/tests/sleep-test.sh
       - name: Shell scripts parse
