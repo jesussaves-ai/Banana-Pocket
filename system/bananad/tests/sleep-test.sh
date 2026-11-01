@@ -58,7 +58,11 @@ power() { ev $EV_KEY $KEY_POWER 1; sleep 0.1; ev $EV_KEY $KEY_POWER 0; }
 # is bananad blocked writing "mem" (asleep)? wait up to 3 s
 # (blocked opening the FIFO: its wait channel is wait_for_partner)
 asleep() { for i in $(seq 30); do [ "$(cat /proc/$BD/wchan 2>/dev/null)" = wait_for_partner ] && return 0; sleep 0.1; done; return 1; }
-wake() { head -c 3 /sys/power/state > /dev/null; sleep 0.4; }       # read "mem": the write returns, it is awake
+# read "mem": the write returns, it is awake. A real power-key wake carries a KEY_POWER press (the spurious-wake
+# guard re-sleeps a wake with no key and no cable), so wake() queues one before releasing the FIFO; an RTC wake
+# (the battery check's alarm) has no key. 0.4.54 added the guard after this test, which is why wake() has the press.
+wake() { ev $EV_KEY $KEY_POWER 1; head -c 3 /sys/power/state > /dev/null; sleep 0.4; }
+rtc_wake() { head -c 3 /sys/power/state > /dev/null; sleep 0.4; }
 gstate() { awk '{print $3}' /proc/$GAME/stat; }
 start() {   # start [bananad.conf lines]
     echo "s2idle [deep]" > /sys/power/mem_sleep     # the kernel's file always lists both
@@ -92,7 +96,7 @@ echo 3 > /sys/class/power_supply/battery/capacity
 start "sleep_check_hours = 0.002" "sleep_poweroff_percent = 5"
 power
 asleep && ok "suspended with the RTC alarm set ($(cat /sys/class/rtc/rtc0/wakealarm))" || bad "no suspend"
-: > /sys/class/rtc/rtc0/wakealarm; wake      # the alarm fired (the RTC clears it): the RTC woke it
+: > /sys/class/rtc/rtc0/wakealarm; rtc_wake      # the alarm fired (the RTC clears it): the RTC woke it
 for i in $(seq 30); do [ $POWEROFF = 1 ] && break; sleep 0.1; done
 [ $POWEROFF = 1 ] && ok "shut down cleanly (init asked to power off)" || bad "no shutdown at 3%"
 kill -0 $GAME 2>/dev/null && bad "the game wasn't told to quit and save" || ok "the game was told to quit and save first"
@@ -106,7 +110,7 @@ echo 60 > /sys/class/power_supply/battery/capacity
 start "sleep_check_hours = 0.002"
 power
 asleep && ok "suspended" || bad "no suspend"
-: > /sys/class/rtc/rtc0/wakealarm; wake
+: > /sys/class/rtc/rtc0/wakealarm; rtc_wake
 if asleep; then ok "back to sleep after the battery check"; else bad "awake after the battery check"; fi
 [ "$(gstate)" = T ] && ok "the game stayed stopped" || bad "the game ran during the check"
 wake; sleep 0.2
