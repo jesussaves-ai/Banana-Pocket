@@ -37,29 +37,9 @@ fi
 # the core that really runs, in banana-ui's log (its "starting" line names systems.conf's)
 c=${CORE##*/}; c=${c%_libretro.so}
 [ "$c" != "$1" ] && echo "run-retroarch: core $c (Settings > RetroArch), not $1" >&2 || echo "run-retroarch: core $c" >&2
-# The RPC's DSP: the frontend RetroArch opens has to be routed to the speaker I2S before the open, and the menu has
-# just let go of that frontend (banana-ui closes its stream when a game starts). The shared handoff does the waiting,
-# the route write and the readiness gate (see audio-handoff); a graph that still outlasts it is covered by the ALSA
-# abort (exit 134) retry below.
-/usr/libexec/banana/audio-handoff
-# The first launch after a boot is the one the DSP is slowest to finish handing over: the menu's stream has been open
-# since boot, and its graph teardown (which resets the card's route controls) can outlast the handoff's settle -- so
-# a core could come up silent that once (seen on Game Boy, first launch only; the same core was fine on later
-# launches). Give just that launch another beat and re-assert both routes before RetroArch opens. The marker is on
-# tmpfs, so it is gone at the next boot and only this launch pays for it. audio-settle carries the same
-# audio_handoff_ms knob as the shared handoff.
-if [ ! -e /run/banana/game-launched ]; then
-    mkdir -p /run/banana 2>/dev/null
-    touch /run/banana/game-launched 2>/dev/null
-    /usr/libexec/banana/audio-settle
-    for ctl in \
-        "SENARY_MI2S_RX Audio Mixer MultiMedia1" \
-        "SENARY_MI2S_RX Audio Mixer MultiMedia2"
-    do
-        want=$(sed -n "s/^${ctl}=//p" /run/banana/audio-route 2>/dev/null | tail -n 1)
-        amixer -q -c 0 cset "name=${ctl}" "${want:-on,on}" 2>/dev/null
-    done
-fi
+# The sound server owns the DSP route now: RetroArch is a PipeWire client (asound.conf's "default" is PipeWire), ACP
+# brings the card up from the UCM profile, and the server re-applies the verb as it opens it -- so the launcher does
+# no handoff and no route write. The ALSA-abort (exit 134) retry below still covers a core that dies.
 CFG=/data/retroarch/retroarch.cfg
 [ -f $CFG ] || { mkdir -p /data/retroarch; cp /etc/banana/retroarch.cfg $CFG; }
 mkdir -p /data/saves /data/states /data/screenshots
@@ -474,6 +454,4 @@ done
 /usr/libexec/banana/ra-secrets scrub; rm -f $RA
 exec 3>&-; rm -f $FIFO
 set_cfg stdin_cmd_enable false
-# note when the game let go of its audio frontend: a launch right after waits out the rest of audio-settle's cooldown
-awk '{printf "%d", $1 * 1000}' /proc/uptime > /run/banana/last-game-end 2>/dev/null
 exit $S

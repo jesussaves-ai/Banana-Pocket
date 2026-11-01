@@ -8,11 +8,6 @@
 BIN=/usr/bin/banana-tube
 [ -x "$BIN" ] || { echo "run-bananatube: no $BIN" >&2; exit 1; }
 
-# The AudioReach handoff, shared with run-retroarch: wait for the menu's cue stream to go, write the
-# DSP route and gate on the frontend being claimable. banana-ui has just let go of the frontend; the DSP tears that
-# graph down a beat later, and an open in the middle of it leaves mpv silent.
-/usr/libexec/banana/audio-handoff
-
 # The app's files (yt-dlp's cache, a log) go on the card; the read-only root must not be written. Its ALSA default
 # is the system one -- bananad points "default" at the sound server (PipeWire), so mpv mixes with the menu instead
 # of the two handing the DSP's frontend back and forth.
@@ -57,6 +52,4 @@ if kill -0 -$C 2>/dev/null; then
     kill -KILL -$C 2>/dev/null
 fi
 rm -f /run/banana/cage.pid /run/banana/bananatube.sock
-# note when the app let go of its audio frontend: a launch right after waits out the rest of audio-settle's cooldown
-awk '{printf "%d", $1 * 1000}' /proc/uptime > /run/banana/last-game-end 2>/dev/null
 exit $S

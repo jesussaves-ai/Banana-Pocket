@@ -4,9 +4,8 @@
 #   1. the touch transform: the panel's raw touch axes (1080x1240, the FT5x06) turned 90 must land the four screen
 #      corners in the app surface's own 1240x1080 space (the client's `touch` selftest lines cover this);
 #   2. the search parsers: the InnerTube `videoRenderer` walk and the yt-dlp `--print` line split;
-#   3. the launcher: `run-bananatube` must call the shared audio-handoff and play through the sound server's ALSA
-#      `default` (PipeWire mixes it with the menu), on the display the menu releases (cage) -- the contract
-#      run-retroarch has, checked the same way.
+#   3. the launcher: `run-bananatube` must play through the sound server's ALSA `default` (PipeWire mixes it with the
+#      menu), on the display the menu releases (cage) -- the contract run-retroarch has, checked the same way.
 #
 # The client selftest runs under SDL's dummy driver (no panel here): the run stops before the event loop.
 #   system/tests/run-banana-tube-test.sh
@@ -49,7 +48,6 @@ fi
 echo "2. run-bananatube: the AudioReach handoff and the panel's turn"
 L=$ROOT/system/rootfs/usr/libexec/banana
 [ -x "$L/run-bananatube" ] && ok "launcher present" || bad "no run-bananatube"
-grep -q 'audio-handoff' "$L/run-bananatube" && ok "calls the shared audio-handoff" || bad "no audio-handoff call"
 grep -q 'SDL_AUDIODRIVER:=alsa' "$L/run-bananatube" && ok "ALSA through the sound server's default (mixes with the menu)" || bad "no ALSA audiodriver default"
 ! grep -qE 'hw:0,[12]|asoundrc' "$L/run-bananatube" && ok "no second frontend pinned (the server owns the card)" || bad "still pins a raw frontend"
 grep -q 'SEATD_VTBOUND=0' "$L/run-bananatube" && ok "cage's seat is not VT-bound" || bad "seatd VT bound not set"
