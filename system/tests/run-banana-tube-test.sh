@@ -4,9 +4,9 @@
 #   1. the touch transform: the panel's raw touch axes (1080x1240, the FT5x06) turned 90 must land the four screen
 #      corners in the app surface's own 1240x1080 space (the client's `touch` selftest lines cover this);
 #   2. the search parsers: the InnerTube `videoRenderer` walk and the yt-dlp `--print` line split;
-#   3. the launcher: `run-bananatube` must call the shared audio-handoff and give the client the second AudioReach
-#      frontend (MultiMedia2, hw:0,1) with an AudioReach-sized ALSA default (S16, 48000, 2ch), on the display the
-#      menu releases (cage) -- the same contract run-retroarch has, checked the same way.
+#   3. the launcher: `run-bananatube` must call the shared audio-handoff and play through the sound server's ALSA
+#      `default` (PipeWire mixes it with the menu), on the display the menu releases (cage) -- the contract
+#      run-retroarch has, checked the same way.
 #
 # The client selftest runs under SDL's dummy driver (no panel here): the run stops before the event loop.
 #   system/tests/run-banana-tube-test.sh
@@ -46,12 +46,12 @@ else
     printf '%s\n' "$out" | grep -q 'selftest quit: 1' && ok "B on an empty query quits" || bad "quit state"
 fi
 
-echo "2. run-bananatube: the AudioReach handoff, the second frontend, and the panel's turn"
+echo "2. run-bananatube: the AudioReach handoff and the panel's turn"
 L=$ROOT/system/rootfs/usr/libexec/banana
 [ -x "$L/run-bananatube" ] && ok "launcher present" || bad "no run-bananatube"
 grep -q 'audio-handoff' "$L/run-bananatube" && ok "calls the shared audio-handoff" || bad "no audio-handoff call"
-grep -q 'hw:0,1' "$L/run-bananatube" && ok "opens MultiMedia2 (hw:0,1), the frontend the menu never releases" || bad "not on MultiMedia2"
-grep -qE 'format S16_LE.*channels 2.*rate 48000' "$L/run-bananatube" && ok "S16 / 48000 / 2ch (the AudioReach format)" || bad "unexpected ALSA format"
+grep -q 'SDL_AUDIODRIVER:=alsa' "$L/run-bananatube" && ok "ALSA through the sound server's default (mixes with the menu)" || bad "no ALSA audiodriver default"
+! grep -qE 'hw:0,[12]|asoundrc' "$L/run-bananatube" && ok "no second frontend pinned (the server owns the card)" || bad "still pins a raw frontend"
 grep -q 'SEATD_VTBOUND=0' "$L/run-bananatube" && ok "cage's seat is not VT-bound" || bad "seatd VT bound not set"
 grep -q 'cage --' "$L/run-bananatube" && ok "runs under cage (the kiosk compositor turns the panel)" || bad "no cage"
 
