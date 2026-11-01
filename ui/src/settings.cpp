@@ -331,6 +331,7 @@ namespace banana
 			menu, "boxart_source", { "libretro", "libretro + Twilight", "Twilight first" }, { "libretro", "both", "twilight" });
 		add(S, "gear", "Previous version", "Restarts into the other slot: the version that ran before the last update. Press A twice.", "", "switch", { "" }, { "" }, Item::ACTION);
 		add(S, "gear", "SSH", "", menu, "ssh", { "Off", "On" }, { "off", "on" });
+		add(S, "gear", "ADB debugging", "", menu, "adb", { "Off", "On" }, { "off", "on" });
 		if (access("/run/banana/sd2/slot", F_OK) == 0)	// a second card slot (bananad's sd2 script)
 		add(S, "gear", "Second SD card", "Games on the card in the second slot (its roms folder, with the same system folders as this card) show up in the library with the others while it's in. exFAT or FAT32.", menu, "sd2_roms", { "Show its games", "Off" }, { "on", "off" });
 		add(S, "gear", "First-time setup", "The steps from the first boot again: Wi-Fi, the time zone and the RetroAchievements account.", "", "setup", {}, {}, Item::PAGE);
@@ -635,6 +636,7 @@ namespace banana
 		if (it.key == "timezone") { setenv("TZ", v.c_str(), 1); tzset(); poke("bananad"); }	// bananad's logs too
 		if (it.key == "wifi") spawn("/usr/libexec/banana/wifi", v == "on" ? "up" : "down");
 		if (it.key == "ssh") spawn("/usr/libexec/banana/ssh", v == "on" ? "up" : "down");
+		if (it.key == "adb") spawn("/usr/libexec/banana/adb", v == "on" ? "up" : "down");
 		if (it.key == "share") spawn("/usr/libexec/banana/share", v == "on" ? "up" : "down");
 		if (it.key == "sd2_roms") spawn("/usr/libexec/banana/sd2", "scan");
 	}
@@ -721,6 +723,7 @@ namespace banana
 			if (!rs["timezone"].empty()) { setenv("TZ", rs["timezone"].c_str(), 1); tzset(); }
 			spawn("/usr/libexec/banana/wifi", rs["wifi"] == "off" ? "down" : "up");
 			spawn("/usr/libexec/banana/ssh", rs["ssh"] == "on" ? "up" : "down");
+			spawn("/usr/libexec/banana/adb", rs["adb"] == "on" ? "up" : "down");
 			spawn("/usr/libexec/banana/share", rs["share"] == "on" ? "up" : "down");
 			spawn("/usr/libexec/banana/sd2", "scan");
 			poke("bananad");
@@ -1286,6 +1289,11 @@ namespace banana
 		if (cur.key == "ssh")
 			help = "For working on Banana itself: ssh root@" + (ip.empty() ? std::string("<address>") : ip) +
 				", with the public keys in banana/ssh/authorized_keys on the card (no passwords). Files: scp -O (dropbear has no SFTP), or File sharing.";
+		if (cur.key == "adb")
+			help = "adb over the network, its own switch (not SSH's): a computer runs adb connect " +
+				(ip.empty() ? std::string("<address>") : ip) + ":5555. This adbd has no host key, so anyone on the "
+				"network can get a root shell while it is on -- leave it off on networks you don't trust. Over the USB "
+				"cable adb always works.";
 		if (cur.key == "switch" && !message.empty()) help = message;
 		if (cur.key == "share")
 		{

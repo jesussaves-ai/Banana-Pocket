@@ -1,0 +1,21 @@
+#!/bin/sh
+# adb debugging (Settings > System > ADB debugging), independent of the SSH setting. This is the TCP 5555 listener:
+# an open port is an unauthenticated root shell (this adbd has no host key), so it is its own switch and off by
+# default. USB adb is always served over the cable by usb-gadget, whether this is on or off.
+#
+# adbd reads BANANA_ADB_TCP at start-up (the patch in buildroot/patches/android-tools), so a toggle restarts the
+# supervisor in usb-adb, which re-reads settings.conf and starts adbd with (up) or without (down) the listener. A
+# brief adb drop over the cable is the cost.
+#
+#   adb up | down
+case "$1" in
+up|down) ;;
+*) echo "usage: adb up|down" >&2; exit 1 ;;
+esac
+
+if [ -x /usr/libexec/banana/usb-adb ]; then
+    pkill -f '/usr/libexec/banana/usb-adb up' 2>/dev/null
+    pkill -f '/usr/bin/adbd' 2>/dev/null
+    setsid /usr/libexec/banana/usb-adb up >/dev/null 2>&1 &
+fi
+exit 0

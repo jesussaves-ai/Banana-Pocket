@@ -1,8 +1,8 @@
 #!/bin/sh
 # adb on the handheld: the daemon (Debian's android-tools adbd -- a glibc build, see the defconfig) serving the USB
-# adb function that usb-gadget creates, and, when the SSH setting is on, a TCP listener on 5555 on every interface
-# (the patch in buildroot/patches/android-tools), so a computer reaches it with `adb devices` over the cable and
-# `adb connect <ip>:5555` over Wi-Fi. adbd has no host key, so TCP is tied to the same switch as sshd.
+# adb function that usb-gadget creates, and, when ADB debugging is on (Settings > System), a TCP listener on 5555 on
+# every interface (the patch in buildroot/patches/android-tools), so a computer reaches it with `adb devices` over the
+# cable and `adb connect <ip>:5555` over Wi-Fi. adbd has no host key, so TCP is its own switch, not sshd's.
 #
 #   usb-adb            mount FunctionFS and run adbd, restarting it if it exits (foreground; rcS backgrounds it)
 #   usb-adb down       stop adbd and unmount FunctionFS
@@ -51,16 +51,17 @@ i=0
 while [ ! -e "$FFS/ep0" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
 
 say "starting adbd (usb $FFS)"
-# The TCP listener rides the SSH setting (Settings > System > SSH). This adbd has no host key, so an open TCP port is
-# an unauthenticated root shell -- it should not be up just because the handheld is on a network. adbd reads
-# BANANA_ADB_TCP at start-up (the patch in buildroot/patches/android-tools); USB is always served. The `ssh` script
-# restarts this supervisor when the setting is toggled, so a change takes effect then.
-if grep -q '^ *ssh *= *on' /data/banana/settings.conf 2>/dev/null; then
+# The TCP listener follows the ADB debugging setting (Settings > System > ADB debugging), which is independent of the
+# SSH setting. This adbd has no host key, so an open TCP port is an unauthenticated root shell -- it should not be up
+# just because the handheld is on a network. adbd reads BANANA_ADB_TCP at start-up (the patch in
+# buildroot/patches/android-tools); USB is always served over the cable. The `adb` script restarts this supervisor
+# when the setting is toggled, so a change takes effect then.
+if grep -q '^ *adb *= *on' /data/banana/settings.conf 2>/dev/null; then
     BANANA_ADB_TCP=1
     export BANANA_ADB_TCP
-    say "tcp 5555 too (the ssh setting is on)"
+    say "tcp 5555 too (adb debugging is on)"
 else
-    say "usb only (the ssh setting is off)"
+    say "usb only (adb debugging is off)"
 fi
 # adbd has to be running before the controller takes the gadget -- an ffs function whose ep0 is not open makes the
 # bind fail (ENODEV) -- so run the supervisor here and bind once the function is ready. usb-gadget does the same and

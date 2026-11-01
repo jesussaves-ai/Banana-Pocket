@@ -43,6 +43,7 @@ namespace banana
 			{ "sd2_roms", "on", ENUM, ON_OFF, 0, 0 },
 			{ "share", "off", ENUM, ON_OFF, 0, 0 },
 			{ "ssh", "off", ENUM, ON_OFF, 0, 0 },
+			{ "adb", "off", ENUM, ON_OFF, 0, 0 },
 			{ "timezone", "UTC0", TIMEZONE, nullptr, 0, 0 },
 			{ "boxart_source", "libretro", ENUM, BOXART, 0, 0 },
 			{ "boxart_twilight_url", "https://boxart.kirovair.com", TEXT, nullptr, 0, 0 },
