@@ -61,5 +61,28 @@ if [ -x /usr/bin/wireplumber ] && ! pidof wireplumber >/dev/null 2>&1; then
     say "starting wireplumber"
     setsid wireplumber >/dev/null 2>&1 &
 fi
+
+# The card's DSP latches its routing when a graph is instantiated, and ACP activates the profile without running the
+# UCM Verb's EnableSequence on this card: the routes come up off and nothing is audible until they are on. Apply the
+# verb once the card has appeared in the server -- it sets exactly the profile's routes -- and read the speaker route
+# back: opening a PCM resets its own mixer, so the write can land before that and be undone, hence the bounded retry
+# (with 20-banana's no-suspend the node then stays open and the route stays set).
+i=0
+while [ $i -lt 50 ]; do
+    XDG_RUNTIME_DIR=$RUNDIR wpctl status 2>/dev/null | grep -q 'playback' && break
+    sleep 0.2; i=$((i+1))
+done
+i=0
+while [ $i -lt 40 ]; do
+    alsaucm -c hw:0 set _verb HiFi >/dev/null 2>&1
+    amixer -c 0 sget "SENARY_MI2S_RX Audio Mixer MultiMedia1" 2>/dev/null | grep -q '\[on\]' && break
+    sleep 0.25; i=$((i+1))
+done
+if amixer -c 0 sget "SENARY_MI2S_RX Audio Mixer MultiMedia1" 2>/dev/null | grep -q '\[on\]'; then
+    say "the HiFi verb took (the card's routes are on)"
+else
+    say "the HiFi verb would not hold (the speaker route is off)"
+fi
+
 say "up (runtime dir $RUNDIR)"
 exit 0

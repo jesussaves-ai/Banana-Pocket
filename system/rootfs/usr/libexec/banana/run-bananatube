@@ -13,14 +13,11 @@ BIN=/usr/bin/banana-tube
 # graph down a beat later, and an open in the middle of it leaves mpv silent.
 /usr/libexec/banana/audio-handoff
 
-# The app's files (yt-dlp's cache, a log) go on the card; the read-only root must not be written. A HOME of its
-# own carries the app's ALSA default: MultiMedia2 (hw:0,1), the *second* AudioReach frontend. The menu keeps
-# MultiMedia1 open while it waits, and a frontend whose graph the DSP tears down (the menu releasing its stream at
-# launch) has its route switches refused/reset to off -- a stream opened on it stays unrouted and silent. The second
-# frontend is not the menu's, so its route stands. This is run-retroarch's workaround too, for the same reason.
+# The app's files (yt-dlp's cache, a log) go on the card; the read-only root must not be written. Its ALSA default
+# is the system one -- bananad points "default" at the sound server (PipeWire), so mpv mixes with the menu instead
+# of the two handing the DSP's frontend back and forth.
 export HOME=/data/banana/bananatube/home
 mkdir -p "$HOME" /data/banana/bananatube /data/banana/logs 2>/dev/null
-printf 'pcm.!default { type plug slave { pcm "hw:0,1" format S16_LE channels 2 rate 48000 } }\n' > "$HOME/.asoundrc" 2>/dev/null
 # cage puts its socket here: a private, 0700 runtime dir on tmpfs.
 export XDG_RUNTIME_DIR=/run/banana/wayland
 mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null

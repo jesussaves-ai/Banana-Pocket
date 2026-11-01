@@ -394,14 +394,11 @@ elif [ -f $A ]; then
 fi
 # anything RetroArch keeps that retroarch.cfg doesn't place (remaps, core options, playlists...) under the card's
 # retroarch folder, not ~/.config on the read-only root
+# The game plays on ALSA's "default", which bananad points at the sound server (PipeWire; /etc/asound.conf ->
+# /run/banana/asound.conf). The server owns the card through the RPC's UCM2 profile, so the menu and the game mix
+# instead of handing the DSP's frontend back and forth. (Before the server, the game had to open MultiMedia2
+# directly -- the frontend the menu never released -- to dodge that hand-off.)
 export HOME=/data/retroarch XDG_CONFIG_HOME=/data/retroarch
-# RetroArch plays on the *second* frontend (MultiMedia2, hw:0,1), the one the menu never opens or releases.
-# MultiMedia1 is the menu's: banana-ui holds it for its cues, releases it at a launch and reopens it when the game
-# ends, and across that release/reopen its route handling breaks -- a game opened on MultiMedia1 after the first one
-# latches the switch [off] (measured on the unit: pcm0p RUNNING with the MultiMedia1 route [off] -> silent, and its
-# audio thread then blocks on close, the slow exit). rcS routes MultiMedia2 on at boot and nothing else touches it, so
-# a stream opened on it stays routed. Banana's games and apps open their audio on MultiMedia2 for the same reason.
-printf 'pcm.!default { type plug slave { pcm "hw:0,1" format S16_LE channels 2 rate 48000 } }\n' > "$HOME/.asoundrc" 2>/dev/null
 # cage (the kiosk compositor the game runs in) puts its socket here: a private, 0700 runtime dir on tmpfs.
 export XDG_RUNTIME_DIR=/run/banana/wayland
 mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null

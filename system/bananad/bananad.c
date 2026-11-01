@@ -964,22 +964,16 @@ static void audio_route(void)
 	/* The audioreach card plays at 48 kHz (the rate the DSP graph and the amps expect), so "default"'s playback and
 	 * capture are pinned to S16 stereo 48 kHz: every open gets the same stream instead of renegotiating it, and
 	 * ALSA's plug resamples a core that asks for another rate. */
-	char play[160], cap[160];
-	if (card_play >= 0)
-		snprintf(play, sizeof play, "{ type plug slave { pcm \"hw:%d\" format S16_LE channels 2 rate 48000 } }", card_play);
-	else
-		snprintf(play, sizeof play, "\"null\"");
-	snprintf(cap, sizeof cap, "%s", play);
-	char conf[1600];
+	/* Everything that opens ALSA's "default" -- the menu, the launchers, the games -- goes to the sound server
+	 * (PipeWire), which owns the card through ACP and the UCM2 profile in /usr/share/alsa/ucm2. The routing and
+	 * the levels are ACP's then, so the jack switch is a device choice there, not an "hw:N" here. bananad still
+	 * writes this file because /etc/asound.conf points at it and every app opens it afresh. */
+	char conf[256];
 	int n;
 	n = snprintf(conf, sizeof conf,
-			"# bananad: where sound plays now (%s)\n"
-			"pcm.!default { type asym playback.pcm %s capture.pcm %s }\n",
-			headphones ? "headphones" : "speakers", play, cap);
-	/* no card yet (the codec probed late, QEMU): "null" keeps the alias valid instead of a "plughw:-1" that would
-	 * fail every later open; the ctl defaults to one, so its line goes only with a real card */
-	if (card_play >= 0 && n > 0 && (size_t)n < sizeof conf)
-		n += snprintf(conf + n, sizeof conf - (size_t)n, "ctl.!default { type hw card %d }\n", card_play);
+			"# bananad: sound plays through the server (PipeWire)\n"
+			"pcm.!default { type pipewire }\n"
+			"ctl.!default { type pipewire }\n");
 	/* snprintf returns what it would have written, not what it did: clamp before the buffer goes to fwrite, or a
 	 * truncated (or negative) n would read past conf */
 	if (n < 0) n = 0;
