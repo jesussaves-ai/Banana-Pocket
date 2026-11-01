@@ -1,0 +1,58 @@
+libudev-zero: enumerate the class devices too
+
+udev_enumerate_scan_devices() walks /sys/dev/{block,char} -- only the devices with a device node. A
+sound *card* has none (the kernel gives card0 an empty uevent and only the PCMs have nodes), so enumerate
+never sees it and PipeWire's ALSA monitor (which asks for SUBSYSTEM=sound) finds no card on this machine.
+Walk the classes as well, as udev itself does; a device in both places has the same syspath, so the list
+does not double up.
+
+--- a/udev_enumerate.c
++++ b/udev_enumerate.c
+@@ -276,6 +276,38 @@
+     return 1;
+ }
+ 
++/* Banana: /sys/dev/{char,block} lists only the devices that have a device node, and udev reports more than
++ * those -- a sound card, for one, is a device with a subsystem, a uevent and its PCMs underneath it but no node of
++ * its own (PipeWire's ALSA monitor enumerates the "sound" subsystem and expects the card; without it, PipeWire
++ * comes up with no ALSA device and nothing to play to). Walk the classes as well: a device that is in both places
++ * has the same syspath, so the list does not double up. */
++static void scan_classes(struct udev_enumerate *udev_enumerate)
++{
++    struct dirent **class, **de;
++    char path[PATH_MAX], dev[PATH_MAX];
++    int n, m, i, j;
++
++    n = scandir("/sys/class", &class, filter_dot, NULL);
++    if (n == -1) {
++        return;
++    }
++
++    for (i = 0; i < n; i++) {
++        snprintf(path, sizeof(path), "/sys/class/%s", class[i]->d_name);
++        m = scandir(path, &de, filter_dot, NULL);
++        for (j = 0; j < m; j++) {
++            snprintf(dev, sizeof(dev), "%s/%s", path, de[j]->d_name);
++            add_device(udev_enumerate, dev);
++            free(de[j]);
++        }
++        if (m != -1) {
++            free(de);
++        }
++        free(class[i]);
++    }
++    free(class);
++}
++
+ int udev_enumerate_scan_devices(struct udev_enumerate *udev_enumerate)
+ {
+     const char *path[] = { "/sys/dev/block", "/sys/dev/char", NULL };
+@@ -291,6 +323,8 @@
+         }
+     }
+ 
++    scan_classes(udev_enumerate);
++
+     return 0;
+ }
+ 

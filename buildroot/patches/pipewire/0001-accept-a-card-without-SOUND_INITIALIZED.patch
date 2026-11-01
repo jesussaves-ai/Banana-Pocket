@@ -1,0 +1,22 @@
+pipewire: accept a sound card that has no SOUND_INITIALIZED property
+
+udev's own rules add SOUND_INITIALIZED once a card is ready, and this image has no udev daemon at all
+(libudev-zero reads the devices straight from sysfs; nothing runs the rules), so the property is never
+there and every card is dropped -- PipeWire comes up with no ALSA device, no sink and nothing to play to.
+A kernel sound card that is there is ready; only skip one that says it is not.
+
+--- a/spa/plugins/alsa/alsa-udev.c
++++ b/spa/plugins/alsa/alsa-udev.c
+@@ -164,7 +164,11 @@
+ 	if ((str = udev_device_get_property_value(udev_device, "SOUND_CLASS")) && spa_streq(str, "modem"))
+ 		return SPA_ID_INVALID;
+ 
+-	if (udev_device_get_property_value(udev_device, "SOUND_INITIALIZED") == NULL)
++	/* Banana: udev's own rules add SOUND_INITIALIZED once a card is ready to be used, and this image has no udev
++	 * daemon at all (libudev-zero reads the devices straight from sysfs; there is nothing to run the rules), so
++	 * the property is never there and every card is dropped -- PipeWire comes up with no ALSA device, no sink and
++	 * nothing to play to. A kernel sound card that is there is ready; only skip one that says it is not. */
++	if ((str = udev_device_get_property_value(udev_device, "SOUND_INITIALIZED")) && spa_streq(str, "0"))
+ 		return SPA_ID_INVALID;
+ 
+ 	if ((str = udev_device_get_property_value(udev_device, "DEVPATH")) == NULL)

@@ -65,8 +65,11 @@ BR2_PACKAGE_MPV=y
 BR2_PACKAGE_FFMPEG=y
 BR2_PACKAGE_YT_DLP=y
 # mpv's YouTube support is its Lua ytdl_hook (which drives yt-dlp); mpv compiles --ytdl only with a Lua interpreter,
-# so LuaJIT is required for mpv to open a youtube.com URL. banana-tube's Config.in selects it too.
-BR2_PACKAGE_LUAJIT=y
+# so it needs one. It is Lua 5.4, not LuaJIT: WirePlumber (the sound server's session manager) requires Lua >= 5.3
+# and Buildroot allows only one interpreter, so the image standardises on 5.4 (Buildroot's mpv recipe is patched to
+# accept it). banana-tube's Config.in selects BR2_PACKAGE_LUA too.
+BR2_PACKAGE_LUA=y
+BR2_PACKAGE_LUA_5_4=y
 # the udev provider the image uses (devtmpfs only, no udev daemon): RetroArch's and SDL2's input need libudev. Chosen
 # here rather than selected by retroarch, which is what closed a Kconfig cycle (see package/retroarch/Config.in).
 BR2_PACKAGE_LIBUDEV_ZERO=y
@@ -80,6 +83,13 @@ BR2_PACKAGE_ALSA_UTILS=y
 BR2_PACKAGE_ALSA_UTILS_ALSAUCM=y
 BR2_PACKAGE_ALSA_UTILS_AMIXER=y
 BR2_PACKAGE_ALSA_UTILS_ALSACTL=y
+# PipeWire: a sound server, so streams mix instead of the DSP's frontends being handed over one at a time. It needs
+# a session manager -- WirePlumber (GLib + Lua) -- and it discovers cards through the udev API, which libudev-zero
+# supplies: two local patches are needed for this card (libudev-zero must walk /sys/class for the card, which has no
+# device node, and PipeWire must not demand SOUND_INITIALIZED, a property udev's rules would add and nothing here
+# runs). The RPC's UCM2 profile (above) is what ACP uses to bring the card up.
+BR2_PACKAGE_PIPEWIRE=y
+BR2_PACKAGE_WIREPLUMBER=y
 BR2_PACKAGE_FREETYPE=y
 BR2_PACKAGE_LIBDRM=y
 BR2_PACKAGE_MESA3D=y

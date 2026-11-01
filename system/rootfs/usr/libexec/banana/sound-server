@@ -1,0 +1,65 @@
+#!/bin/sh
+# sound-server: PipeWire and WirePlumber -- the sound server that lets streams mix, instead of the DSP's two
+# frontends being handed over one at a time (the menu releases its own when a game starts, and run-retroarch puts the
+# route back). Nothing else is a server on this image: no PulseAudio, no DBus.
+#
+# PipeWire finds the card through the udev API, which libudev-zero supplies (with a local patch so the card, which
+# has no device node, is enumerated at all), and it must not demand SOUND_INITIALIZED (another local patch). What it
+# then does with the card -- which profile, which routing, which levels -- comes from the RPC's UCM2 profile in
+# /usr/share/alsa/ucm2, so ACP brings the AudioReach card up itself.
+#
+#   sound-server up      start pipewire, then wireplumber (idempotent)
+#   sound-server down     stop both
+#   sound-server status   what is running and what the server sees
+#
+# The runtime dir is the one cage already uses, so a game under cage finds this socket too. It has to be 0700.
+RUNDIR=/run/banana/wayland
+LOG=/data/banana/logs/sound-server.log
+
+say() {
+    [ -d "${LOG%/*}" ] || mkdir -p "${LOG%/*}" 2>/dev/null
+    echo "sound-server: $*" >> "$LOG" 2>/dev/null
+}
+
+export XDG_RUNTIME_DIR=$RUNDIR
+
+case "$1" in
+down)
+    pkill -f '/usr/bin/wireplumber' 2>/dev/null
+    pkill -f '/usr/bin/pipewire' 2>/dev/null
+    say "down"
+    exit 0
+    ;;
+status)
+    echo "pipewire:    $(pidof pipewire 2>/dev/null || echo not running)"
+    echo "wireplumber: $(pidof wireplumber 2>/dev/null || echo not running)"
+    [ -S "$RUNDIR/pipewire-0" ] && echo "socket:      $RUNDIR/pipewire-0" || echo "socket:      none"
+    exit 0
+    ;;
+up) ;;
+*)
+    echo "usage: sound-server up|down|status" >&2
+    exit 1
+    ;;
+esac
+
+[ -x /usr/bin/pipewire ] || { say "no pipewire in this image"; exit 0; }
+
+mkdir -p "$RUNDIR" 2>/dev/null
+chmod 700 "$RUNDIR" 2>/dev/null
+
+if ! pidof pipewire >/dev/null 2>&1; then
+    say "starting pipewire"
+    setsid pipewire >/dev/null 2>&1 &
+fi
+# the socket appears when pipewire is up; wireplumber needs it
+i=0
+while [ ! -S "$RUNDIR/pipewire-0" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+[ -S "$RUNDIR/pipewire-0" ] || say "no pipewire socket after 5 s"
+
+if [ -x /usr/bin/wireplumber ] && ! pidof wireplumber >/dev/null 2>&1; then
+    say "starting wireplumber"
+    setsid wireplumber >/dev/null 2>&1 &
+fi
+say "up (runtime dir $RUNDIR)"
+exit 0

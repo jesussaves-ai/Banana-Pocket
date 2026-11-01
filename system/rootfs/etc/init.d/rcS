@@ -156,6 +156,11 @@ amixer -q -c 0 cset "name=RX INT1 DEM MUX" CLSH_DSM_OUT 2>/dev/null
 amixer -q -c 0 cset "name=MultiMedia3 Mixer TX_CODEC_DMA_TX_3" 1 2>/dev/null
 mark "rcS: sound routed ($i tries)"
 
+# the sound server (PipeWire + WirePlumber): it finds the card through libudev-zero, brings it up from the UCM2
+# profile in /usr/share/alsa/ucm2, and lets streams mix -- so the menu and a game no longer hand the DSP's frontend
+# back and forth (see usr/libexec/banana/sound-server). Backgrounded: nothing needs it for the menu's first frame.
+/usr/libexec/banana/sound-server up &
+
 banana-perf ui
 
 # not needed for the menu's first frame
