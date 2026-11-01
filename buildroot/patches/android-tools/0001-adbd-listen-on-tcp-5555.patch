@@ -1,0 +1,31 @@
+Make adbd's TCP listener opt-in, and bind it on every interface
+
+The Ubuntu adbd only opens a TCP listener when no USB FunctionFS endpoint is
+present, and it binds that listener to loopback (gListenAll defaults to 0). On
+the RPC the USB adb function is present, so the daemon would serve USB alone and
+never be reachable with `adb connect <ip>:5555` over the network.
+
+Listen on TCP as well and on every interface -- but only when the environment
+asks for it (BANANA_ADB_TCP, set by usb-adb from the handheld's SSH setting),
+because this adbd has auth_enabled = 0: an open TCP listener is an
+unauthenticated root shell, so it should ride the same switch as sshd rather than
+be on whenever the device is on a network. USB is always served.
+
+--- a/core/adbd/adb.c
++++ b/core/adbd/adb.c
+@@ -1327,7 +1327,10 @@
+-    if (!usb) {
+-        printf("Using USB\n");
+-        // listen on default port
+-        local_init(DEFAULT_ADB_LOCAL_TRANSPORT_PORT);
+-    }
++    // Banana: also listen on TCP (the stock code only does this when USB is absent), but only when usb-adb
++    // asked for it, and on every interface (gListenAll) so `adb connect <ip>:5555` reaches it over Wi-Fi.
++    // USB is always served; the environment gate keeps an unauthenticated listener off the network by default.
++    if (getenv("BANANA_ADB_TCP")) {
++        gListenAll = 1;
++        local_init(DEFAULT_ADB_LOCAL_TRANSPORT_PORT);
++    }
++    (void)usb;
+ 
+     D("adb_main(): pre init_jdwp()\n");

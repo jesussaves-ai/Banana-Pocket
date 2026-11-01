@@ -117,6 +117,12 @@ BR2_PACKAGE_KSMBD_TOOLS=y
 BR2_PACKAGE_DROPBEAR=y
 # BR2_PACKAGE_DROPBEAR_CLIENT is not set
 BR2_PACKAGE_DROPBEAR_DISABLE_REVERSEDNS=y
+# adb: the handheld as an adb *device*, for a computer's `adb devices`/`adb push`/`adb shell`. adbd speaks the
+# protocol over the USB adb function (FunctionFS; see usb-gadget) and, with the patch in buildroot/patches/
+# android-tools, over TCP 5555 on every interface too -- so `adb connect <ip>:5555` works over Wi-Fi as well. This
+# is Debian's glibc android-tools adbd, not Android's bionic one, and it needs no host key (auth is off).
+BR2_PACKAGE_ANDROID_TOOLS=y
+BR2_PACKAGE_ANDROID_TOOLS_ADBD=y
 BR2_PACKAGE_CA_CERTIFICATES=y
 # PortMaster and its ports (as ROCKNIX has them): bash for the ports' scripts, Python for PortMaster's own menu, the
 # SDL2 add-ons and sound libraries ports load from the system

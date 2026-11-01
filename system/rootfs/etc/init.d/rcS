@@ -16,6 +16,9 @@ ln -sfn /proc/self/fd/2 /dev/stderr
 mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
 mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp
 mkdir -p /run/banana /var/log
+# the loopback interface: nothing else brings it up, and a program that binds 127.0.0.1 (adbd's own control socket,
+# for one) fails with EADDRNOTAVAIL without it
+ip link set lo up 2>/dev/null
 # boot milestones, seconds since the kernel started (logs/boot.txt)
 mark() { read up rest < /proc/uptime; printf '%-28s %6.2f s\n' "$1" "$up" >> /run/banana/boot-times; }
 # banana.console=1 on the kernel's command line: the boot's progress on the console (the UART, QEMU's serial)
@@ -177,6 +180,9 @@ banana-perf ui
     # development. Nothing needs it to boot, and a machine with no USB device controller (the QEMU test) just says so
     # and returns. It is also what makes the update tars cheap to push over the cable instead of Wi-Fi.
     /usr/libexec/banana/usb-gadget
+    # adb over that same port: the USB adb function usb-gadget just made (FunctionFS), and TCP 5555 on every
+    # interface, so a computer's `adb devices` works over the cable and `adb connect <ip>:5555` over Wi-Fi
+    /usr/libexec/banana/usb-adb up &
     # file sharing, when switched on in the settings
     grep -q '^ *share *= *on' /data/banana/settings.conf 2>/dev/null && /usr/libexec/banana/share up
     grep -q '^ *ssh *= *on' /data/banana/settings.conf 2>/dev/null && /usr/libexec/banana/ssh up

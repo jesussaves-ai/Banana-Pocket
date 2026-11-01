@@ -1,0 +1,67 @@
+#!/bin/sh
+# adb on the handheld: the daemon (Debian's android-tools adbd -- a glibc build, see the defconfig) serving the USB
+# adb function that usb-gadget creates, and, when the SSH setting is on, a TCP listener on 5555 on every interface
+# (the patch in buildroot/patches/android-tools), so a computer reaches it with `adb devices` over the cable and
+# `adb connect <ip>:5555` over Wi-Fi. adbd has no host key, so TCP is tied to the same switch as sshd.
+#
+#   usb-adb            mount FunctionFS and run adbd, restarting it if it exits (foreground; rcS backgrounds it)
+#   usb-adb down       stop adbd and unmount FunctionFS
+#
+# rcS runs `usb-adb up &` right after usb-gadget (the adb function has to exist first). Nothing needs adb to boot, and
+# a machine with no USB device controller (the QEMU test) has no function to mount, so this returns.
+#
+# adbd is the Android 4.2 daemon, not a modern one: it writes the adb interface descriptors on ep0 when it starts, and
+# `auth_enabled` is 0, so a host is never asked for a key. It serves USB and TCP at once.
+
+FFS=/dev/usb-ffs/adb
+G=/sys/kernel/config/usb_gadget/banana
+LOG=/data/banana/logs/usb-adb.log
+
+say() {
+    [ -d "${LOG%/*}" ] || mkdir -p "${LOG%/*}" 2>/dev/null
+    echo "usb-adb: $*" >> "$LOG" 2>/dev/null
+}
+
+if [ "$1" = down ]; then
+    pkill -f '/usr/bin/adbd' 2>/dev/null
+    umount "$FFS" 2>/dev/null
+    say "down"
+    exit 0
+fi
+
+# the adb function is made by usb-gadget; wait a moment for it (rcS starts this right behind it)
+i=0
+while [ ! -d "$G/functions/ffs.adb" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+if [ ! -d "$G/functions/ffs.adb" ]; then
+    say "no ffs.adb function (no UDC, or usb-gadget did not run); leaving adb off"
+    exit 0
+fi
+
+mkdir -p "$FFS" 2>/dev/null
+# FunctionFS binds the mount to the function instance by its name ("adb" -- ffs.adb), so the mount source is "adb"
+grep -q " $FFS " /proc/mounts 2>/dev/null || mount -t functionfs adb "$FFS" 2>/dev/null
+if ! grep -q " $FFS " /proc/mounts 2>/dev/null; then
+    say "could not mount FunctionFS at $FFS"
+    exit 1
+fi
+# adbd decides USB vs TCP by whether ep0 is there
+i=0
+while [ ! -e "$FFS/ep0" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+
+say "starting adbd (usb $FFS)"
+# The TCP listener rides the SSH setting (Settings > System > SSH). This adbd has no host key, so an open TCP port is
+# an unauthenticated root shell -- it should not be up just because the handheld is on a network. adbd reads
+# BANANA_ADB_TCP at start-up (the patch in buildroot/patches/android-tools); USB is always served. The `ssh` script
+# restarts this supervisor when the setting is toggled, so a change takes effect then.
+if grep -q '^ *ssh *= *on' /data/banana/settings.conf 2>/dev/null; then
+    BANANA_ADB_TCP=1
+    export BANANA_ADB_TCP
+    say "tcp 5555 too (the ssh setting is on)"
+else
+    say "usb only (the ssh setting is off)"
+fi
+while :; do
+    /usr/bin/adbd
+    say "adbd exited ($?), restarting"
+    sleep 1
+done

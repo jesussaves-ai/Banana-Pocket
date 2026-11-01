@@ -1,7 +1,8 @@
 #!/bin/sh
 # The handheld's own USB-C port, as a USB device a computer can talk to: an NCM (USB Ethernet) gadget with a one-lease
 # DHCP server, so a development machine sees a network interface and an address with nothing to configure, and reaches
-# the handheld without Wi-Fi. rcS runs it in the background; it is not needed for the menu.
+# the handheld without Wi-Fi, plus an adb function (FunctionFS) the adbd daemon serves (see usb-adb), so `adb devices`
+# works over the same cable. rcS runs it in the background; it is not needed for the menu.
 #
 #   usb-gadget          bring it up (idempotent: a second run leaves a working gadget alone)
 #   usb-gadget down     tear it down
@@ -42,7 +43,10 @@ down() {
     rm -f $CONF
     # configfs refuses to remove a function while it is still linked into a configuration
     rm -f $G/configs/c.1/ncm.usb0
+    rm -f $G/configs/c.1/ffs.adb
     rmdir $G/functions/ncm.usb0 2>/dev/null
+    rmdir $G/functions/ffs.adb 2>/dev/null
+    umount /dev/usb-ffs/adb 2>/dev/null
     rmdir $G/configs/c.1/strings/0x409 $G/configs/c.1 2>/dev/null
     rmdir $G/strings/0x409 2>/dev/null
     rmdir $G/os_desc 2>/dev/null
@@ -102,7 +106,12 @@ else
     echo 82:ba:1c:92:78:02 > $G/functions/ncm.usb0/dev_addr
     echo 82:ba:1c:92:78:01 > $G/functions/ncm.usb0/host_addr
 
+    # adb: a FunctionFS function the adbd daemon serves (see usb-adb). It shares this configuration with the network,
+    # so one cable is both an Ethernet link and an adb link. The function carries no attributes of its own -- adbd
+    # writes its descriptors on ep0 when it (re)starts.
+    mkdir -p $G/functions/ffs.adb
     ln -sf $G/functions/ncm.usb0 $G/configs/c.1/
+    ln -sf $G/functions/ffs.adb  $G/configs/c.1/
     echo "$UDC" > $G/UDC || { say "the controller would not take the gadget"; exit 1; }
     say "up on $UDC as $IFACE"
 fi

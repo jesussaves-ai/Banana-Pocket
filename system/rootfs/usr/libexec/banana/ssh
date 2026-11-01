@@ -25,4 +25,12 @@ down)
     ;;
 *) echo "usage: ssh up|down" >&2; exit 1 ;;
 esac
+
+# adb's TCP listener rides this switch (see usb-adb): restart the adb daemon so turning ssh on or off takes effect
+# now, instead of at the next boot. A brief adb drop over the cable is the cost.
+if [ -x /usr/libexec/banana/usb-adb ]; then
+    pkill -f '/usr/libexec/banana/usb-adb up' 2>/dev/null
+    pkill -f '/usr/bin/adbd' 2>/dev/null
+    setsid /usr/libexec/banana/usb-adb up >/dev/null 2>&1 &
+fi
 exit 0
