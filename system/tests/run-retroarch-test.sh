@@ -73,7 +73,7 @@ run gba gpsp
 [ "$(cfg video_driver)" = gl ] && ok "video_driver is the no-SoC fallback" || bad "video_driver=$(cfg video_driver)"
 [ "$(cfg input_driver)" = udev ] && ok "input_driver udev" || bad "input_driver=$(cfg input_driver)"
 [ "$(cfg audio_driver)" = alsathread ] && ok "audio_driver alsathread" || bad "audio_driver=$(cfg audio_driver)"
-[ "$(cfg audio_latency)" = 64 ] && ok "audio_latency default" || bad "audio_latency=$(cfg audio_latency)"
+[ "$(cfg audio_latency)" = 48 ] && ok "audio_latency default" || bad "audio_latency=$(cfg audio_latency)"
 [ "$(cfg video_monitor_index)" = 1 ] && ok "one-panel video_monitor_index 1" || bad "video_monitor_index=$(cfg video_monitor_index)"
 has "$W/retroarch.args" gpsp_libretro.so && ok "the gpsp core was launched" || bad "the core was not launched"
 [ -d "$W/data/retroarch/config/SwanStation" ] && bad "a GBA run wrote SwanStation's files" || ok "no per-core files for a plain system"

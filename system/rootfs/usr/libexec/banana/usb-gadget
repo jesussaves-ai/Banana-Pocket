@@ -2,7 +2,9 @@
 # The handheld's own USB-C port, as a USB device a computer can talk to: an NCM (USB Ethernet) gadget with a one-lease
 # DHCP server, so a development machine sees a network interface and an address with nothing to configure, and reaches
 # the handheld without Wi-Fi, plus an adb function (FunctionFS) the adbd daemon serves (see usb-adb), so `adb devices`
-# works over the same cable. rcS runs it in the background; it is not needed for the menu.
+# works over the same cable. Linux and macOS match the adb interface on their own; Windows needs its own adb driver,
+# because configfs f_fs exposes no OS-descriptor entry to bind WinUSB to that interface (the NCM interface does have
+# one). rcS runs it in the background; it is not needed for the menu.
 #
 #   usb-gadget          bring it up (idempotent: a second run leaves a working gadget alone)
 #   usb-gadget down     tear it down
@@ -31,6 +33,12 @@ say() {
     echo "usb-gadget: $*" >> "$LOG" 2>/dev/null
 }
 
+# one at a time: rcS runs this, and bananad runs it again on the UDC netlink event, and two runs at once tear each
+# other's gadget down (the exists-check is not atomic, and this now waits for the adb function to be ready)
+mkdir -p /run/banana 2>/dev/null
+exec 8>/run/banana/usb-gadget.lock 2>/dev/null
+flock -n 8 2>/dev/null || { say "another usb-gadget is running; leaving it alone"; exit 0; }
+
 down() {
     if [ "$(cat $G/UDC 2>/dev/null)" ]; then
         echo "" > $G/UDC 2>/dev/null
@@ -38,6 +46,8 @@ down() {
     # the interface can outlive a failed unbind; do not leave its addresses or a live DHCP server behind
     ip address flush dev $IFACE 2>/dev/null
     ip link set $IFACE down 2>/dev/null
+    pkill -f '/usr/libexec/banana/usb-adb up' 2>/dev/null
+    pkill -f '/usr/bin/adbd' 2>/dev/null
     # BusyBox's udhcpd writes no pid file (it ignores the conf's `pidfile` line), so find it by its config instead
     pkill -f /run/banana/udhcpd-usb.conf 2>/dev/null
     rm -f $CONF
@@ -108,11 +118,25 @@ else
 
     # adb: a FunctionFS function the adbd daemon serves (see usb-adb). It shares this configuration with the network,
     # so one cable is both an Ethernet link and an adb link. The function carries no attributes of its own -- adbd
-    # writes its descriptors on ep0 when it (re)starts.
-    mkdir -p $G/functions/ffs.adb
+    # writes its descriptors on ep0.
+    #
+    # The order matters: an ffs function whose ep0 is not open yet makes the controller refuse the *whole* gadget
+    # (ENODEV), taking the network down with it. So mount FunctionFS and start adbd first, and wait for the
+    # function's `ready` (1 once adbd has written the adb descriptors) before binding. An image without adbd skips
+    # the function entirely, so the gadget still comes up.
     ln -sf $G/functions/ncm.usb0 $G/configs/c.1/
-    ln -sf $G/functions/ffs.adb  $G/configs/c.1/
-    echo "$UDC" > $G/UDC || { say "the controller would not take the gadget"; exit 1; }
+    if [ -x /usr/bin/adbd ] && [ -x /usr/libexec/banana/usb-adb ]; then
+        mkdir -p $G/functions/ffs.adb
+        ln -sf $G/functions/ffs.adb $G/configs/c.1/
+        mkdir -p /dev/usb-ffs/adb 2>/dev/null
+        grep -q ' /dev/usb-ffs/adb ' /proc/mounts 2>/dev/null || mount -t functionfs adb /dev/usb-ffs/adb 2>/dev/null
+        setsid /usr/libexec/banana/usb-adb up >/dev/null 2>&1 &
+        i=0
+        while [ "$(cat $G/functions/ffs.adb/ready 2>/dev/null)" != "1" ] && [ $i -lt 60 ]; do sleep 0.1; i=$((i+1)); done
+    fi
+    if [ -z "$(cat $G/UDC 2>/dev/null)" ]; then
+        echo "$UDC" > $G/UDC || { say "the controller would not take the gadget"; exit 1; }
+    fi
     say "up on $UDC as $IFACE"
 fi
 

@@ -1,0 +1,22 @@
+adbd: report the handheld's own product identity, not a Nexus 4
+
+adbd's CNXN banner carries ro.product.name/model/device, and this build has the
+property lookups commented out, so it falls back to the compiled defaults --
+occam / Nexus 4 / mako (Android's own test device). A host then lists the
+handheld as `product:occam model:Nexus_4 device:mako`. Use Banana's values.
+
+--- a/core/adbd/adb.c
++++ b/core/adbd/adb.c
+@@ -302,9 +302,9 @@
+     };
+     static const int num_cnxn_props = ARRAY_SIZE(cnxn_props);
+     static const char *values[] = {
+-        "occam",
+-        "Nexus 4",
+-        "mako",
++        "banana",
++        "Pocket Classic",
++        "rpc",
+     };
+     int i;
+     size_t remaining = bufsize;

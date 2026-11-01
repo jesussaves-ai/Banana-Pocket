@@ -179,10 +179,9 @@ banana-perf ui
     # the handheld's own USB-C port as a device a computer can reach: an NCM Ethernet gadget with a DHCP server, for
     # development. Nothing needs it to boot, and a machine with no USB device controller (the QEMU test) just says so
     # and returns. It is also what makes the update tars cheap to push over the cable instead of Wi-Fi.
+    # adb over that same port is started by usb-gadget itself (the ffs function has to be ready before it binds the
+    # gadget), so nothing else starts the daemon
     /usr/libexec/banana/usb-gadget
-    # adb over that same port: the USB adb function usb-gadget just made (FunctionFS), and TCP 5555 on every
-    # interface, so a computer's `adb devices` works over the cable and `adb connect <ip>:5555` over Wi-Fi
-    /usr/libexec/banana/usb-adb up &
     # file sharing, when switched on in the settings
     grep -q '^ *share *= *on' /data/banana/settings.conf 2>/dev/null && /usr/libexec/banana/share up
     grep -q '^ *ssh *= *on' /data/banana/settings.conf 2>/dev/null && /usr/libexec/banana/ssh up

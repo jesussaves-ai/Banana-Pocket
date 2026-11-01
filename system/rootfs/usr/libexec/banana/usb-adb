@@ -7,8 +7,10 @@
 #   usb-adb            mount FunctionFS and run adbd, restarting it if it exits (foreground; rcS backgrounds it)
 #   usb-adb down       stop adbd and unmount FunctionFS
 #
-# rcS runs `usb-adb up &` right after usb-gadget (the adb function has to exist first). Nothing needs adb to boot, and
-# a machine with no USB device controller (the QEMU test) has no function to mount, so this returns.
+# usb-gadget starts `usb-adb up` itself, just before it binds the controller: the FunctionFS function has to be
+# ready (adbd running and its descriptors written) or the bind fails with ENODEV and takes the whole gadget down.
+# Nothing needs adb to boot, and a machine with no USB device controller (the QEMU test) has no function to mount,
+# so this returns.
 #
 # adbd is the Android 4.2 daemon, not a modern one: it writes the adb interface descriptors on ep0 when it starts, and
 # `auth_enabled` is 0, so a host is never asked for a key. It serves USB and TCP at once.
@@ -60,8 +62,15 @@ if grep -q '^ *ssh *= *on' /data/banana/settings.conf 2>/dev/null; then
 else
     say "usb only (the ssh setting is off)"
 fi
-while :; do
-    /usr/bin/adbd
-    say "adbd exited ($?), restarting"
-    sleep 1
-done
+# adbd has to be running before the controller takes the gadget -- an ffs function whose ep0 is not open makes the
+# bind fail (ENODEV) -- so run the supervisor here and bind once the function is ready. usb-gadget does the same and
+# whichever gets there first wins; and if adbd ever restarts (which deactivates the function and can leave the
+# controller with no gadget), this binds it again.
+( while :; do /usr/bin/adbd; say "adbd exited ($?), restarting"; sleep 1; done ) &
+i=0
+while [ "$(cat $G/functions/ffs.adb/ready 2>/dev/null)" != "1" ] && [ $i -lt 60 ]; do sleep 0.1; i=$((i+1)); done
+U=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+if [ -n "$U" ] && [ -z "$(cat $G/UDC 2>/dev/null)" ]; then
+    echo "$U" > $G/UDC 2>/dev/null && say "bound $U (the controller had no gadget)" || say "could not bind $U"
+fi
+wait

@@ -647,7 +647,8 @@ arrangement of the same two clocks.
 
 Not adopted (they are ROCKNIX's own plumbing, not settings): sway in place of cage, the display plane's hardware
 rotation (Banana turns the output in cage and in the menu's own `Display::turn()`), the display-plane scanout
-scaling, and pinning a game to the two big cores. `audio_latency` already matches (64 ms), and the CPU and GPU
+scaling, and pinning a game to the two big cores. `audio_latency` already matches (48 ms; lowered from 64 in the
+audit, `retroarch: audio_latency 64 -> 48 ms`), and the CPU and GPU
 governors are already pinned to `performance` for a game, which is stricter than ROCKNIX's own default.
 
 ## The volume rocker, and what the volume actually is (2026-10-28)
