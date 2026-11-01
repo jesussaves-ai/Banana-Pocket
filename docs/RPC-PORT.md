@@ -325,8 +325,11 @@ saying "nothing in" means either the boot-time jack read was wrong on that boot 
 before it has measured anything, and it is the one thing here that would explain it: bananad would then have been
 faithfully writing `off` to the speakers), or the mixer simply wasn't ready and every write was dropped. The new
 `sound: the jack says ... at start` line distinguishes the two on the next boot that shows it, which is why it logs
-the jack's answer and not just a duration. `evtest --query <jack> EV_SW SW_HEADPHONE_INSERT` at idle (no evtest in
-the image; `headphones_in()`'s own EVIOCGSW read, or a two-line test program) is the direct check, still to do.
+the jack's answer and not just a duration. The direct check (`headphones_in()`'s own `EVIOCGSW`) is now logged every
+boot too: `jack_log()` names the input device that carries `SW_HEADPHONE_INSERT` and the state it reads now
+(`sound: the jack switch on '<name>' reads in/out`), so a boot that comes up silent shows whether the codec claimed
+"headphones in" with nothing plugged. The settle that used to block the loop for up to 1.2 s is deferred now: the loop
+re-reads every 0.2 s and believes two agreeing readings.
 
 ## The menu went silent, and why (2026-10-27)
 
@@ -377,10 +380,30 @@ the frontend, not the graph. Both sides of the handover now wait one beat more, 
 waited for**, so nothing is paid when the frontend was already idle: `run-retroarch` before it writes the route and
 execs the core, and banana-ui's `Sound` before it reopens after a game (the `wasHeld` flag).
 
-The right long-term fix is in the kernel: `q6apm`'s DAI `.close` returns before the graph destroy has been
-acknowledged, so any two programs handing a frontend over have to guess at the gap (`sound/qcom/q6apm-dai.c`, waiting
-for the graph-close completion). When that lands, both userspace waits should come out again; until then the amp
-count above is the way to tell whether the wait is still earning its keep.
+What the kernel actually does, read from the source: `q6apm_dai_close()` -> `q6apm_graph_close()` -> `kref_put()` ->
+`q6apm_put_audioreach_graph()` sends `APM_CMD_GRAPH_CLOSE` through `audioreach_send_cmd_sync()`, which *does* wait for
+the DSP's response (up to 5 s). But the result was thrown away, so a close the DSP never acknowledged -- the half-built
+graph a frontend opened right after sees -- was completely silent. Patch `0063-…` logs it, and the close round-trip
+when it is slow (>= 50 ms), so the window is measurable on the unit without dynamic debug. Note the DSP acknowledges the
+*command*, not the full teardown: the residual gap after that ack is the DSP's own and the driver has no event for it, so
+there is no clean wait-for-teardown yet. Until there is, the userspace "one beat" stays, and the amp count plus the new
+close timing are how to tell whether it still earns its keep. That beat is now a single knob -- `audio_handoff_ms` in
+`banana/bananad.conf` (default 800, 0 off), published by bananad as `/run/banana/audio-handoff-ms` and read by
+`usr/libexec/banana/audio-settle` (the shared handoff and run-retroarch's first-launch beat) and by banana-ui's
+`Sound` -- so it can be turned down from the field without a script edit. (A UCM2 profile -- the idea in the PipeWire
+episode below -- only helps a UCM-aware opener like PipeWire/ACP, which Banana deliberately does not have: with no
+sound server every opener still sets the route itself, so UCM would only rename the mixer writes, not move them into
+the open.)
+
+**A boot-time bug found chasing the intermittent "game audio silent until a restart".** bananad's codec setup used the
+*raw* CTL API with the *simple-mixer* names (`"HPHL"`, `"HPHL_RDAC"`, `"HPHL_COMP"`, …), but those controls are named
+`"HPHL Switch"`, `"HPHL_RDAC Switch"` in the raw CTL space -- `amixer` resolves the short name, the CTL API does not, so
+every switch set failed with "no such control". `rcS` sets the same controls with `amixer`, which is why audio still
+worked and the failures looked cosmetic; but bananad's copy exists exactly as the fallback for "a card that enumerated
+after `rcS`'s wait", so that fallback had silently never run. `ctl_set()` now retries the name with `" Switch"`, and
+`audio_setup()` waits (bounded, and logs it) for a real DAPM control (`RX_MACRO RX0 MUX`) before the block -- so a late
+card gets its headphone path set instead of being left at the reset levels. The DAPM switch/mux controls can appear a
+moment after the card's simple-mixer ones, which is what the wait is for.
 
 Related, found in the same hunt: `run-ps1`'s panel-size lookup globbed `card0-*`, which is the RG DS's numbering --
 the RPC's panel is on `card1` (msm), so PlayStation scaling was being chosen by the *fallback* rather than by the
@@ -434,7 +457,7 @@ GPU's real path is Turnip.
   unloads (the log shows `Saved core options file to …/Gambatte.opt` on every close), but Banana's config hid the
   manual *Save Core Options* item (`quick_menu_show_core_options_flush = "false"`), so a card with no auto-save had no
   way to save one by hand. The item is shown now, alongside `config_save_on_exit`.
-- **Quick resume.** `savestate_auto_save`/`savestate_auto_load` (Settings > Other systems > Quick resume) are on by
+- **Quick resume.** `savestate_auto_save`/`savestate_auto_load` (Settings > RetroArch > Quick resume) are on by
   default now, and turned on once for a card that had them off (a marker keeps a later menu change).
 
 ## Turnip: SwanStation's Vulkan renderer (2026-10-28)
@@ -744,7 +767,9 @@ streams opened, the card ran (`state: RUNNING`), the route read `on,off` -- and 
 layer is the DSP's graph latch and the amplifiers' start, and userspace has no hook at the server's open.
 **The next attempt should carry a UCM2 profile for this card** (which is what ROCKNIX's `alsa-ucm-conf` gives their
 handhelds, and what makes ACP set the routing itself at each profile activation) rather than asking a WirePlumber
-rule and bananad to take turns at it.
+rule and bananad to take turns at it. *(Superseded for the no-sound-server design: UCM is only applied by a UCM-aware
+opener -- PipeWire/ACP -- so with no sound server it would only rename the mixer writes Banana already makes before each
+open. See the handover section for what was done instead: `0063-…` makes the graph-close window measurable.)*
 
 ## RetroArch's black panel (2026-10-27)
 
@@ -771,7 +796,7 @@ game. The image's template has always said `gl`.
 Fix: `run-retroarch` now forces the keys a picture and sound depend on at **every** start, not once
 (`video_driver`, `video_context_driver`, `video_fullscreen`, `input_driver`, `audio_driver`, `audio_device`, and
 `midi_driver = null` — there is no `/dev/snd/seq` on this image and RetroArch logged two errors and a failed init for
-it on every launch). Settings Banana does show (the screen, the shader, the latency, VSync) are still the card's.
+it on every launch). Settings Banana does show (the screen, the shader) are still the card's.
 Anything RetroArch is free to keep stays.
 
 Found on the same pass, all fixed:

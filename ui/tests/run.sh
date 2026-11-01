@@ -37,7 +37,7 @@ for size in 640x480 1024x768; do
     "$HERE/banana-ui" --headless "$OUT/$size-" --size $size --assets "$HERE/assets/rnds" \
         --splash "$HERE/assets/splash" --banana "$HERE/assets/banana" \
         --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
-        --script "boot; splash boot-drop 200; splash boot-word 700; splash boot-click 1100 1; home 0; sysinfo 0; apps; wait 2400; shot home; bench 120; press a; wait 2400; shot lib; press right; wait 2400; shot lib2; bench 120; press a; wait 3000; shot ready; press b; press b; press start; shot settings; press a; press down; shot settings-list; press r; press r; press r; press r; shot settings-system; press right; shot settings-tz; press b; press b; romicon $FX/roms/nds/Yellow Planet [!].zip; romicon $FX/roms/nds/Peel Quest.nds; battery 50; battery 19; shot battery-low; press left; battery 18; battery 4; wait 2400; shot battery-empty; battery 4 charging; battery 19" \
+        --script "boot; splash boot-drop 200; splash boot-word 700; splash boot-click 1100 1; home 0; sysinfo 0; apps; wait 2400; shot home; bench 120; press a; wait 2400; shot lib; press right; wait 2400; shot lib2; bench 120; press a; wait 3000; shot ready; press b; press b; romicon $FX/roms/nds/Yellow Planet [!].zip; romicon $FX/roms/nds/Peel Quest.nds; battery 50; battery 19; shot battery-low; press left; battery 18; battery 4; wait 2400; shot battery-empty; battery 4 charging; battery 19" \
         2> "$log" || { echo "FAIL $size: banana-ui exited $?"; fail=1; continue; }
     check() { grep -q "$1" "$log" || { echo "FAIL $size: no '$1'"; fail=1; }; }
     check "press a: used, view 1"          # home -> the DS library
@@ -47,11 +47,8 @@ for size in 640x480 1024x768; do
     check "press a: used, view 2"          # library -> ready screen
     check "launch 1: .*Monkey Puzzle League.nds"
     check "splash boot-click at 1100 ms"
-    check "press start: settings open"
-    check "press b: settings closed"
     check "romicon .*Yellow Planet \[!\].zip: 32x32, middle #ffe721"     # the icon from inside the zip
     check "romicon .*Peel Quest.nds: none"                             # no banner
-    grep -q '^timezone = [^U]' "$FX/data/settings.conf" || { echo "FAIL $size: the time zone wasn't saved"; fail=1; }
     check "battery 19%: notice Battery low: 19%"
     check "press left: notice hidden"
     check "battery 4%: notice Battery nearly empty: 4%"
@@ -64,7 +61,7 @@ for size in 640x480 1024x768; do
         [ -s "$f" ] || { echo "FAIL $size: no $f"; fail=1; continue; }
         [ "$(convert "$f" -format '%[fx:standard_deviation>0.01]' info:)" = 1 ] || { echo "FAIL $size: $f is blank"; fail=1; }
     done
-    for s in home lib lib2 ready settings settings-list settings-system settings-tz battery-low battery-empty; do
+    for s in home lib lib2 ready battery-low battery-empty; do
         for p in top bot; do
             f=$OUT/$size-$s-$p.png
             [ -s "$f" ] || { echo "FAIL $size: no $f"; fail=1; continue; }
@@ -73,7 +70,7 @@ for size in 640x480 1024x768; do
         done
     done
     # golden: the key screens against the committed baselines
-    for s in home lib ready settings settings-system battery-low; do
+    for s in home lib ready battery-low; do
         golden "$s-top" "$OUT/$size-$s-top.png"
         golden "$s-bot" "$OUT/$size-$s-bot.png"
     done
@@ -98,8 +95,10 @@ for size in 640x480 1024x768; do
     # forgetting, an open network and a WPA3-only one (Settings opens on its groups: R four times is Network)
     wlog=$OUT/$size-wifi.log
     rm -f "$FX/data/wifi.conf"
-    key() { for rc in "$@"; do awk -v rc=$rc 'BEGIN { split(rc, a, ","); printf "touch 1 %.0f %.0f; ", 18 + a[2] * 60.4 + 27, 80 + a[1] * 66 + 29 }'; done; }
-    BANANA_WIFI="$HERE/tests/fake-wifi.sh" FAKE_WIFI_CONF="$FX/data/wifi.conf" "$HERE/banana-ui" --headless "$OUT/$size-" --size $size \
+    # touch coords are in px of a 640x480 panel and the runner scales them by panelH/480; the settings keyboard
+    # lives on the RPC's 640x557 panel, so undo that factor here
+    key() { for rc in "$@"; do awk -v rc=$rc 'BEGIN { split(rc, a, ","); printf "touch 1 %.0f %.0f; ", (18 + a[2] * 60.4 + 27) * 480 / 557, (80 + a[1] * 66 + 29) * 480 / 557 }'; done; }
+    BANANA_WIFI="$HERE/tests/fake-wifi.sh" FAKE_WIFI_CONF="$FX/data/wifi.conf" "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 \
         --assets "$HERE/assets/rnds" --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
         --script "home 0; press start; press r; press r; press r; press a; press down; shot wifi-row; press down; shot share-row; press up; press a; shot wifi-list; press a; \
             $(key 3,4 2,0 3,5) press start; shot wifi-short; $(key 2,0 3,5 2,0 0,0 0,1) shot wifi-keys; press start; wait 2500; shot wifi-joined; \
@@ -111,23 +110,23 @@ for size in 640x480 1024x768; do
     grep -q 'key_mgmt=NONE' "$conf" || { echo "FAIL $size: the open network's block"; fail=1; }
     grep -q 'priority=2' "$conf" || { echo "FAIL $size: the last network joined isn't first"; fail=1; }
     for s in wifi-row wifi-list wifi-short wifi-keys wifi-joined wifi-end; do
-        [ -s "$OUT/$size-$s-top.png" ] && [ -s "$OUT/$size-$s-bot.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }
+        [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }
     done
     # The first-time setup: opened as on a first boot, a RetroAchievements account typed by touch (name, then the
     # password), past the Box art step (not started: no network here), Finish writes setup-done; the accounts file is what the launchers read (no login with the server
 # here: BANANA_RA_CHECK=0)
     slog=$OUT/$size-setup.log
     rm -f "$FX/data/setup-done" "$FX/data/accounts.conf"
-    BANANA_RA_CHECK=0 BANANA_WIFI="$HERE/tests/fake-wifi.sh" FAKE_WIFI_CONF="$FX/data/wifi.conf" "$HERE/banana-ui" --headless "$OUT/$size-" --size $size \
+    BANANA_RA_CHECK=0 BANANA_WIFI="$HERE/tests/fake-wifi.sh" FAKE_WIFI_CONF="$FX/data/wifi.conf" "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 \
         --assets "$HERE/assets/rnds" --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
-        --script "home 0; setup; shot setup; press right; shot setup-tz; press down; press down; shot setup-ra; press a; shot setup-name; \
+        --script "home 0; setup; shot setup; press down; press right; shot setup-tz; press down; shot setup-ra; press a; shot setup-name; \
             $(key 1,0 1,1 1,2) press start; shot setup-pass; $(key 2,0 2,1) press start; shot setup-signed; press down; shot setup-boxart; press down; press a; shot setup-done" 2> "$slog" \
         || { echo "FAIL $size: banana-ui (setup) exited $?"; fail=1; }
     grep -q "setup open" "$slog" || { echo "FAIL $size: the setup didn't open"; fail=1; }
     [ -f "$FX/data/setup-done" ] || { echo "FAIL $size: Finish didn't write setup-done"; fail=1; }
     grep -q '^ra_user=qwe$' "$FX/data/accounts.conf" && grep -q '^ra_password=as$' "$FX/data/accounts.conf" || { echo "FAIL $size: accounts.conf: $(cat "$FX/data/accounts.conf" 2>/dev/null | tr '\n' ' ')"; fail=1; }
     for s in setup setup-tz setup-ra setup-name setup-pass setup-signed; do
-        [ -s "$OUT/$size-$s-top.png" ] && [ -s "$OUT/$size-$s-bot.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }
+        [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }
     done
     rm -f "$FX/data/setup-done" "$FX/data/accounts.conf"
     # Favorites starred itself (first on the shelf, ahead of every system): a GBA favourite launches with GBA's
@@ -147,7 +146,7 @@ for size in 640x480 1024x768; do
     rm -f "$FX/data/pergame.conf"
     mkdir -p "$FX/states/DeSmuME"; head -c 4096 /dev/zero > "$FX/states/DeSmuME/Banana Kart DS.state"
     rm -f "$FX/states/DeSmuME/"*bak-*
-    BANANA_STATES="$FX/states" "$HERE/banana-ui" --headless "$OUT/$size-" --size $size --assets "$HERE/assets/rnds" \
+    BANANA_STATES="$FX/states" "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
         --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
         --script "lib 0 0; press x; wait 300; shot xgame; press down; press right; wait 100; shot xgame2; press down; press a; wait 200; shot states; press y; wait 150; press a; press a; wait 150; shot states2; press b; press b; wait 1" 2> "$xlog" ||
         { echo "FAIL $size: banana-ui (x on a game) exited $?"; fail=1; }
@@ -157,17 +156,17 @@ for size in 640x480 1024x768; do
         { echo "FAIL $size: the per-game shader was not saved: $(cat "$FX/data/pergame.conf" 2>/dev/null)"; fail=1; }
     [ ! -f "$FX/states/DeSmuME/Banana Kart DS.state" ] || { echo "FAIL $size: the state was not deleted"; fail=1; }
     ls "$FX/states/DeSmuME/" 2>/dev/null | grep -q 'Banana Kart DS.state.bak-' || { echo "FAIL $size: no backup was made"; fail=1; }
-    [ -s "$OUT/$size-xgame-top.png" ] && [ -s "$OUT/$size-xgame-bot.png" ] || { echo "FAIL $size: no xgame shot"; fail=1; }
+    [ -s "$OUT/$size-xgame-top.png" ] || { echo "FAIL $size: no xgame shot"; fail=1; }
     for s in states states2; do [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }; done
-    # Background Music: the Display & sound row (the seventh) toggles settings.conf's bgm, off then back on
+    # Background Music: the Display & sound row (the fifth) toggles settings.conf's bgm, off then back on
     grep -q '^bgm = ' "$FX/data/settings.conf" && sed -i 's/^bgm = .*/bgm = on/' "$FX/data/settings.conf" || printf 'bgm = on\n' >> "$FX/data/settings.conf"
     blog=$OUT/$size-bgm.log
-    run_bgm() { "$HERE/banana-ui" --headless "$OUT/$size-" --size $size --assets "$HERE/assets/rnds" \
+    run_bgm() { "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
         --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" --script "$1" 2>> "$blog" ||
         { echo "FAIL $size: banana-ui (bgm) exited $?"; fail=1; }; }
-    run_bgm "home 0; press start; press a; press down; press down; press down; press down; press down; press down; press right; shot bgm-off"
+    run_bgm "home 0; press start; press a; press down; press down; press down; press down; press right; shot bgm-off"
     grep -q '^bgm = off' "$FX/data/settings.conf" || { echo "FAIL $size: Background Music Off didn't save: $(grep '^bgm' "$FX/data/settings.conf")"; fail=1; }
-    run_bgm "home 0; press start; press a; press down; press down; press down; press down; press down; press down; press right; shot bgm-on"
+    run_bgm "home 0; press start; press a; press down; press down; press down; press down; press right; shot bgm-on"
     grep -q '^bgm = on' "$FX/data/settings.conf" || { echo "FAIL $size: Background Music On didn't save: $(grep '^bgm' "$FX/data/settings.conf")"; fail=1; }
     for s in bgm-off bgm-on; do [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }; done
     # the AMOLED burn-in guard follows bananad.conf: 2 min idle dims the panel to 30%, 90 s later it blanks, and the
@@ -185,29 +184,27 @@ for size in 640x480 1024x768; do
     [ "$(cat "$FX/bl")" = 200 ] || { echo "FAIL $size: the guard didn't restore the brightness: $(cat "$FX/bl")"; fail=1; }
     for s in guard-dim guard-blank guard-wake; do [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }; done
     # Settings > System's two resets: the system one puts the menu's own keys back (theme, sounds, ...) and leaves
-    # the emulator's (core.gba, ra_shader) alone; then the emulator one puts those back and leaves the menu's alone
+    # the emulator's (core.gba) alone; then the emulator one puts those back and leaves the menu's alone
     rlog=$OUT/$size-reset.log
-    for kv in "theme = light" "sounds = off" "core.gba = mgba" "ra_shader = crt"; do
+    for kv in "theme = light" "sounds = off" "core.gba = mgba"; do
         k=${kv%% *}
         grep -q "^$k = " "$FX/data/settings.conf" && sed -i "s/^$k = .*/$kv/" "$FX/data/settings.conf" || printf '%s\n' "$kv" >> "$FX/data/settings.conf"
     done
-    # groups: Display & sound, Sleep & power, Nintendo DS, Other systems, Network, System (five R's); System's rows
+    # groups: Display & sound, Sleep & power, Nintendo DS, RetroArch, Network, System (five R's); System's rows
     # from Time zone: down seven to Reset system settings, A twice
-    run_reset() { "$HERE/banana-ui" --headless "$OUT/$size-" --size $size --assets "$HERE/assets/rnds" \
+    run_reset() { "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
         --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" --script "$1" 2>> "$rlog" ||
         { echo "FAIL $size: banana-ui (reset) exited $?"; fail=1; }; }
     run_reset "home 0; press start; press r; press r; press r; press r; press a; press down; press down; press down; press down; press down; press down; press down; press a; press a; wait 300; shot reset-system"
     grep -q '^theme = dark' "$FX/data/settings.conf" || { echo "FAIL $size: system reset didn't restore theme: $(grep '^theme' "$FX/data/settings.conf")"; fail=1; }
     grep -q '^sounds = on' "$FX/data/settings.conf" || { echo "FAIL $size: system reset didn't restore sounds"; fail=1; }
     grep -q '^core.gba = mgba' "$FX/data/settings.conf" || { echo "FAIL $size: system reset wiped an emulator core: $(grep '^core.gba' "$FX/data/settings.conf")"; fail=1; }
-    grep -q '^ra_shader = crt' "$FX/data/settings.conf" || { echo "FAIL $size: system reset wiped ra_shader"; fail=1; }
     # down eight from Time zone to Reset emulator settings, A twice (theme and sounds are already back)
     run_reset "home 0; press start; press r; press r; press r; press r; press a; press down; press down; press down; press down; press down; press down; press down; press down; press a; press a; wait 300; shot reset-emulator"
     grep -q '^core.gba = gpsp' "$FX/data/settings.conf" || { echo "FAIL $size: emulator reset didn't restore core.gba: $(grep '^core.gba' "$FX/data/settings.conf")"; fail=1; }
-    grep -q '^ra_shader = off' "$FX/data/settings.conf" || { echo "FAIL $size: emulator reset didn't restore ra_shader"; fail=1; }
     grep -q '^theme = dark' "$FX/data/settings.conf" || { echo "FAIL $size: emulator reset wiped a system key"; fail=1; }
     for s in reset-system reset-emulator; do
-        [ -s "$OUT/$size-$s-top.png" ] && [ -s "$OUT/$size-$s-bot.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }
+        [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }
     done
     # a layout theme (the image's pocket.json, the handheld's own): every screen drawn from its JSON, home ->
     # library -> a launch, and a tap on a system. It is the single-panel layout, so it runs at its own 640x557.
@@ -249,5 +246,22 @@ for size in 640x480 1024x768; do
     grep 'bench:' "$log" | sed "s/^banana-ui: /$size /"
     grep 'boot-metrics:' "$log" | sed "s/^banana-ui: /$size /"
 done
+# Settings: the menu has one screen (the RPC's panel), so the settings pages and their shots are rendered alone at
+# 640x557 -- the pages no longer have a second screen to draw the selected setting's description on.
+size=640x557
+slog=$OUT/$size-settings.log
+"$HERE/banana-ui" --headless "$OUT/$size-" --single --size $size --assets "$HERE/assets/rnds" \
+    --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
+    --script "home 0; press start; shot settings; press a; press down; shot settings-list; press r; press r; press r; press r; shot settings-system; press right; shot settings-tz; press b; press b; wait 1" 2> "$slog" ||
+    { echo "FAIL $size: banana-ui (settings) exited $?"; fail=1; }
+grep -q "press start: settings open" "$slog" || { echo "FAIL $size: settings didn't open"; fail=1; }
+grep -q "press b: settings closed" "$slog" || { echo "FAIL $size: settings didn't close"; fail=1; }
+grep -q '^timezone = [^U]' "$FX/data/settings.conf" || { echo "FAIL $size: the time zone wasn't saved"; fail=1; }
+for s in settings settings-list settings-system settings-tz; do
+    f=$OUT/$size-$s-top.png
+    [ -s "$f" ] || { echo "FAIL $size: no $f"; fail=1; continue; }
+    [ "$(convert "$f" -format '%[fx:standard_deviation>0.01]' info:)" = 1 ] || { echo "FAIL $size: $f is blank"; fail=1; }
+done
+for s in settings settings-system; do golden "$s-top" "$OUT/$size-$s-top.png"; done
 [ $fail = 0 ] && echo "banana-ui: all checks passed ($OUT)"
 exit $fail

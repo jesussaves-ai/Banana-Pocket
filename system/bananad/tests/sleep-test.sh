@@ -1,6 +1,6 @@
 #!/bin/sh
 # bananad's sleep, tested without the handheld: bananad runs in its own mount and PID namespaces against a made-up
-# /sys (the battery, the LEDs, the backlight, the RTC, /sys/power) and /dev/input (FIFOs that carry real
+# /sys (the battery, the backlight, the RTC, /sys/power) and /dev/input (FIFOs that carry real
 # struct input_event records). /sys/power/state is a FIFO: bananad's write of "mem" blocks until the test reads it,
 # which is the handheld being asleep; the test decides what the world looks like when it "wakes". A stand-in game
 # (its process group must be stopped while asleep) and a stand-in banana-ui (it must get SIGUSR1 after a wake).
@@ -40,7 +40,6 @@ echo 50 > /sys/class/power_supply/battery/capacity
 : > /sys/class/rtc/rtc0/wakealarm
 echo "s2idle [deep]" > /sys/power/mem_sleep
 echo 0 > /sys/power/pm_async
-for l in green:power red:status amber:charging; do mkdir -p /sys/class/leds/$l; : > /sys/class/leds/$l/trigger; : > /sys/class/leds/$l/brightness; done
 for b in backlight0 backlight1; do mkdir -p /sys/class/backlight/$b; echo 255 > /sys/class/backlight/$b/max_brightness; echo 200 > /sys/class/backlight/$b/brightness; echo 0 > /sys/class/backlight/$b/bl_power; done
 mkfifo /sys/power/state /dev/input/event0
 exec 3<>/dev/input/event0       # a writer that stays, so bananad's poll doesn't see a hang-up
@@ -160,6 +159,42 @@ wake
 sleep 0.4
 grep -q SIGUSR1 /run/test/ui-signals 2>/dev/null && ok "banana-ui was told to draw again (SIGUSR1)" || bad "banana-ui was not signalled after the wake"
 grep -q 'awake' /data/banana/logs/sleep.log && ok "the wake was logged" || bad "no wake logged"
+stop
+
+echo "8. the vibrate trigger: a file under /run/banana pulses it (no FF input here, so a no-op, but it must be consumed)"
+rm -f /run/banana/game.pid
+start
+: > /run/banana/vibrate
+sleep 0.4
+[ ! -e /run/banana/vibrate ] && ok "the trigger was consumed" || bad "the vibrate trigger was not consumed"
+power
+asleep && ok "still sleeps after a pulse" || bad "no suspend after a pulse"; wake
+stop
+
+echo "9. sleep_skip: a skipped SIGSTOP leaves the game running through the sleep (the debug bisect)"
+kill -CONT $GAME 2>/dev/null || true
+echo $GAME > /run/banana/game.pid
+start "sleep_check_hours = 0" "sleep_skip = stop"
+power
+asleep && ok "suspended with the stop skipped" || bad "no suspend"
+[ "$(gstate)" != T ] && ok "the game kept running (stop skipped)" || bad "the game was stopped anyway"
+wake; sleep 0.2
+grep -q "skipping 'stop'" /data/banana/logs/sleep.log && ok "logged the skipped step" || bad "the skip was not logged"
+stop
+
+echo "10. no RTC wakealarm (the RPC's ADSP-owned alarm): a low discharging battery refuses to sleep"
+rm -f /sys/class/rtc/rtc0/wakealarm
+echo Discharging > /sys/class/power_supply/battery/status
+echo 10 > /sys/class/power_supply/battery/capacity
+rm -f /run/banana/game.pid
+start "sleep_floor_percent = 15"
+power
+sleep 0.5
+asleep 2>/dev/null && bad "it slept a low battery with no wake source" || ok "refused to sleep the low battery"
+[ "$(cat /sys/class/backlight/backlight0/bl_power)" = 4 ] && ok "the panel went dark instead" || bad "panel not dark ($(cat /sys/class/backlight/backlight0/bl_power))"
+grep -q 'no RTC wake alarm' /data/banana/logs/sleep.log && ok "logged the refusal" || bad "refusal not logged"
+ev $EV_KEY 304 1; ev $EV_KEY 304 0; sleep 0.3      # BTN_SOUTH: the SoC never slept, so a press lights it again
+[ "$(cat /sys/class/backlight/backlight0/bl_power)" = 0 ] && ok "a press brings the panel back" || bad "panel stayed dark"
 stop
 
 kill $UI $GAME 2>/dev/null || true

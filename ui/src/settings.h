@@ -4,7 +4,7 @@
 // row per setting in the slots' style, ◀ value ▶ on the right, and the B / A chips, with the selected setting's
 // name and description in the strip below. Every change is applied and saved at once:
 //   /data/banana/settings.conf     the menu's (theme, motion, sounds, clock, splash, Wi-Fi)
-//   /data/banana/bananad.conf      sleep and the LEDs (bananad reloads it on SIGHUP)
+//   /data/banana/bananad.conf      sleep and power (bananad reloads it on SIGHUP)
 //   /data/retroarch/retroarch.cfg  RetroArch's (the panel, achievements, the cores)
 //   /sys/class/backlight + /data/banana/backlight   brightness
 #include "../rnds/RndsUI.h"
@@ -24,10 +24,9 @@ namespace banana
 	public:
 		Settings(rnds::Backend* be, const std::string& assets, const std::string& dataDir, float scale, const std::string& variant);
 		void setVariant(const std::string& variant);	// "dark", "light", or "carts" (dark, in Inter: setFontDir first)
-		// one panel (the RPC): the pages' list is drawn on the only screen, and what the second screen carried (the
-		// selected setting's description and help) goes in the strip of panel below it. canvasH: the panel's height
-		// in the same CSS px (the DS screen is 480; a 1240x1080 panel is 557)
-		void setSingle(bool v, float canvasHeight) { single = v; canvasH = canvasHeight; }
+		// The pages' list is drawn on the one screen, and the selected setting's description and help go in the strip
+		// of panel below it. canvasH: the panel's height in the same CSS px (a 1240x1080 panel is 557)
+		void setPanelHeight(float canvasHeight) { canvasH = canvasHeight; }
 		void setFontDir(const std::string& dir) { fontDir = dir; }
 		void open();
 		void close()
@@ -130,9 +129,9 @@ namespace banana
 		void openStates();
 		Result pressStates(Key k);
 		void renderStates();
-		// the keyboard types a text for a purpose: a Wi-Fi password, or an account's name or password
-		// (banana/accounts.conf: RetroAchievements for RetroArch, ScreenScraper for the scraper to come)
-		enum Entry { ENTRY_WIFI, ENTRY_RA_USER, ENTRY_RA_PASS, ENTRY_SS_USER, ENTRY_SS_PASS, ENTRY_SEARCH } entry = ENTRY_WIFI;
+		// the keyboard types a text for a purpose: a Wi-Fi password, or a RetroAchievements account's name or password
+		// (banana/accounts.conf)
+		enum Entry { ENTRY_WIFI, ENTRY_RA_USER, ENTRY_RA_PASS, ENTRY_SEARCH } entry = ENTRY_WIFI;
 		std::string entryTitle, entrySub;
 		Page entryBack = NETWORKS;
 		void startEntry(Entry e, const std::string& title, const std::string& sub, Page back, const std::string& start = "");
@@ -151,7 +150,7 @@ namespace banana
 		double toastUntil = 0;
 		void toast(const std::string& l1, const std::string& l2, uint32_t accent, int icon, double ms = 3000,
 				const std::string& badge = std::string());
-		// the first-time setup: the steps (Wi-Fi, the time zone, RetroAchievements, ScreenScraper), run once after
+		// the first-time setup: the steps (Wi-Fi, the time zone, RetroAchievements, box art), run once after
 		// the installation (banana/setup-done is written at the end) and from Settings > System
 		bool wizard = false;
 		int wsel = 0;
@@ -206,9 +205,7 @@ namespace banana
 		std::shared_ptr<rnds::Font> R, M;
 		std::string fontDir;		// Inter's TTFs (the Carts theme)
 		bool cleanFonts = false;
-		bool single = false;		// one panel: no second screen for the page's description
-					// Given to the constructor: build() runs there, so a setter afterwards would be too late
-		float canvasH = 480;		// the panel's height in CSS px (the DS screen is 480)
+		float canvasH = 480;		// the panel's height in CSS px (the strip under the list uses the part past 480)
 		// what the second screen said, under the list on one panel: its lines start where the DS screen ends
 		void footer(const std::string& text, const rnds::Color& c);
 		std::string fontsLoaded;	// the fonts R and M are (setVariant): a user theme's, or "carts"
@@ -226,11 +223,12 @@ namespace banana
 		float X(float v) const { return v * s; }
 		// motion: the list's highlight and scroll ease toward sel and top (in rows), the groups' highlight toward gsel
 		// (column and row); advanced at each render by the time since the last one
-		float aPick = -1, aTop = -1, aCol = -1, aRow = -1;
+		float aPick = -1, aTop = -1, aCol = -1, aRow = -1, aOff = -1;	// aOff: the grid's centring of a short last row
 		int aGroup = -1;
 		double aLast = 0;
 		bool aMoving = false;
 		void advance();
+		float tileOffset(int g) const;	// x inset that centres the last row of the groups grid (3 tiles to a row)
 		// box art: banana-scrape runs on its own and says how far it got in /run/banana/scrape.status
 		std::string scrapeLine;				// that file's line, as last read
 		double scrapeNext = 0;
@@ -239,7 +237,6 @@ namespace banana
 		bool pollScrape(double nowMs);		// true when the line changed
 		void startScrape();
 		std::string scrapeShort() const;	// for a row: "Not yet", "120 / 530", "410 of 530 found", "No connection"
-		void scrapeBar(float x, float y, float w);	// the progress bar and the game being fetched, while it runs
 		void box(const std::string& kind, bool on, float x, float y, float w, float h);
 		float text(const std::string& t, bool medium, float size, float x, float top, const rnds::Color& c, bool upper = false, float ls = 0, bool measureOnly = false);
 		void wrapped(const std::string& t, float size, float x, float top, float width, int maxLines, const rnds::Color& c);

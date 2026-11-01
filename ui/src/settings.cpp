@@ -277,11 +277,8 @@ namespace banana
 			add(D, "picture", "Theme", "ROCKNIXDS Pixel's two palettes, dark or light for daylight; Carts (experimental): your games as cartridges on a shelf, in a clean typeface; or a theme of your own: a .json in banana/themes on the card (banana/themes/README.txt says how).",
 				menu, "theme", names, values);
 		}
-		add(D, "picture", "Accent colour", "The colour of the selection, the logo and the boot animation's banana.", menu, "accent",
-			{ "Yellow", "Blue", "Red", "Green", "Purple", "Pink" }, { "yellow", "blue", "red", "green", "purple", "pink" });
 		add(D, "picture", "Brightness", "The panel's backlight. F + volume changes it anywhere, in games too.", "", "",
 			{ "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%" }, { "100", "200", "300", "400", "500", "600", "700", "800", "900", "1000" }, Item::BRIGHTNESS);
-		add(D, "picture", "Motion", "The top screen's bob and shine. Off holds it still and saves a little battery.", menu, "motion", { "On", "Off" }, { "on", "off" });
 		add(D, "music", "Volume", "The speakers or the headphones, whichever is playing. The volume keys change it anywhere.", "", "",
 			{ "0%", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%" }, { "0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100" }, Item::VOLUME);
 		add(D, "music", "Menu sounds", "The menu's clicks, and the cartridge going into the console.", menu, "sounds", { "On", "Off" }, { "on", "off" });
@@ -294,22 +291,10 @@ namespace banana
 			{ "Never", "5 minutes", "10 minutes", "15 minutes", "30 minutes" }, { "0", "5", "10", "15", "30" });
 		add(P, "moon", "Dim when idle", "In the menu, the panel goes down to a third after this long with no button pressed, and back at the first press. Never while a game is running.", power, "dim_minutes",
 			{ "Never", "1 minute", "2 minutes", "5 minutes" }, { "0", "1", "2", "5" });
-		add(P, "moon", "Waking up", "Fast: the handheld's parts wake up together. Careful: one after the other, slower but the safest. Banana switches to Careful by itself if a sleep ever fails.",
-			power, "fast_resume", { "Fast", "Careful" }, { "yes", "no" });
-		add(P, "moon", "LEDs", "Green, red when the battery is low, blinking red when nearly empty, amber while charging.", power, "led_brightness",
-			{ "Bright", "Dim", "Off" }, { "255", "40", "0" });
-		const char* O = "Other systems";
+		const char* O = "RetroArch";
 		add(O, "gamepad", "RetroAchievements", "Softcore: achievements unlock with save states, rewind and cheats still there. Hardcore: those are locked for the game, and the unlocks count as hardcore on retroachievements.org. RetroArch's own menu changes the same setting.",
 			"/data/retroarch/retroarch.cfg", "cheevos_hardcore_mode_enable", { "Softcore", "Hardcore" }, { "false", "true" });
 		add(O, "gamepad", "Quick resume", "On: quitting keeps where you are, and the game goes on from there next time (RetroArch's automatic save state; not in Hardcore). Off: a game starts from its title.", "/data/retroarch/retroarch.cfg", "savestate_auto_save", { "Off", "On" }, { "false", "true" });
-		add(O, "picture", "Shader", "A look for the systems RetroArch runs: a handheld's LCD grid, a CRT's scanlines, or sharp pixels at any size. RetroArch's own Shaders menu still picks any of libretro's Slang presets.",
-			menu, "ra_shader", { "Off", "LCD", "CRT", "Sharp pixels" }, { "off", "lcd", "crt", "sharp" });
-		add(O, "music", "Audio latency", "RetroArch's audio buffer. Low is the quickest to react and can crackle on a busy game; Default is the safe choice. (The RPC's DSP will not accept a larger buffer, so there is no Safe option.)",
-			menu, "ra_audio_latency", { "Low (32 ms)", "Default (64 ms)" }, { "32", "64" });
-		add(O, "picture", "VSync", "On waits for the panel's refresh before drawing the next frame, so nothing tears. Off lets a core run as fast as it can; the panel can show a half-drawn frame.",
-			menu, "ra_vsync", { "On", "Off" }, { "on", "off" });
-		add(O, "picture", "Integer scaling", "On packs the game into whole-pixel multiples with black borders (crisp, square pixels). Off fills the screen with the core's own aspect ratio.",
-			menu, "ra_scale", { "On", "Off" }, { "on", "off" });
 		if (access("/usr/lib/libretro/mgba_libretro.so", F_OK) == 0)
 			add(O, "gamepad", "Game Boy Advance", "The emulator for GBA games. gpSP: the fastest. mGBA: the most accurate, and the one RetroAchievements accepts for hardcore.", menu, "core.gba", { "gpSP", "mGBA" }, { "gpsp", "mgba" });
 		if (access("/usr/lib/libretro/swanstation_libretro.so", F_OK) == 0)
@@ -348,10 +333,10 @@ namespace banana
 		add(S, "gear", "SSH", "", menu, "ssh", { "Off", "On" }, { "off", "on" });
 		if (access("/run/banana/sd2/slot", F_OK) == 0)	// a second card slot (bananad's sd2 script)
 		add(S, "gear", "Second SD card", "Games on the card in the second slot (its roms folder, with the same system folders as this card) show up in the library with the others while it's in. exFAT or FAT32.", menu, "sd2_roms", { "Show its games", "Off" }, { "on", "off" });
-		add(S, "gear", "First-time setup", "The steps from the first boot again: Wi-Fi, the time zone and the RetroAchievements account (ScreenScraper: not available yet).", "", "setup", {}, {}, Item::PAGE);
-		add(S, "gear", "Reset system settings", "Puts the menu, display, sound, power and network settings back to their defaults (banana/settings.conf and the sleep/LED rows; your games and card are untouched). Press A twice.",
+		add(S, "gear", "First-time setup", "The steps from the first boot again: Wi-Fi, the time zone and the RetroAchievements account.", "", "setup", {}, {}, Item::PAGE);
+		add(S, "gear", "Reset system settings", "Puts the menu, display, sound, power and network settings back to their defaults (banana/settings.conf and bananad's sleep rows; your games and card are untouched). Press A twice.",
 			"", "reset_system", { "" }, { "" }, Item::ACTION);
-		add(S, "gear", "Reset emulator settings", "Puts the emulator choices back to their defaults: the core.<system> picks and RetroArch's shader, audio latency and VSync. Your menu and card settings stay. Press A twice.",
+		add(S, "gear", "Reset emulator settings", "Puts the emulator choices back to their defaults: the core.<system> picks. Your menu and card settings stay. Press A twice.",
 			"", "reset_emulator", { "" }, { "" }, Item::ACTION);
 		add(S, "gear", "About", "", "", "", {}, {}, Item::INFO);
 		add(S, "gear", "Restart", "Restarts the handheld. Press A twice.", "", "reboot", { "" }, { "" }, Item::ACTION);
@@ -362,37 +347,21 @@ namespace banana
 	{
 		if (it.key == "theme")
 		{
-			// The themes as they are on the card now: one copied over file sharing while the menu runs is listed the
-			// next time Settings opens (the list was made once, when banana-ui started). On the one panel a colour
-			// theme is forced to the Pocket layout (main.cpp, menuTheme), so Dark and Light would be rows that change
-			// nothing: there the list is the layout themes (and Carts) only.
-			it.names = single ? std::vector<std::string>{ "Carts" } : std::vector<std::string>{ "Dark", "Light", "Carts" };
-			it.values = single ? std::vector<std::string>{ "carts" } : std::vector<std::string>{ "dark", "light", "carts" };
+			// One panel: a colour theme (Dark/Light) is forced to the Pocket layout (main.cpp, menuTheme), so those
+			// would be rows that change nothing -- the list is the layout themes and Carts. A stored Dark/Light reads
+			// as the Pocket layout. A theme copied over file sharing while the menu runs is listed the next time
+			// Settings opens (the list was made once, when banana-ui started).
+			it.names = { "Carts" };
+			it.values = { "carts" };
 			for (auto& t : userThemes()) { it.names.push_back(t.name); it.values.push_back(t.value); }
-			if (single)
+			it.help = "The look of the menu, drawn from a theme's .json: the Pocket layout and its colour variations, or Carts (experimental). Your own go in banana/themes on the card (banana/themes/README.txt says how).";
+			std::string v = getConfValue(it.file, it.key, "dark");
+			if (v == "dark" || v == "light")
 			{
-				it.help = "The look of the menu, drawn from a theme's .json: the Pocket layout and its colour variations, or Carts (experimental). Your own go in banana/themes on the card (banana/themes/README.txt says how).";
-				std::string v = getConfValue(it.file, it.key, "dark");
-				if (v == "dark" || v == "light")
-				{
-					// a stored Dark/Light (the default, or a two-panel card) draws the Pocket layout here: show that
-					it.at = 0;
-					for (size_t i = 0; i < it.values.size(); i++) if (it.values[i] == "user:pocket") it.at = (int)i;
-					return;
-				}
+				it.at = 0;
+				for (size_t i = 0; i < it.values.size(); i++) if (it.values[i] == "user:pocket") it.at = (int)i;
+				return;
 			}
-		}
-		if (it.key == "accent")
-		{
-			// a theme with its own accent: the row says so and has nothing to pick (it came back to life when the theme
-			// changes: the Theme row loads it again)
-			static const std::vector<std::string> NAMES = { "Yellow", "Blue", "Red", "Green", "Purple", "Pink" },
-				VALUES = { "yellow", "blue", "red", "green", "purple", "pink" };
-			bool own = themeSetsAccent(getConfValue(data + "/settings.conf", "theme", "dark"));
-			it.names = own ? std::vector<std::string>{ "From the theme" } : NAMES;
-			it.values = own ? std::vector<std::string>{ getConfValue(it.file, "accent", "yellow") } : VALUES;
-			it.help = own ? "This theme sets its own accent colour. Pick Dark, Light or a theme without one to choose it here."
-				: "The colour of the selection, the logo and the boot animation's banana.";
 		}
 		if (it.kind == Item::BRIGHTNESS)
 		{
@@ -439,7 +408,6 @@ namespace banana
 		// the system's defaults where the data partition has none yet
 		if (it.file == data + "/bananad.conf") def = getConfValue("/etc/banana/bananad.conf", it.key, def);
 		if (it.file == data + "/settings.conf") def = getConfValue("/etc/banana/settings.conf", it.key, def);
-		if (it.key == "led_brightness") def = getConfValue("/etc/banana/bananad.conf", it.key, "128");
 		if (it.file.find("retroarch.cfg") != std::string::npos) def = getConfValue("/etc/banana/retroarch.cfg", it.key, def);
 		std::string v = getConfValue(it.file, it.key, def);
 		it.at = -1;
@@ -448,14 +416,8 @@ namespace banana
 		// a value the list doesn't have (set by hand, or a shader added later): shown as it is and kept, rather than
 		// shown as the first choice and lost at the first press
 		// (not the theme: a user theme whose file has gone shows Dark, which is what the menu draws then)
-		if (it.at < 0 && !v.empty() && it.key != "led_brightness" && it.key != "theme") { it.names.push_back(v); it.values.push_back(v); it.at = (int)it.values.size() - 1; }
+		if (it.at < 0 && !v.empty() && it.key != "theme") { it.names.push_back(v); it.values.push_back(v); it.at = (int)it.values.size() - 1; }
 		if (it.at < 0) it.at = 0;
-		// a value between the choices (the LEDs at 128): the nearest one
-		if (it.key == "led_brightness")
-		{
-			int n = atoi(v.c_str());
-			it.at = n == 0 ? 2 : (n < 100 ? 1 : 0);
-		}
 	}
 
 	void Settings::refreshInfo()
@@ -606,8 +568,8 @@ namespace banana
 			closedir(d);
 		}
 		std::sort(cores.begin(), cores.end());
-		opt("Emulator", "The core this one game runs with. Default follows the system's own emulator (Settings > Other systems).", core, cores);
-		opt("Shader", "The look for this one game. Default follows Settings > Other systems > Shader.", shader,
+		opt("Emulator", "The core this one game runs with. Default follows the system's own emulator (Settings > RetroArch).", core, cores);
+		opt("Shader", "The look for this one game, over RetroArch's own. Default leaves RetroArch's shader choice alone.", shader,
 			{ { "Off", "off" }, { "LCD", "lcd" }, { "CRT", "crt" }, { "Sharp pixels", "sharp" } });
 		scanStates();	// (a game has at most a handful; the row's value is their count)
 		{
@@ -669,10 +631,6 @@ namespace banana
 		}
 		else
 			setConfValue(it.file, it.key, v);
-		// the Shader row: run-retroarch applies the setting (writes or removes RetroArch's global preset) when it
-		// changes, so dropping the marker here has the next game start put this value in place. Between changes a
-		// preset loaded, saved or removed in RetroArch's own menu is left alone.
-		if (it.key == "ra_shader") unlink("/data/retroarch/.banana-shader-setting");
 		if (it.file == data + "/bananad.conf") poke("bananad");
 		if (it.key == "timezone") { setenv("TZ", v.c_str(), 1); tzset(); poke("bananad"); }	// bananad's logs too
 		if (it.key == "wifi") spawn("/usr/libexec/banana/wifi", v == "on" ? "up" : "down");
@@ -724,10 +682,8 @@ namespace banana
 		if (it.key == "theme")
 		{
 			setVariant(it.values[at]);
-			for (auto& x : items) if (x.key == "accent") load(x);	// "From the theme", or the colours again
 			return THEME;
 		}
-		if (it.key == "accent") { setVariant(getConfValue(data + "/settings.conf", "theme", "dark")); return THEME; }	// (saved above)
 		return CHANGED;
 	}
 
@@ -741,11 +697,10 @@ namespace banana
 
 		if (!emulator)
 		{
-			// what the settings screen keeps outside settings.conf: bananad's sleep/LED rows (same defaults the rows
+			// what the settings screen keeps outside settings.conf: bananad's sleep rows (same defaults the rows
 			// show when the card has no line), the backlights and the mixer's level
 			static const struct { const char* key; const char* def; } BANANAD[] = {
-				{ "autosleep_minutes", "10" }, { "dim_minutes", "2" },
-				{ "fast_resume", "yes" }, { "led_brightness", "128" } };
+				{ "autosleep_minutes", "10" }, { "dim_minutes", "2" } };
 			for (const auto& b : BANANAD)
 				setConfValue(data + "/bananad.conf", b.key, getConfValue("/etc/banana/bananad.conf", b.key, b.def));
 			if (DIR* d = opendir("/sys/class/backlight"))
@@ -888,7 +843,6 @@ namespace banana
 			{
 				float ry = 82 + r * 64;
 				if (downY < ry || downY > ry + 56) continue;
-				if (r == 3) return NONE;	// ScreenScraper: greyed out
 				if (r != wsel) { wsel = r; return MOVED; }
 				return pressSetup(Key::A);
 			}
@@ -999,6 +953,21 @@ namespace banana
 				st.radius = X(10); st.border = b3; st.borderColor = p.edge; st.bg = p.panelBody;
 				st.bands = { rnds::Band{ 0, X(8), p.bubbleBand }, rnds::Band{ X(8), -1, p.panelBody } };
 				st.shadows = { inset(0, -X(4), 0, p.panelLow), outer(X(3), X(3), p.blackish) };
+			}
+			else if (kind == "chip")	// a row's value: a quiet plate, no outer shadow so a list of them stays light
+			{
+				st.radius = X(9); st.border = std::max(1.0f, std::round(s)); st.borderColor = p.line; st.bg = p.bubbleBody;
+				st.bands = { rnds::Band{ 0, X(6), p.bubbleBand }, rnds::Band{ X(6), -1, p.bubbleBody } };
+				st.shadows = { inset(0, -X(3), 0, p.bubbleLow) };
+			}
+			else if (kind == "key" || kind == "keyOn")	// a keyboard key: flat and light, so a grid of them isn't a wall of blocks
+			{
+				bool kOn = kind == "keyOn";
+				st.radius = X(9); st.border = std::max(1.0f, std::round(s));
+				st.borderColor = kOn ? p.pickEdge : p.line;
+				st.bg = kOn ? p.pick : p.panelBody;
+				st.bands = { rnds::Band{ 0, X(5), kOn ? p.pickBand : p.panelBand } };
+				st.shadows = { inset(0, -X(2), 0, kOn ? p.pickLow : p.panelLow) };
 			}
 			else if (kind == "osd")	// ROCKNIXDS's pop-up card (BN's in-game menu): a light border, dark and dotted inside
 			{
@@ -1214,10 +1183,19 @@ namespace banana
 		return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
 	}
 
+	// the groups grid has 3 tiles to a row; a last row with fewer is inset so the block reads centred rather than
+	// leaving a hole in the bottom-right
+	float Settings::tileOffset(int g) const
+	{
+		int n = std::min<int>((int)groups.size(), 6);
+		int row = g / 3, inRow = std::min(3, n - row * 3);
+		return inRow > 0 ? (3 - inRow) * 204 / 2.0f : 0;
+	}
+
 	bool Settings::animating() const
 	{
 		if (!mOpen || page != LIST) return false;
-		if (inGroups) return aCol != gsel % 3 || aRow != gsel / 3;
+		if (inGroups) return aCol != gsel % 3 || aRow != gsel / 3 || aOff != tileOffset(gsel);
 		return aPick != sel || aTop != top;
 	}
 
@@ -1228,7 +1206,7 @@ namespace banana
 		aLast = t;
 		float k = 1 - (float)std::exp(-dt / 55.0);
 		auto ease = [&](float& v, float to) { if (v < -0.5f) v = to; v += (to - v) * k; if (std::fabs(to - v) < 0.01f) v = to; };
-		if (inGroups) { ease(aCol, (float)(gsel % 3)); ease(aRow, (float)(gsel / 3)); }
+		if (inGroups) { ease(aCol, (float)(gsel % 3)); ease(aRow, (float)(gsel / 3)); ease(aOff, tileOffset(gsel)); }
 		else
 		{
 			int g = groupOf(sel);
@@ -1242,28 +1220,10 @@ namespace banana
 	{
 		SPal p = pal(light);
 		int g0 = std::max(0, std::min(gsel, (int)groups.size() - 1));
-		const Item& first = items[groupStart(g0)];
-
 		std::string all;
 		for (int i = groupStart(g0); i < groupEnd(g0); i++) all += (all.empty() ? "" : ", ") + items[i].label;
 
-		// the DS's top screen: the group being chosen; one panel has the strip instead
-		if (!single)
-		{
-			be->beginScreen(0);
-			box("screen", false, 0, 0, 640, 480);
-			box("hero", false, 18, 20, 604, 436);
-			icon(first.icon, 50, 56, 3);
-			text("Settings", true, 17, 170, 62, p.muted, true, 1.4f);
-			text(groups[g0], true, 30, 170, 88, p.ink);
-			char n[32];
-			snprintf(n, sizeof n, "%d settings", groupEnd(g0) - groupStart(g0));
-			text(n, true, 22, 170, 130, p.accent);
-			wrapped(all + ".", 20, 50, 196, 540, 7, p.muted);
-			be->endScreen();
-		}
-
-		be->beginScreen(single ? 0 : 1);
+		be->beginScreen(0);
 		box("screen", false, 0, 0, 640, 480);
 		box("bubble", false, 18, 14, 604, 54);
 		text("Settings", true, 22, 38, 28, p.ink);
@@ -1272,12 +1232,15 @@ namespace banana
 		text(sub, true, 17, 602 - sw, 31, p.muted);
 		advance();
 		aGroup = -1;	// (the list starts still when a group opens)
-		for (int g = 0; g < (int)groups.size() && g < 6; g++) box("slot", false, 18 + (g % 3) * 204, 82 + (g / 3) * 166, 196, 158);
-		box("pick", true, 18 + aCol * 204, 82 + aRow * 166, 196, 158);
-		for (int g = 0; g < (int)groups.size() && g < 6; g++)
+		int gcount = std::min<int>((int)groups.size(), 6);
+		auto tileX = [&](int g) { return 18 + tileOffset(g) + (g % 3) * 204; };
+		auto tileY = [&](int g) { return 82 + (g / 3) * 166; };
+		for (int g = 0; g < gcount; g++) box("slot", false, tileX(g), tileY(g), 196, 158);
+		box("pick", true, 18 + aOff + aCol * 204, 82 + aRow * 166, 196, 158);
+		for (int g = 0; g < gcount; g++)
 		{
 			bool on = std::fabs(g % 3 - aCol) < 0.5f && std::fabs(g / 3 - aRow) < 0.5f;
-			float x = 18 + (g % 3) * 204, y = 82 + (g / 3) * 166;
+			float x = tileX(g), y = tileY(g);
 			iconCentred(items[groupStart(g)].icon, x + 98, y + 22, 2);
 			std::string label = fit(groups[g], true, 19, 180);
 			float lw = text(label, true, 19, 0, 0, p.ink, false, 0, true);
@@ -1285,12 +1248,22 @@ namespace banana
 			std::string hint = fit(groupHint(g), false, 14, 176);
 			float hw = text(hint, false, 14, 0, 0, p.muted, false, 0, true);
 			text(hint, false, 14, x + 98 - hw / 2, y + 114, on ? p.onPickAccent : p.muted);
+			if (on)
+			{
+				// the selected group's size, a small plate in the tile's corner
+				char cb[12];
+				snprintf(cb, sizeof cb, "%d", groupEnd(g) - groupStart(g));
+				float tw = text(cb, true, 14, 0, 0, p.kbdInk, false, 0, true);
+				float bw2 = tw + 16;
+				box("kbd", false, x + 196 - bw2 - 10, y + 10, bw2, 22);
+				text(cb, true, 14, x + 196 - bw2 - 10 + 8, y + 14, p.kbdInk);
+			}
 		}
 		float bw = faceWidth("B", "Close");
 		face("B", "Close", 18, bw);
 		float aw = faceWidth("A", "Open");
 		face("A", "Open", 622 - aw, aw);
-		if (single) footer(groups[g0] + ": " + all + ".", p.muted);
+		footer(groups[g0] + ": " + all + ".", p.muted);
 		be->endScreen();
 	}
 
@@ -1306,8 +1279,7 @@ namespace banana
 		const Item& cur = items[sel];
 		int gb = groupStart(groupOf(sel)), ge = groupEnd(groupOf(sel));
 
-		// what the selected setting is and does: on the DS's top screen, and on one panel in the strip under the list
-		std::string value = cur.kind == Item::CHOICE || cur.kind == Item::BRIGHTNESS || cur.kind == Item::VOLUME ? cur.names[cur.at] : "";
+		// what the selected setting does: in the strip under the list
 		std::string help = cur.help;
 		if (cur.kind == Item::INFO) help = about;
 		if (cur.key == "wifi") help = "Wi-Fi: " + wifiInfo + ". Network, below, joins one; networks can also be written in banana/wifi.conf on a computer (see banana/README.txt).";
@@ -1325,30 +1297,12 @@ namespace banana
 		}
 		if (cur.key == "scrape" && scraping()) help = "Fetching covers and title screens. The menu shows them as they come, and it carries on if you leave this screen.";
 
-		// ---- top: what the selected setting is (the DS's second screen; one panel has the strip instead) ----
-		if (!single)
-		{
-			be->beginScreen(0);
-			box("screen", false, 0, 0, 640, 480);
-			box("hero", false, 18, 20, 604, 436);
-			icon(cur.icon, 50, 56, 3);
-			text(cur.section, true, 17, 170, 62, p.muted, true, 1.4f);
-			text(cur.label, true, 30, 170, 88, p.ink);
-			if (!value.empty()) text(value, true, 22, 170, 130, p.accent);
-			if (cur.key == "scrape" && scraping())
-			{
-				wrapped(help, 20, 50, 196, 540, 4, p.muted);
-				scrapeBar(50, 330, 540);
-			}
-			else wrapped(help, 20, 50, 196, 540, 7, p.muted);
-			be->endScreen();
-		}
-
 		// ---- the list ----
-		be->beginScreen(single ? 0 : 1);
+		be->beginScreen(0);
 		box("screen", false, 0, 0, 640, 480);
 		box("bubble", false, 18, 14, 604, 54);
-		text(cur.section, true, 22, 38, 28, p.ink);
+		icon(items[gb].icon, 36, 25, 1);
+		text(cur.section, true, 22, 84, 28, p.ink);
 		char count[32];
 		snprintf(count, sizeof count, "%02d / %02d", sel - gb + 1, ge - gb);
 		float cw = text(count, true, 17, 0, 0, p.muted, false, 0, true);
@@ -1365,7 +1319,9 @@ namespace banana
 			const Item& it = items[i];
 			bool on = std::fabs(i - aPick) < 0.5f;
 			float y = 82 + (i - aTop) * 64;
-			text(it.label, true, 20, 38, y + 16, on ? p.onPick : p.muted);
+			// the row's own icon (the same picture/music/moon/... the group tiles draw), so the list reads at a glance
+			icon(it.icon, 34, y + 12, 1);
+			text(it.label, true, 20, 84, y + 16, on ? p.onPick : p.muted);
 			std::string v;
 			if (it.kind == Item::CHOICE || it.kind == Item::BRIGHTNESS || it.kind == Item::VOLUME) v = it.names[it.at];
 			else if (it.kind == Item::ACTION) v = armed == i ? "Press A again" : "";
@@ -1379,7 +1335,26 @@ namespace banana
 			if (v.empty()) continue;
 			float vw = text(v, true, 19, 0, 0, p.ink, false, 0, true);
 			Color vc = on ? (armed == i ? p.onPickAccent : p.onPick) : p.muted;
+			// the value's own plate (not on the pick: the raised yellow plate is framing enough there)
+			if (!on) box("chip", false, 566 - vw - 8, y + 13, vw + 16, 30);
 			if (it.kind == Item::ACTION || it.kind == Item::PAGE) { text(v, true, 19, 586 - vw, y + 17, vc); continue; }
+			if (it.kind == Item::BRIGHTNESS || it.kind == Item::VOLUME)
+			{
+				// the in-menu bar (the hero panel's, on one screen too): [····] 50%, no arrows (the bar is the affordance)
+				int pct = atoi(it.values[it.at].c_str());
+				if (it.kind == Item::BRIGHTNESS) pct /= 10;		// (the card keeps it in per-mille)
+				pct = std::min(100, std::max(0, pct));
+				text(v, true, 19, 566 - vw, y + 17, vc);
+				float bx1 = (566 - vw - 8) - 14, bx0 = 350;
+				float seg = (bx1 - bx0) / 10, gap = std::max(2.0f, std::round(3 * s)) / s;
+				for (int k = 0; k < 10; k++)
+				{
+					float sx = std::round(X(bx0 + k * seg)), ex = std::round(X(bx0 + (k + 1) * seg - gap));
+					be->fill(sx, std::round(X(y + 21)), ex - sx, std::round(X(14)),
+						k < (pct + 5) / 10 ? (on ? p.onPick : p.accent) : (on ? p.onPickAccent : p.line));
+				}
+				continue;
+			}
 			arrow(true, 576, y + 21, vc);
 			text(v, true, 19, 566 - vw, y + 17, vc);
 			arrow(false, 556 - vw - 2 - std::round(13 / 2.0f + 1), y + 21, vc);
@@ -1393,7 +1368,7 @@ namespace banana
 			float aw = faceWidth("A", act);
 			face("A", act, 622 - aw, aw);
 		}
-		if (single) footer(help, p.muted);
+		footer(help, p.muted);
 		be->endScreen();
 	}
 
@@ -1405,8 +1380,10 @@ namespace banana
 		be->fill(0, X(480), X(640), X(h), p.screenBg);
 		if (!t.empty() && h > 26)
 		{
-			int lines = std::max(1, (int)((h - 6) / 22));	// (17px text: a line is 24 high)
-			wrapped(t, 16, 22, 486, 596, lines, c);
+			// the second screen's words, framed like the header, on the strip one panel has below the list
+			box("bubble", false, 12, 486, 616, h - 12);
+			int lines = std::max(1, (int)((h - 20) / 22));	// (17px text: a line is 24 high)
+			wrapped(t, 16, 28, 494, 584, lines, c);
 		}
 	}
 
@@ -1630,7 +1607,7 @@ namespace banana
 		return 0;
 	}
 	// the keyboard: the text being typed in a field at the top, the keys under it, the button chips at the bottom
-	static const float KX = 18, KPITCH = 60.4f, KY = 80, KROW = 66, KH = 58;
+	static const float KX = 18, KPITCH = 60.4f, KY = 80, KROW = 66, KH = 50;
 
 	Settings::Result Settings::keyboardKey(int row, int col)
 	{
@@ -1763,23 +1740,9 @@ namespace banana
 		if (help.empty())
 			help = !wifiEnabled ? "Wi-Fi is switched off. X switches it on and searches."
 				: "A joins the network chosen, with its password typed on the keyboard (or by touch). X searches again, Y forgets a saved network. Passwords are kept in banana/wifi.conf on the card.";
-		if (single) help = st + ". " + help;
+		help = st + ". " + help;
 
-		// the DS's top screen: the state and what the buttons do; one panel has the strip instead
-		if (!single)
-		{
-			be->beginScreen(0);
-			box("screen", false, 0, 0, 640, 480);
-			box("hero", false, 18, 20, 604, 436);
-			icon("phone", 50, 56, 3);
-			text("Network", true, 17, 170, 62, p.muted, true, 1.4f);
-			text("Wi-Fi networks", true, 30, 170, 88, p.ink);
-			text(fit(st, true, 22, 420), true, 22, 170, 130, p.accent);
-			wrapped(help, 20, 50, 196, 540, 7, p.muted);
-			be->endScreen();
-		}
-
-		be->beginScreen(single ? 0 : 1);
+		be->beginScreen(0);
 		box("screen", false, 0, 0, 640, 480);
 		box("bubble", false, 18, 14, 604, 54);
 		text("Networks", true, 22, 38, 28, p.ink);
@@ -1817,7 +1780,7 @@ namespace banana
 			float aw = faceWidth("A", act);
 			face("A", act, 622 - aw, aw);
 		}
-		if (single) footer(help, message.empty() ? p.muted : p.accent);
+		footer(help, message.empty() ? p.muted : p.accent);
 		be->endScreen();
 	}
 
@@ -1829,38 +1792,10 @@ namespace banana
 			: entry == ENTRY_WIFI ? "A types the key, B deletes, X capitals, L symbols, Y a space, START joins. Or tap the keys. The password is kept in banana/wifi.conf on the card."
 			: "A types the key, B deletes, X capitals, L symbols, Y a space, START when it is typed. Or tap the keys. Accounts are kept in banana/accounts.conf on the card.";
 		// the DS's top screen: the field and the help; one panel has the field on the keys' screen and the help below
-		if (!single)
-		{
-			be->beginScreen(0);
-			box("screen", false, 0, 0, 640, 480);
-			box("hero", false, 18, 20, 604, 436);
-			icon(entry == ENTRY_SEARCH ? "search" : "phone", 50, 56, 3);
-			text(entryTitle, true, 17, 170, 62, p.muted, true, 1.4f);
-			text(fit(entrySub, true, 30, 420), true, 30, 170, 88, p.ink);
-			box("slot", true, 50, 150, 540, 56);
-			// the end of the password when it is longer than the field
-			std::string shown = pw;
-			float w = text(shown, true, 22, 0, 0, p.ink, false, 0, true);
-			while (w > 480 && shown.size() > 1) { shown.erase(0, 1); w = text("..." + shown, true, 22, 0, 0, p.ink, false, 0, true); }
-			if (shown != pw) shown = "..." + shown;
-			if (pw.empty()) w = 0;
-			else text(shown, true, 22, 70, 165, p.ink);
-			be->fill(std::round(X(72 + w)), std::round(X(166)), std::round(X(10)), std::round(X(24)), p.accent);	// the cursor
-			std::string n = std::to_string(pw.size()) + (pw.size() == 1 ? " character" : " characters");
-			if (entry == ENTRY_SEARCH && searchCount)
-			{
-				int m = pw.empty() ? -1 : searchCount(pw);
-				n = m < 0 ? "Every system's games" : m == 0 ? "No games match" : std::to_string(m) + (m == 1 ? " game matches" : " games match");
-			}
-			text(n, true, 17, 50, 216, p.muted);
-			wrapped(help, 20, 50, 252, 540, 6, message.empty() ? p.muted : p.accent);
-			be->endScreen();
-		}
-
-		be->beginScreen(single ? 0 : 1);
+		be->beginScreen(0);
 		box("screen", false, 0, 0, 640, 480);
 		// the text being typed, here too, so the keys and what they make are seen together
-		box("slot", true, 18, 12, 604, 56);
+		box("key", true, 18, 12, 604, 50);
 		{
 			// at the right: the length of a password; for a search the games it finds (a bare number there read as a
 			// match count)
@@ -1876,10 +1811,10 @@ namespace banana
 			float tw = text(t, true, 24, 0, 0, p.ink, false, 0, true);
 			while (tw > room && t.size() > 1) { t.erase(0, 1); tw = text("..." + t, true, 24, 0, 0, p.ink, false, 0, true); }
 			if (t != pw) t = "..." + t;
-			if (pw.empty()) { tw = 0; text(entrySub.empty() ? "Type here" : entrySub, true, 22, 38, 28, p.muted); }
-			else text(t, true, 24, 38, 27, p.ink);
-			be->fill(std::round(X(40 + tw)), std::round(X(26)), std::round(X(10)), std::round(X(28)), p.accent);	// the cursor
-			text(n, true, 17, 600 - nw, 31, p.muted);
+			if (pw.empty()) { tw = 0; text(entrySub.empty() ? "Type here" : entrySub, true, 22, 38, 24, p.muted); }
+			else text(t, true, 24, 38, 23, p.ink);
+			be->fill(std::round(X(40 + tw)), std::round(X(22)), std::round(X(10)), std::round(X(26)), p.accent);	// the cursor
+			text(n, true, 17, 600 - nw, 27, p.muted);
 		}
 		// the keys: the selected one in the menu's yellow, the others light on dark
 		for (int r = 0; r < 4; r++)
@@ -1887,22 +1822,22 @@ namespace banana
 			{
 				float x = KX + c * KPITCH, y = KY + r * KROW;
 				bool on = r == krow && c == kcol;
-				box(on ? "pick" : "slot", on, x, y, KPITCH - 6, KH);
+				box(on ? "keyOn" : "key", on, x, y, KPITCH - 8, KH);
 				std::string k(1, KEYS[layer][r][c]);
-				float tw = text(k, true, 28, 0, 0, p.ink, false, 0, true);
-				text(k, true, 28, x + std::round((KPITCH - 6 - tw) / 2), y + 13, on ? p.onPick : p.ink);
+				float tw = text(k, true, 26, 0, 0, p.ink, false, 0, true);
+				text(k, true, 26, x + std::round((KPITCH - 8 - tw) / 2), y + 12, on ? p.onPick : p.ink);
 			}
 		int fsel = krow == 4 ? fkeyAt(kcol) : -1;
 		for (int i = 0; i < 5; i++)
 		{
-			float x = KX + FKEYS[i].c0 * KPITCH, y = KY + 4 * KROW, kw = FKEYS[i].span * KPITCH - 6;
+			float x = KX + FKEYS[i].c0 * KPITCH, y = KY + 4 * KROW, kw = FKEYS[i].span * KPITCH - 8;
 			bool on = i == fsel;
-			box(on ? "pick" : "slot", on, x, y, kw, KH);
+			box(on ? "keyOn" : "key", on, x, y, kw, KH);
 			std::string k = i == 1 && layer == 2 ? "abc" : i == 0 && layer == 1 ? "SHIFT" : FKEYS[i].name;
 			if (i == 4) k = entry == ENTRY_WIFI ? "Join" : "Done";
 			bool lit = (i == 0 && layer == 1) || (i == 1 && layer == 2);
-			float tw = text(k, true, 21, 0, 0, p.ink, false, 0, true);
-			text(k, true, 21, x + std::round((kw - tw) / 2), y + 17, on ? p.onPick : lit ? p.accent : p.ink);
+			float tw = text(k, true, 20, 0, 0, p.ink, false, 0, true);
+			text(k, true, 20, x + std::round((kw - tw) / 2), y + 15, on ? p.onPick : lit ? p.accent : p.ink);
 		}
 		// the buttons that work anywhere on the keyboard
 		const std::string bl = pw.empty() ? "Back" : "Delete", done = entry == ENTRY_WIFI ? "Join" : "Done";
@@ -1916,7 +1851,7 @@ namespace banana
 		}
 		float aw = faceWidth("START", done);
 		face("START", done, 622 - aw, aw);
-		if (single) footer(help, message.empty() ? p.muted : p.accent);
+		footer(help, message.empty() ? p.muted : p.accent);
 		be->endScreen();
 	}
 
@@ -1993,23 +1928,10 @@ namespace banana
 		else if (ustatus.compare(0, 6, "failed") == 0) help = "The update wasn't applied: " + ustatus.substr(8) + ". This version is untouched.";
 		else if (pkgs.empty()) help = "No update packages found. Put a banana-" + (board.empty() ? std::string("<board>") : board) + "-<version>.update.tar from a release in banana/updates on the card (File sharing can copy it over Wi-Fi), then come back here.";
 		else help = "A on a package writes it to the other slot and checks it; the running version stays until the restart. Packages are in banana/updates on the card.";
-		if (single) help = st + ". " + help;
+		help = st + ". " + help;
 
 		// the DS's top screen: the state and what an update does; one panel has the strip instead
-		if (!single)
-		{
-			be->beginScreen(0);
-			box("screen", false, 0, 0, 640, 480);
-			box("hero", false, 18, 20, 604, 436);
-			icon("gear", 50, 56, 3);
-			text("System", true, 17, 170, 62, p.muted, true, 1.4f);
-			text("Update", true, 30, 170, 88, p.ink);
-			text(fit(st, true, 22, 420), true, 22, 170, 130, p.accent);
-			wrapped(help, 20, 50, 196, 540, 7, p.muted);
-			be->endScreen();
-		}
-
-		be->beginScreen(single ? 0 : 1);
+		be->beginScreen(0);
 		box("screen", false, 0, 0, 640, 480);
 		box("bubble", false, 18, 14, 604, 54);
 		text("Update packages", true, 22, 38, 28, p.ink);
@@ -2037,7 +1959,7 @@ namespace banana
 			float aw = faceWidth("A", act);
 			face("A", act, 622 - aw, aw);
 		}
-		if (single) footer(help, p.muted);
+		footer(help, p.muted);
 		be->endScreen();
 	}
 	// ---- the save states a game has (the states page) -----------------------------------------------------------
@@ -2176,22 +2098,9 @@ namespace banana
 			: states.empty()
 				? "No save states for this game yet. RetroArch writes one when a game quits (Quick resume) and when you save to a slot in-game; they are in banana/states on the card."
 				: "A on a state deletes it (press A again to confirm); Y keeps a copy of it beside the others as a backup. RetroArch loads the game's own state when it starts again (Quick resume).";
-		if (single) help = gameTitle + " \xc2\xb7 " + help;
+		help = gameTitle + " \xc2\xb7 " + help;
 
-		if (!single)
-		{
-			be->beginScreen(0);
-			box("screen", false, 0, 0, 640, 480);
-			box("hero", false, 18, 20, 604, 436);
-			icon("gear", 50, 56, 3);
-			text("Save states", true, 17, 170, 62, p.muted, true, 1.4f);
-			text(fit(gameTitle, true, 30, 420), true, 30, 170, 88, p.ink);
-			text(states.empty() ? "None" : std::to_string(states.size()) + (states.size() == 1 ? " state" : " states"), true, 22, 170, 130, p.accent);
-			wrapped(help, 20, 50, 196, 540, 7, p.muted);
-			be->endScreen();
-		}
-
-		be->beginScreen(single ? 0 : 1);
+		be->beginScreen(0);
 		box("screen", false, 0, 0, 640, 480);
 		box("bubble", false, 18, 14, 604, 54);
 		text("Save states", true, 22, 38, 28, p.ink);
@@ -2223,7 +2132,7 @@ namespace banana
 			float yw = faceWidth("Y", "Copy");
 			face("Y", "Copy", 320 - yw / 2, yw);
 		}
-		if (single) footer(help, p.muted);
+		footer(help, p.muted);
 		be->endScreen();
 	}
 	// ---- the keyboard's purposes, and the accounts file -------------------------------------------------------
@@ -2269,17 +2178,6 @@ namespace banana
 		case ENTRY_RA_PASS:
 			setConfValue(data + "/accounts.conf", "ra_password", pw, "=");
 			startRaCheck(account("ra_user"), pw);	// says at once whether the login works
-			pw.clear();
-			page = entryBack;
-			message.clear();
-			return CHANGED;
-		case ENTRY_SS_USER:
-			if (pw.empty()) { message = "The account's name, as on screenscraper.fr."; return MOVED; }
-			setConfValue(data + "/accounts.conf", "ss_user", pw, "=");
-			startEntry(ENTRY_SS_PASS, "ScreenScraper password for", pw, entryBack);
-			return CHANGED;
-		case ENTRY_SS_PASS:
-			setConfValue(data + "/accounts.conf", "ss_password", pw, "=");
 			pw.clear();
 			page = entryBack;
 			message.clear();
@@ -2554,7 +2452,7 @@ namespace banana
 		SPal p = pal(light);
 		Item* tz = nullptr;
 		for (auto& it : items) if (it.key == "timezone") tz = &it;
-		std::string ra = account("ra_user"), ss = account("ss_user");
+		std::string ra = account("ra_user");
 		static const char* names[5] = { "Wi-Fi", "Time zone", "RetroAchievements", "Box art", "Finish" };
 		std::string status[5] = {
 			wstat.connected ? "Connected to " + wstat.ssid : wifiOn() ? "Not connected" : "Off",
@@ -2569,28 +2467,9 @@ namespace banana
 			"Covers, title screens, genres and years for the games on the card, from libretro's free collections: no account. A starts it (Wi-Fi first); it keeps going while you finish the setup, and the menu shows the art as it comes. Settings > System > Box art runs it again for new games.",
 			"Everything here is in the settings too (Start in the menu), and this setup is under System > First-time setup. A finishes." };
 		std::string help = message.empty() ? helps[wsel] : message;
-		if (single) help = (status[wsel].empty() ? "" : status[wsel] + ". ") + help;
+		help = (status[wsel].empty() ? "" : status[wsel] + ". ") + help;
 
-		// the DS's top screen: the step and what it is for; one panel has the strip instead
-		if (!single)
-		{
-			be->beginScreen(0);
-			box("screen", false, 0, 0, 640, 480);
-			box("hero", false, 18, 20, 604, 436);
-			icon("gear", 50, 56, 3);
-			text("First-time setup", true, 17, 170, 62, p.muted, true, 1.4f);
-			text(names[wsel], true, 30, 170, 88, p.ink);
-			if (!status[wsel].empty()) text(fit(status[wsel], true, 22, 420), true, 22, 170, 130, p.accent);
-			if (wsel == 3 && scraping())
-			{
-				wrapped("Fetching covers and title screens. It carries on while you finish the setup.", 20, 50, 196, 540, 4, p.muted);
-				scrapeBar(50, 330, 540);
-			}
-			else wrapped(help, 20, 50, 196, 540, 7, p.muted);
-			be->endScreen();
-		}
-
-		be->beginScreen(single ? 0 : 1);
+		be->beginScreen(0);
 		box("screen", false, 0, 0, 640, 480);
 		box("bubble", false, 18, 14, 604, 54);
 		text("Welcome to Banana", true, 22, 38, 28, p.ink);
@@ -2615,7 +2494,7 @@ namespace banana
 		const char* act = wsel == 4 ? "Finish" : wsel == 1 ? "Next zone" : wsel == 3 ? (scraping() ? "Running" : "Start") : "Open";
 		float aw = faceWidth("A", act);
 		face("A", act, 622 - aw, aw);
-		if (single) footer(help, p.muted);
+		footer(help, p.muted);
 		be->endScreen();
 	}
 
@@ -2666,22 +2545,6 @@ namespace banana
 		if (state == "done") { int a = 0, b = 0; in >> a >> b; return std::to_string(a) + " of " + std::to_string(b) + " found"; }
 		if (state == "error") return scrapeLine.find("connection") != std::string::npos ? "No connection" : "Didn't work";
 		return "Not yet";
-	}
-
-	void Settings::scrapeBar(float x, float y, float w)
-	{
-		SPal p = pal(light);
-		std::istringstream in(scrapeLine);
-		std::string state, rest;
-		int a = 0, b = 0;
-		in >> state >> a >> b;
-		std::getline(in, rest);
-		rest = trim(rest);
-		std::string sys = rest.substr(0, rest.find('|')), game = rest.find('|') == std::string::npos ? "" : rest.substr(rest.find('|') + 1);
-		be->fill(X(x), X(y), X(w), X(14), p.line);
-		if (b > 0) be->fill(X(x + 2), X(y + 2), X((w - 4) * a / b), X(10), p.accent);
-		text(fit(sys.empty() ? "Starting" : sys, true, 17, w), true, 17, x, y + 26, p.ink);
-		text(fit(game, false, 16, w), false, 16, x, y + 52, p.muted);
 	}
 
 }

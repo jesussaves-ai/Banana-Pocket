@@ -62,17 +62,16 @@ on a one-panel handheld, `midi_driver = null`, `config_save_on_exit`, `quick_men
 RetroArch writes `retroarch.cfg` back when it quits and one trip through its own menus otherwise leaves a value the
 handheld cannot use. What the user changes in RetroArch's own menu is kept: RetroArch saves `retroarch.cfg` on quit
 and flushes a core's options to its `.opt` as the core unloads (on their own; the manual *Save Core Options* item is
-also shown, where Banana used to hide it). **Quick resume** (Settings > Other systems) is on by default: RetroArch
+also shown, where Banana used to hide it). **Quick resume** (Settings > RetroArch) is on by default: RetroArch
 saves an automatic state when a game quits and loads it when the game starts again (`savestate_auto_save` and
 `savestate_auto_load`, which `run-retroarch` keeps in step).
 
 ## Settings
 
-Settings > Other systems holds, per system, the core (`core.<system>` in `banana/settings.conf` — another installed
-core instead of `systems.conf`'s, e.g. mGBA for the Game Boy Advance for its RetroAchievements), and the shader
-(`ra_shader`), audio latency (`ra_audio_latency`) and VSync (`ra_vsync`) RetroArch runs with, plus integer scaling
-(`ra_scale`). `run-retroarch` writes them into `retroarch.cfg` before each start; a change made in RetroArch's own
-menu afterwards is kept until the setting changes here again.
+Settings > RetroArch holds, per system, the core (`core.<system>` in `banana/settings.conf` — another installed
+core instead of `systems.conf`'s, e.g. mGBA for the Game Boy Advance for its RetroAchievements). Shaders, VSync, integer
+scaling and the audio buffer are RetroArch's own: its menu sets them per core and per game (or `retroarch.cfg`), and a
+change made there is kept.
 
 A single **game** overrides both: **X** on a game in the library opens its own Game options (the emulator and the
 shader), kept in `banana/pergame.conf`. The same page has **Save states**, which lists the states the game has

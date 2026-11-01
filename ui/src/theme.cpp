@@ -183,16 +183,6 @@ namespace banana
 		return p;
 	}
 
-	bool themeSetsAccent(const std::string& value)
-	{
-		std::string path = themePath(value);
-		if (path.empty()) return false;
-		std::map<std::string, std::string> kv;
-		if (!readTheme(path, kv, nullptr)) return false;
-		uint32_t c;
-		return parseColor(kv["accent"], c) || parseColor(kv["accent.base"], c) || !kv["accent"].empty();
-	}
-
 	std::string applyTheme(const std::string& value, const std::string& accentName, std::string* why)
 	{
 		rnds::themeColors.clear();

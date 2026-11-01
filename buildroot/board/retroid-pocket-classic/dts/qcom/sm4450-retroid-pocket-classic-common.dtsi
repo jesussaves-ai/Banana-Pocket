@@ -2212,6 +2212,10 @@
 
 &pmk8350_rtc {
 	/* TODO: will need nvmem region */
+	/* The RTC alarm interrupt is not the OS's on these Qualcomm PMICs (it is the ADSP's -- as annotated on hamoa and
+	 * glymur), so Linux gets no wakealarm and bananad's sleep_check_hours cannot fire. Do NOT drop this to "fix" the
+	 * battery check: the alarm IRQ belongs to the ADSP, so requesting it only arms an interrupt that never arrives.
+	 * bananad instead refuses to sleep a low battery when there is no wakealarm (sleep_floor_percent). */
 	qcom,no-alarm;
 	status = "okay";
 };

@@ -2,7 +2,7 @@
 
 **Target:** the Retroid Pocket Classic (Qualcomm Snapdragon G1 Gen 2 / SM4450, Rev Q): one 1240×1080 AMOLED panel,
 a 6×Cortex-A55 + 2×Cortex-A78 SoC, an Adreno a613, the AudioReach DSP with a WCD937x codec and two AW88166
-amplifiers, a fan, and no lid. **Version:** 0.4.9. No submodules; the hardware layer is imported into
+amplifiers, a fan, and no lid. **Version:** 0.4.52. No submodules; the hardware layer is imported into
 `buildroot/board/retroid-pocket-classic` (`docs/RPC-PORT.md` is the port's log).
 
 ## 1. Layout
@@ -10,7 +10,7 @@ amplifiers, a fan, and no lid. **Version:** 0.4.9. No submodules; the hardware l
 | Path | Subsystem | Role |
 |---|---|---|
 | `ui/` | **Frontend / home menu** | `banana-ui` (C++17): KMS host (`src/`), imported render engine (`rnds/`), assets, headless test |
-| `system/bananad/` | **Power daemon** | Sleep/power/LEDs/sound-routing/brightness/battery (`bananad.c`) and its namespaced test |
+| `system/bananad/` | **Power daemon** | Sleep/power/sound-routing/brightness/battery (`bananad.c`) and its namespaced test |
 | `system/rootfs/` | **Init + rootfs overlay** | `init.d/rcS`, `inittab`, `banana-perf`, the launchers (`usr/libexec/banana/*`), default configs/themes |
 | `buildroot/` | **Buildroot external tree** | the defconfig, Banana packages (`package/*`), the SM4450 board support (`board/retroid-pocket-classic/*`) |
 | `tools/` | **Dev tooling** | `qemu-boot.sh`, `import-rnds.sh`, the art generators |
@@ -59,7 +59,7 @@ verifies, writes the *inactive* slot, reads back, then rewrites `DEFAULT` (`Prev
   so banana-ui and `run-retroarch` re-assert it before opening the frontend. WCD937x + 2×AW88166.
 - **GPU**: the Adreno a613 through Mesa freedreno (both the kernel catalog and Mesa need the 613 id).
 - **Power**: `bananad` — a no-lid slate (its idle timer dims but does not suspend unless asked), the power key,
-  LEDs off `power_supply` uevents, the fan left to the kernel's `pwm_fan`. (Its RTC-alarm battery check is inert on
+  the charger off `power_supply` uevents (a pulse on the vibrator when the cable goes in), the fan left to the kernel's `pwm_fan`. (Its RTC-alarm battery check is inert on
   the RPC: the PMIC RTC is `qcom,no-alarm`, docs/ARCHITECTURE.md.)
 - **Clocks** (`banana-perf`): every `policy*` set per profile (`ui`, `powersave`, `balanced`, `performance`).
 

@@ -22,8 +22,8 @@ the internal Android is still there.
    LOADING ticking. The very first boot spends a few more seconds before it, making the data partition from the rest
    of the card.
 2. The first-time setup, on the panel: Wi-Fi (the networks around, the password on the keyboard), the time zone, a
-   RetroAchievements account, a ScreenScraper account; B skips it (Settings > System > First-time setup brings it
-   back), A on Finish ends it.
+   RetroAchievements account, box art (optional, Wi-Fi needed); B skips it (Settings > System > First-time setup
+   brings it back), A on Finish ends it.
 3. The menu, on the shelf of systems with no games: "Copy .gba files to roms/gba" and so on. There is **no Nintendo
    DS** page — this handheld has one screen and ships with the RetroArch systems only.
 4. Power off (Start > System > Shut down, or hold power 2 s), put the card in a computer: a `BANANA` drive with

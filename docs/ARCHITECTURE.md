@@ -23,7 +23,7 @@
 - **Game Handover (`cage`):** Writes `/run/banana/game.pid` -> releases DRM/input/ALSA (`Sound::release()`) -> sets clock profile -> runs game in `cage` (Wayland kiosk, DRM master, applies panel orientation for RetroArch/OSD) -> reclaims panel on exit.
 
 ## 4. System Daemon & Power (`bananad`)
-- **Input/Hotkeys:** Non-grabbing `evdev` + netlink `power_supply` (PWM LEDs). Slate (`EVIOCGBIT(EV_SW)`: power + jack, NO `SW_LID`).
+- **Input/Hotkeys:** Non-grabbing `evdev` + netlink `power_supply`. Slate (`EVIOCGBIT(EV_SW)`: power + jack, NO `SW_LID`, no LEDs).
   - *Short Power:* Sleep (unless `/run/banana/screen-off` exists; then `banana-ui` takes `KEY_POWER` as `Key::WAKE`).
   - *Hold Power (2s) / <=3% batt:* Clean shutdown.
   - *Vol / F+Vol:* HW gain (`/usr/libexec/banana/volume`) / PWM backlight.
@@ -31,8 +31,8 @@
 - **Suspend/Resume (`deep` -> `s2idle` -> backlight fallback):**
   1. `SIGSTOP` `/run/banana/game.pid` pgrp.
   2. `/etc/banana/sleep.d/* pre` (`10-wifi` downs link/supplicant).
-  3. `sync()` -> enable `pm_async`/`fast_resume` -> write `deep` to `/sys/power/mem_sleep`, `mem` to `/sys/power/state`. *(RPC PMIC RTC is `qcom,no-alarm`: `wakealarm`/`sleep_check_hours` are no-ops; wakes ONLY on Power key or USB-C).*
-  4. Wake: `SIGCONT` game, `SIGUSR1` `banana-ui` (instant redraw, no modeset), swallow wake key, bg `sleep.d/* post`, restore LEDs & audio route. Logs: `banana/logs/sleep.log` (+`sleep-devices.log` if `sleep_debug = yes`).
+  3. `sync()` -> enable `pm_async` -> write `deep` to `/sys/power/mem_sleep`, `mem` to `/sys/power/state`. *(RPC PMIC RTC is `qcom,no-alarm` -- the alarm IRQ is the ADSP's, so `wakealarm`/`sleep_check_hours` are no-ops and it wakes ONLY on Power key or USB-C. A discharging battery at/under `sleep_floor_percent` therefore refuses to sleep: the panel goes dark but the SoC stays awake, so the 60 s poll can still shut down cleanly.)*
+  4. Wake: `SIGCONT` game, `SIGUSR1` `banana-ui` (instant redraw, no modeset), swallow wake key, bg `sleep.d/* post`, restore the audio route (the jack is re-read by the loop's deferred settle, not blocked on). Logs: `banana/logs/sleep.log` (+`sleep-devices.log` if `sleep_debug = yes`).
 
 ## 5. Audio (Qualcomm AudioReach)
 - **Stack:** `sc8280xp`/q6apm DSP + WCD937x + dual AW88166 I2S amps. No sound server/UCM. Config: `/run/banana/asound.conf`.
@@ -57,5 +57,5 @@
 - **Board Pkg:** `buildroot/board/retroid-pocket-classic` (ROCKNIX SM4450 patches, DTs, `linux-banana.fragment`, audio topology, OpenABL).
 
 ## 8. USB Dev Link & Screen Capture
-- **Gadget (`/usr/libexec/banana/usb-gadget`):** Mounts `configfs`, sets up USB NCM Ethernet (`WINNCM` MS OS descriptor, built-in kernel `CONFIG_USB_GADGET`/`NCM=y`, DT `dr_mode="otg"` + `role-switch-default-mode="peripheral"`). Handheld = `169.254.170.2/16`, host = `169.254.170.1` via 1-lease `udhcpd` (~4ms RTT, ~7MB/s SSH). `usb-gadget down` tears down. *(Note: Type-C `data_role` always reads `host`; actual USB role switch governs device mode. Re-seat cable if bound disconnected; OTG gamepad unbinds gadget).*
+- **Gadget (`/usr/libexec/banana/usb-gadget`):** Mounts `configfs`, sets up USB NCM Ethernet (`WINNCM` MS OS descriptor, built-in kernel `CONFIG_USB_GADGET`/`NCM=y`, DT `dr_mode="otg"` + `role-switch-default-mode="peripheral"`). Handheld = `169.254.170.2/16`, host = `169.254.170.1` via 1-lease `udhcpd` (~4ms RTT, ~7MB/s SSH). `usb-gadget down` tears down. *(Note: the port charges but doesn't enumerate when the Type-C cable is in the reverse orientation — `pmic-glink` doesn't drive the data-lane mux here, so `orientation=reverse` leaves the UDC `not attached`; flip the connector if a bound gadget gives no interface. An OTG gamepad also unbinds the gadget).*
 - **Screen Capture (`tools/rpc-screen.sh`):** Touches `/run/banana/screen.req` (caught by `banana-ui` existing `/run/banana` `inotify` watch) -> `banana-ui` dumps pre-rotated `be.pixels(0)` to `/run/banana/screen.jpg` (`stbi_write_jpg`). `-w` streams MJPEG (`ffplay`/`mpv`). Menu-only (in-game uses RetroArch `SCREENSHOT` FIFO cmd).

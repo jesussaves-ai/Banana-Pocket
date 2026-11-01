@@ -7,10 +7,8 @@
  *   - A long press of the power button shuts down cleanly.
  *   - Volume keys change the mixer; F (BTN_MODE) + volume changes the backlight.
  *   - A battery about to run out shuts the handheld down before the data partition can be cut off mid-write.
- *   - The LEDs: the power one green, red at 20%, blinking red at 5%; the charging one amber while the charger is
- *     plugged in and the battery isn't full (steady: from the charger's online state, not the gauge's status, which
- *     says "Charging" only for a moment). The kernel blinks the red one (its timer trigger): bananad only changes
- *     them when the power state changes (power_supply uevents, and the battery poll).
+ *   - The charger: bananad watches the power supplies and pulses the vibrator when the cable goes in. The handheld
+ *     has no LEDs, so there is nothing else to drive.
  *   - Brightness and volume are kept across reboots (/data/banana/backlight, /data/banana/asound.state).
  *   - Sound goes where it should with no sound server: the RPC's audioreach card, whose DSP frontends (MultiMedia1/2)
  *     bananad mixes into the speaker I2S or the WCD937x codec by hand (no UCM profile does it on this image). The
@@ -63,20 +61,27 @@ static struct {
 	int power_long_ms;		/* holding power this long shuts down */
 	int battery_off_pct;	/* at or under this, discharging: shut down */
 	char mem_sleep[16];		/* deep (suspend to RAM) or s2idle */
-	int led_brightness;		/* 0..255; 0: the LEDs stay off */
-	int led_low, led_critical;	/* percent: red, blinking red */
-	int fast_resume;		/* devices resume in parallel (/sys/power/pm_async) */
 	double sleep_check_hours;	/* asleep: wake this often to look at the battery (0: never) */
 	int sleep_poweroff_pct;	/* found at or under this while asleep: shut down cleanly */
+	int sleep_floor_pct;		/* discharging at or under this: refuse a sleep when no RTC alarm can wake it */
 	double dim_min;			/* idle minutes in the menu before the panel dims (0: never) */
 	int dim_pct;			/* dimmed to this percent of their brightness */
+	int audio_handoff_ms;		/* the DSP settle the launchers and the menu wait for after a frontend is released (0: none) */
+	int vibrate_ms;			/* the plug-in pulse length; the motor's drive is already the driver's maximum */
+	char sleep_skip[64];		/* debug: comma list of suspend steps to skip (stop, ui, mute, hooks, sync) */
 	int autosleep_set;		/* autosleep_minutes was written down somewhere: it is asked for, not defaulted */
-} cfg = { "auto", 5, 8, 10, 2000, 3, "deep", 128, 20, 5, 1, 4, 5, 2, 30, 0 };
+} cfg = { "auto", 5, 8, 10, 2000, 3, "deep", 4, 5, 15, 2, 30, 800, 600, "", 0 };
+
+/* a suspend step named in sleep_skip: only ever set by hand (banana/bananad.conf), to bisect a sleep that comes straight
+ * back on the handheld without rebuilding bananad */
+static int skip(const char *what) { return cfg.sleep_skip[0] && strstr(cfg.sleep_skip, what) != NULL; }
 
 static int devfd[MAXDEV], ndev;
-static void leds_update(void);
+static void power_update(void);
 static void audio_route(void);
-static int headphones_in_settled(void);
+static void jack_settle_begin(void);
+static void jack_settle_poll(void);
+static void jack_log(void);
 static void undim(void);
 static void find_panel_bl(void);
 static char panel_bl[64];	/* the panel's backlight name; banana-ui's idle dim owns it while it runs */
@@ -135,14 +140,14 @@ static void load_conf(const char *path, int asked)
 		else if (!strcmp(k, "power_long_ms")) cfg.power_long_ms = atoi(v);
 		else if (!strcmp(k, "battery_shutdown_percent")) cfg.battery_off_pct = atoi(v);
 		else if (!strcmp(k, "mem_sleep")) snprintf(cfg.mem_sleep, sizeof cfg.mem_sleep, "%s", v);
-		else if (!strcmp(k, "led_brightness")) cfg.led_brightness = atoi(v);
-		else if (!strcmp(k, "led_low_percent")) cfg.led_low = atoi(v);
-		else if (!strcmp(k, "led_critical_percent")) cfg.led_critical = atoi(v);
-		else if (!strcmp(k, "fast_resume")) cfg.fast_resume = !strcmp(v, "yes") || !strcmp(v, "1");
 		else if (!strcmp(k, "sleep_check_hours")) cfg.sleep_check_hours = atof(v);
 		else if (!strcmp(k, "sleep_poweroff_percent")) cfg.sleep_poweroff_pct = atoi(v);
+		else if (!strcmp(k, "sleep_floor_percent")) cfg.sleep_floor_pct = atoi(v);
 		else if (!strcmp(k, "dim_minutes")) cfg.dim_min = atof(v);
 		else if (!strcmp(k, "dim_percent")) cfg.dim_pct = atoi(v);
+		else if (!strcmp(k, "audio_handoff_ms")) cfg.audio_handoff_ms = atoi(v);
+		else if (!strcmp(k, "vibrate_ms")) cfg.vibrate_ms = atoi(v);
+		else if (!strcmp(k, "sleep_skip")) snprintf(cfg.sleep_skip, sizeof cfg.sleep_skip, "%s", v);
 	}
 	fclose(f);
 }
@@ -298,6 +303,31 @@ static int headphones_in(void)
 	return 0;
 }
 
+/* The direct look at the jack (the still-to-do check in the port log): the input device that carries SW_HEADPHONE_INSERT,
+ * its name and the state read now -- the same read headphones_in() acts on. The WCD937x MBHC (which backs that device)
+ * is known to answer before it has measured the socket, so on a boot that comes up silent this says whether the codec
+ * claimed "headphones in" with nothing plugged. */
+static void jack_log(void)
+{
+	static int said_absent, said_present;
+	size_t w = SW_HEADPHONE_INSERT / (8 * sizeof(long)), b = SW_HEADPHONE_INSERT % (8 * sizeof(long));
+	int found = 0;
+	for (int i = 0; i < ndev; i++) {
+		unsigned long cap[(SW_MAX + 8 * sizeof(long)) / (8 * sizeof(long))] = { 0 };
+		if (ioctl(devfd[i], EVIOCGBIT(EV_SW, sizeof cap), cap) < 0 || !((cap[w] >> b) & 1)) continue;
+		unsigned long st[(SW_MAX + 8 * sizeof(long)) / (8 * sizeof(long))] = { 0 };
+		int in = ioctl(devfd[i], EVIOCGSW(sizeof st), st) >= 0 && ((st[w] >> b) & 1);
+		char name[64] = "?";
+		ioctl(devfd[i], EVIOCGNAME(sizeof name), name);
+		if (!said_present) say("sound: the jack switch on '%s' reads %s", name, in ? "in" : "out");
+		found = 1;
+	}
+	if (found) said_present = 1;
+	/* The jack is an input device that probes with the codec, and bananad can open the inputs before it appears: with
+	 * no such device, headphones_in() answers "nothing in" by absence, not by measurement. Say which it is. */
+	else if (!said_absent) { said_absent = 1; say("sound: no input device carries SW_HEADPHONE_INSERT yet"); }
+}
+
 static void drain_inputs(void)
 {
 	struct input_event ev[64];
@@ -346,6 +376,39 @@ static time_t rtc_alarm(int seconds)
 	return time(NULL) + seconds;
 }
 
+/* The RPC's PMIC RTC has no alarm (`qcom,no-alarm`: the ADSP owns its interrupt), so wakealarm cannot be written and the
+ * sleep_check_hours battery check -- and with it sleep_poweroff_percent -- can never fire. Say which at start: a
+ * sleeping handheld then comes back only on the power key or the charger, so it must not be left asleep unattended or
+ * the battery drains flat. */
+static int rtc_wake_possible(void)
+{
+	return access("/sys/class/rtc/rtc0/wakealarm", W_OK) == 0;
+}
+
+/* Refuse to deep-sleep a nearly empty battery when nothing can wake it on a timer. With the RPC's ADSP-owned RTC alarm
+ * there is no wakealarm, so a sleeping low battery would drain flat and never come back; instead the caller leaves the
+ * panel dark and keeps the SoC awake, so the 60 s poll can still shut down cleanly at battery_shutdown_percent. */
+static int sleep_too_low(void)
+{
+	if (rtc_wake_possible()) return 0;	/* a real alarm: the battery check wakes it in time */
+	int pct = battery_discharging_pct();
+	return pct >= 0 && pct <= cfg.sleep_floor_pct;
+}
+
+/* why the kernel resumed: the wakeup IRQ it recorded (/sys/power/pm_wakeup_irq; 0 or absent: not debug-enabled) and,
+ * when a suspend failed, the device/step that failed. For the "a power-key sleep comes back after ~2 s" hunt. */
+static void wake_reason(char *out, size_t n)
+{
+	int irq = read_int("/sys/power/pm_wakeup_irq", -1);
+	char irqbuf[16], dev[64] = "", step[32] = "";
+	if (irq >= 0) snprintf(irqbuf, sizeof irqbuf, "%d", irq);
+	else snprintf(irqbuf, sizeof irqbuf, "?");
+	read_str("/sys/power/suspend_stats/last_failed_dev", dev, sizeof dev);
+	read_str("/sys/power/suspend_stats/last_failed_step", step, sizeof step);
+	if (dev[0]) snprintf(out, n, "wake irq %s, failed %s at %s", irqbuf, dev, step[0] ? step : "?");
+	else snprintf(out, n, "wake irq %s", irqbuf);
+}
+
 /* Only the power button may wake the handheld. The kernel arms every device that says it can wake -- the rsinput
  * MCU's serial (988000.serial), the Wi-Fi/ADSP remoteprocs (8a00000/3000000), the charger and USB power supplies
  * (pmic_glink), gpio-keys (the volume keys), the thermal sensors, mmc0 -- and any of them raising an interrupt during
@@ -379,7 +442,7 @@ static void sleep_mode(void)
 	char chosen[32];
 	snprintf(chosen, sizeof chosen, "[%s]", want);
 	if (strstr(modes, want) && !strstr(modes, chosen)) write_file("/sys/power/mem_sleep", want);	/* only if it changes */
-	write_file("/sys/power/pm_async", cfg.fast_resume && sleep_fallback == 0 ? "1" : "0");
+	write_file("/sys/power/pm_async", sleep_fallback == 0 ? "1" : "0");
 }
 
 /* the backlights off and on again without changing their level */
@@ -401,17 +464,30 @@ static int charger_online(void);
 static void suspend_now(const char *why)
 {
 	double t0 = mono();
+	if (sleep_too_low()) {
+		/* Nothing can wake it on a timer: a deep sleep here is a handheld that only comes back if someone presses
+		 * power. Leave the panel dark (what a sleep looks like) and stay awake, so the 60 s battery poll can still
+		 * shut down cleanly. The next key press brings the panel back (see panel_blanked in handle()). */
+		sleep_log("not sleeping (%s): %d%% and no RTC wake alarm: dark, but watching the battery", why,
+		    battery_discharging_pct());
+		backlights_power(0);
+		panel_blanked = 1;
+		last_input = mono();
+		return;
+	}
 	pid_t game = pid_of("/run/banana/game.pid");
 	pid_t pg = game ? getpgid(game) : 0;
-	if (pg > 0) kill(-pg, SIGSTOP);	/* an emulator's dynarec mustn't run on while the clocks drop */
+	if (pg > 0 && !skip("stop")) kill(-pg, SIGSTOP);	/* an emulator's dynarec mustn't run on while the clocks drop */
 	/* the menu's ambient loop, if any: stop it and have it release the DSP before the ADSP sleeps (SIGHUP), and give
 	 * it a moment to close the device; then darken the panel and mute the codec so nothing flashes or pops */
-	if (!game) { pid_t u = ui_pid(); if (u > 0) { kill(u, SIGHUP); sleep_us(200000); } }
-	sleep_quiet_begin();
-	hooks("pre", 0);
-	sync();
+	if (!game && !skip("ui")) { pid_t u = ui_pid(); if (u > 0) { kill(u, SIGHUP); sleep_us(200000); } }
+	if (!skip("mute")) sleep_quiet_begin();
+	if (!skip("hooks")) hooks("pre", 0);
+	if (!skip("sync")) sync();
 	sleep_mode();
 	wake_only_power();	/* the power key alone may bring it back (see its comment) */
+	double t_prep = mono();
+	if (cfg.sleep_skip[0]) sleep_log("sleep %s: skipping '%s' (debug)", why, cfg.sleep_skip);
 	int cycles = 0, rtc_wakes = 0, failures = 0;
 	double asleep = 0;
 	const char *woke = "?";
@@ -420,7 +496,8 @@ static void suspend_now(const char *why)
 		double t_in = mono();
 		struct timespec b0, b1;
 		clock_gettime(CLOCK_BOOTTIME, &b0);	/* BOOTTIME counts the time asleep, MONOTONIC doesn't */
-		if (cycles == 0) sleep_log("sleep (%s): %.0f ms to suspend%s, power key only", why, (t_in - t0) * 1000, game ? ", game paused" : "");
+		if (cycles == 0) sleep_log("sleep (%s): prep %.0f ms, %.0f ms to suspend%s, power key only", why,
+		    (t_prep - t0) * 1000, (t_in - t0) * 1000, game ? ", game paused" : "");
 		int r = write_file("/sys/power/state", "mem");
 		int err = errno;
 		/* a signal (SIGHUP from the menu, SIGCHLD) interrupted the write: nothing slept, so retry rather than
@@ -492,14 +569,15 @@ static void suspend_now(const char *why)
 	hooks("post", 1);
 	/* the press that woke us comes in now: it is not a new request */
 	drain_inputs();
-	leds_update();
-	int jack = headphones_in_settled();
-	if (jack != headphones) { headphones = jack; audio_route(); }
+	power_update();
+	jack_settle_begin();	/* the codec can answer wrong right after a wake: confirm it in the loop, without blocking */
 	ignore_power_until = mono() + 1.0;
 	power_down = 0;
 	last_input = mono();
-	sleep_log("awake (%s) after %.0f s asleep%s%s, game and menu back %.1f ms after the kernel", woke, asleep,
-		rtc_wakes ? ", battery checked" : "", asleep < 5.0 ? " (it did not take)" : "", (t_back - t_wake) * 1000);
+	char wr[128];
+	wake_reason(wr, sizeof wr);
+	sleep_log("awake (%s) after %.0f s asleep%s%s, %s, game and menu back %.1f ms after the kernel", woke, asleep,
+		rtc_wakes ? ", battery checked" : "", asleep < 5.0 ? " (it did not take)" : "", wr, (t_back - t_wake) * 1000);
 }
 
 static void shutdown_now(const char *why)
@@ -586,7 +664,16 @@ static int ctl_set(int card, const char *name, const char *val)
 	snd_ctl_elem_id_set_index(id, 0);
 	snd_ctl_elem_info_alloca(&info);
 	snd_ctl_elem_info_set_id(info, id);
-	if (snd_ctl_elem_info(ctl, info) < 0) goto out;
+	if (snd_ctl_elem_info(ctl, info) < 0) {
+		/* A simple-mixer switch is "<name> Switch" in the raw CTL space ("HPHL" is "HPHL Switch" here); amixer's
+		 * sget/sset resolve that short name, the CTL API does not. Try the suffixed name before giving up, so
+		 * bananad's late-card fallback (below) can actually set the codec's switches. */
+		char alt[192];
+		snprintf(alt, sizeof alt, "%s Switch", name);
+		snd_ctl_elem_id_set_name(id, alt);
+		snd_ctl_elem_info_set_id(info, id);
+		if (snd_ctl_elem_info(ctl, info) < 0) goto out;
+	}
 	unsigned count = snd_ctl_elem_info_get_count(info);
 	snd_ctl_elem_type_t type = snd_ctl_elem_info_get_type(info);
 	snd_ctl_elem_value_alloca(&v);
@@ -625,6 +712,26 @@ out:
 static void cset(int card, const char *name, const char *val)
 {
 	if (ctl_set(card, name, val)) say("sound: mixer set %s %s -> failed", name, val);
+}
+
+/* Is a control registered yet? The codec's controls appear with the SoundWire codec a moment after the card itself, so
+ * a set before that fails with "no such control" (the boot that set them without waiting logged all 14 as failed and
+ * left the headphone path unset). audio_setup waits on one of them, bounded, before the block that sets them. */
+static int ctl_exists(int card, const char *name)
+{
+	snd_ctl_t *ctl = NULL;
+	snd_ctl_elem_id_t *id = NULL;
+	snd_ctl_elem_info_t *info = NULL;
+	if (ctl_open(card, &ctl) < 0) return 0;
+	snd_ctl_elem_id_alloca(&id);
+	snd_ctl_elem_id_set_interface(id, SND_CTL_ELEM_IFACE_MIXER);
+	snd_ctl_elem_id_set_name(id, name);
+	snd_ctl_elem_id_set_index(id, 0);
+	snd_ctl_elem_info_alloca(&info);
+	snd_ctl_elem_info_set_id(info, id);
+	int r = snd_ctl_elem_info(ctl, info) == 0;
+	snd_ctl_close(ctl);
+	return r;
 }
 
 /* the switch controls (HPHL, HPHL_RDAC, ...) are simple-mixer elements: the same CTL API reaches them */
@@ -752,23 +859,46 @@ static void audio_route_ar(void)
 	}
 }
 
-/* The jack's answer, taken twice in a row before it is believed. The WCD937x's MBHC answers before it has measured
- * the socket: on the Retroid Pocket Classic the very first read of a boot (and, worse, a first read after a wake)
- * can say "headphones in" with nothing plugged in, and acting on that routes the sound to a codec feeding an empty
- * jack -- a silent handheld, until something else writes the speaker route back (which is what made the menu come
- * back to life after a game had run). Two answers agreeing is the cheapest proof the codec has finished measuring;
- * a real plug-in still takes effect within a few hundred milliseconds, and its own event drives the same variable
- * afterwards. */
-static int headphones_in_settled(void)
+/* The DSP handoff settle, published for the launchers and the menu so it is a knob, not a magic number in two
+ * languages: audio-handoff (and run-retroarch's first-launch beat) and banana-ui's Sound read
+ * /run/banana/audio-handoff-ms, and 0 drops the wait entirely. Written on every config read, so editing
+ * banana/bananad.conf and sending bananad a SIGHUP changes it live; the kernel's q6apm close timing (patch 0063) is
+ * what says whether 0 is safe. */
+static void audio_publish_handoff(void)
 {
-	int a = headphones_in();
-	for (int i = 0; i < 6; i++) {
-		sleep_us(200000);
-		int b = headphones_in();
-		if (a == b) return b;
-		a = b;
+	FILE *f = fopen("/run/banana/audio-handoff-ms.new", "w");
+	if (!f) return;
+	fprintf(f, "%d\n", cfg.audio_handoff_ms);
+	fclose(f);
+	rename("/run/banana/audio-handoff-ms.new", "/run/banana/audio-handoff-ms");
+}
+
+/* The jack's answer, confirmed without blocking the loop. The WCD937x's MBHC answers before it has measured the socket:
+ * on the Retroid Pocket Classic the first read of a boot (and, worse, a first read after a wake) can say "headphones in"
+ * with nothing plugged in, and acting on that routes the sound to a codec feeding an empty jack -- a silent handheld,
+ * until something else writes the speaker route back. So the first reading is taken now and the main loop re-reads a
+ * couple of hundred ms later; two agreeing readings are believed. A real plug-in still takes effect within a few hundred
+ * ms, and its own switch event drives the same variable. (This used to sleep here, holding the loop for up to 1.2 s.) */
+static double jack_settle_at;		/* when the loop takes the next reading (mono seconds; 0: none pending) */
+static int jack_settle_val, jack_settle_tries;
+
+static void jack_settle_begin(void)
+{
+	jack_settle_val = headphones_in();
+	jack_settle_tries = 0;
+	jack_settle_at = mono() + 0.2;
+}
+
+static void jack_settle_poll(void)
+{
+	jack_settle_at = 0;
+	int v = headphones_in();
+	if (v != jack_settle_val && ++jack_settle_tries < 6) {
+		jack_settle_val = v;			/* not settled: look again in a moment */
+		jack_settle_at = mono() + 0.2;
+		return;
 	}
-	return a;	/* never agreed: the codec is still moving; take the answer we just had */
+	if (v != headphones) { headphones = v; audio_route(); }
 }
 
 static void audio_route(void)
@@ -878,6 +1008,13 @@ static void audio_setup(void)
 		 * before it has measured anything: "headphones in" here with nothing plugged in is the whole story of a
 		 * silent menu -- a game re-asserts the speaker route itself, which is why games do have sound. */
 		say("sound: the jack says %s at start", headphones ? "headphones in" : "nothing in");
+		jack_log();	/* the per-device switch, next to the answer bananad acts on */
+		/* The codec's DAPM controls (the switches and muxes below) can be registered a moment after the card's
+		 * simple-mixer controls, so a set before that fails ("no such control") and the headphone path is left
+		 * unset. Wait for one of them, bounded, and say so if it never appears. */
+		int have = 0;
+		for (int i = 0; i < 25 && !(have = ctl_exists(card_ar, "RX_MACRO RX0 MUX")); i++) sleep_us(200000);
+		if (!have) say("sound: the codec's mux controls are not up: the headphone path may be unset");
 		/* ROCKNIX's UCM2 BootSequence levels for this card (there is no UCM on this image): the codec's and the RX
 		 * macro's output volumes and the mic's. Set here as well as in rcS, because a card that enumerated after
 		 * rcS's wait would otherwise run at the reset levels -- silent or very quiet -- all session. */
@@ -1133,48 +1270,6 @@ static void restore_settings(void)
 	}
 }
 
-/* ---- the LEDs -------------------------------------------------------------------------------------------------- */
-/* the LED whose name ends in :<function> (green:power, red:status, amber:charging), "" if none */
-static void led_path(const char *function, char *out, size_t n)
-{
-	out[0] = 0;
-	DIR *d = opendir("/sys/class/leds");
-	if (!d) return;
-	struct dirent *e;
-	size_t fl = strlen(function);
-	while ((e = readdir(d))) {
-		size_t l = strlen(e->d_name);
-		if (l > fl && e->d_name[l - fl - 1] == ':' && !strcmp(e->d_name + l - fl, function)) {
-			snprintf(out, n, "/sys/class/leds/%s", e->d_name);
-			break;
-		}
-	}
-	closedir(d);
-}
-
-static void led_write(const char *led, const char *file, const char *v)
-{
-	if (!led[0]) return;
-	char p[400];
-	snprintf(p, sizeof p, "%s/%s", led, file);
-	write_file(p, v);
-}
-
-/* one LED: off, on, blinking (the kernel's timer trigger) or following a trigger (the charger's) */
-static void led_set(const char *led, const char *how, int level)
-{
-	char v[16];
-	snprintf(v, sizeof v, "%d", level);
-	if (!strcmp(how, "off")) { led_write(led, "trigger", "none"); led_write(led, "brightness", "0"); }
-	else if (!strcmp(how, "on")) { led_write(led, "trigger", "none"); led_write(led, "brightness", v); }
-	else if (!strcmp(how, "blink")) {
-		led_write(led, "trigger", "timer");
-		led_write(led, "delay_on", "500");
-		led_write(led, "delay_off", "500");
-		led_write(led, "brightness", v);
-	} else { led_write(led, "trigger", how); led_write(led, "brightness", v); }
-}
-
 /* the battery: its directory under /sys/class/power_supply, capacity and whether it charges */
 static int battery_state(char *name, size_t n, int *pct, int *charging)
 {
@@ -1201,8 +1296,8 @@ static int battery_state(char *name, size_t n, int *pct, int *charging)
 }
 
 /* a charger plugged in: a power supply that isn't the battery (USB, Mains) and is online. The battery's own status is
- * no use for the charging LED: the gauge says "Charging" only for a moment after the cable goes in, then
- * "Discharging" or "Not charging" while it still charges (the amber LED on its trigger lit up and went out again) */
+ * no use (the amber charger light on ROCKNIX's handhelds lit and went out again): the gauge says "Charging" only for a
+ * moment after the cable goes in, then "Discharging" or "Not charging" while it still charges. */
 static int charger_online(void)
 {
 	DIR *d = opendir("/sys/class/power_supply");
@@ -1222,8 +1317,13 @@ static int charger_online(void)
 	return on;
 }
 
-int leds_last = -2;	/* the upper LED's state as last set; -2: set it again */
-static int amber_last = -2;	/* the charging LED's, the same way */
+/* ---- the vibrator ----------------------------------------------------------------------------------------------- */
+static int vib_fd = -1;		/* the FF input, held open: an effect belongs to the fd that uploaded it */
+static int vib_id = -1;		/* the uploaded FF_RUMBLE effect, reused between pulses (no per-pulse re-upload) */
+static int vib_warned;		/* "no FF input" said once, not on every cable */
+static double vib_off_at;	/* when the running pulse stops (mono seconds; 0: none) */
+static void vib_open(void);
+static void vib_stop(void);
 
 /* The vibrator is the PMIC's PM7250B motor, a module in the image (CONFIG_INPUT_PM8XXX_VIBRATOR=m) that nothing loads
  * at boot. modprobe it once so the FF input (pm8xxx_vib_ffmemless) exists; already loaded is a no-op. */
@@ -1231,83 +1331,99 @@ static void vibrator_load(void)
 {
 	char *argv[] = { "modprobe", "pm8xxx_vibrator", NULL };
 	run(argv);
+	vib_open();
 }
 
-/* a short pulse on the vibrator: upload an FF_RUMBLE effect, play it, stop it. The device is found by its name under
- * /dev/input (its event number depends on what else probed that boot), so the number does not matter. */
-static void vibrate(int ms)
+/* The FF input, held open: an effect belongs to the fd that uploaded it, so opening and closing per pulse (or letting
+ * another holder take the device) is how a pulse silently does nothing. The device's name carries "vib"
+ * (pm8xxx_vib_ffmemless) and its event number depends on what else probed that boot, so the number does not matter. */
+static void vib_open(void)
 {
+	if (vib_fd >= 0) return;
 	DIR *d = opendir("/dev/input");
 	if (!d) return;
 	struct dirent *e;
-	int fd = -1;
-	while (!fd && (e = readdir(d))) {
+	while ((e = readdir(d))) {
 		if (strncmp(e->d_name, "event", 5)) continue;
 		char p[300], name[64] = "";
 		snprintf(p, sizeof p, "/dev/input/%s", e->d_name);
 		int f = open(p, O_RDWR | O_CLOEXEC);
 		if (f < 0) continue;
 		ioctl(f, EVIOCGNAME(sizeof name), name);
-		if (strstr(name, "vib")) fd = f; else close(f);
+		if (strstr(name, "vib")) { vib_fd = f; vib_id = -1; say("vibrator: %s", e->d_name); break; }
+		close(f);
 	}
 	closedir(d);
-	if (fd < 0) { say("vibrator: no FF input"); return; }
+	if (vib_fd < 0 && !vib_warned) { vib_warned = 1; say("vibrator: no FF input found"); }
+}
+
+/* a short pulse on the vibrator: the FF_RUMBLE effect is uploaded once and reused (id >= 0 updates it in place), played,
+ * and stopped on the main loop's own clock (vib_off_at) -- never with a sleep, which would stall input and the
+ * charger edge for the pulse's length */
+static void vibrate(int ms)
+{
+	vib_open();
+	if (vib_fd < 0) return;
+	if (skip("vib")) { say("vibrator: pulse suppressed (sleep_skip)"); return; }	/* debug: prove the edge without buzzing */
 	struct ff_effect fx;
 	memset(&fx, 0, sizeof fx);
 	fx.type = FF_RUMBLE;
-	fx.id = -1;
+	fx.id = vib_id;			/* -1 the first time (allocate); its own id after (update) */
 	fx.replay.length = (unsigned short)ms;
 	fx.u.rumble.strong_magnitude = 0xffff;
 	fx.u.rumble.weak_magnitude = 0xffff;
-	if (ioctl(fd, EVIOCSFF, &fx) == 0) {
-		struct input_event ev;
-		memset(&ev, 0, sizeof ev);
-		ev.type = EV_FF;
-		ev.code = fx.id;
-		ev.value = 1;
-		if (write(fd, &ev, sizeof ev) == (ssize_t)sizeof ev) {
-			sleep_us((long)ms * 1000);
-			ev.value = 0;
-			if (write(fd, &ev, sizeof ev) < 0) {}
-		}
-		ioctl(fd, EVIOCRMFF, fx.id);
+	if (ioctl(vib_fd, EVIOCSFF, &fx) < 0) {
+		/* the device went away (module reloaded) or another holder took the effect: start the fd over once */
+		say("vibrator: EVIOCSFF failed (%s), reopening", strerror(errno));
+		close(vib_fd);
+		vib_fd = -1;
+		vib_id = -1;
+		vib_warned = 0;
+		vib_open();
+		if (vib_fd < 0) return;
+		fx.id = -1;
+		if (ioctl(vib_fd, EVIOCSFF, &fx) < 0) { say("vibrator: upload failed (%s)", strerror(errno)); return; }
 	}
-	close(fd);
+	vib_id = fx.id;
+	struct input_event ev;
+	memset(&ev, 0, sizeof ev);
+	ev.type = EV_FF;
+	ev.code = fx.id;
+	ev.value = 1;
+	if (write(vib_fd, &ev, sizeof ev) != (ssize_t)sizeof ev) { say("vibrator: play failed (%s)", strerror(errno)); return; }
+	vib_off_at = mono() + ms / 1000.0;
 }
 
-static void leds_update(void)
+/* stop a running pulse; called from the main loop when vib_off_at comes due */
+static void vib_stop(void)
 {
-	static char green[300], red[300], amber[300];
-	static int looked;
-	int last = leds_last;
-	if (!looked) {
-		looked = 1;
-		led_path("power", green, sizeof green);
-		led_path("status", red, sizeof red);
-		led_path("charging", amber, sizeof amber);
-	}
+	if (vib_fd < 0 || vib_id < 0) return;
+	struct input_event ev;
+	memset(&ev, 0, sizeof ev);
+	ev.type = EV_FF;
+	ev.code = vib_id;
+	ev.value = 0;
+	if (write(vib_fd, &ev, sizeof ev) < 0) {}
+}
+
+/* The power state: a battery reading, the charger's edge (the plug pulse) and one log line when either moves. The
+ * handheld has no LEDs, so there is nothing to drive; this runs on the power_supply uevents and the battery poll. */
+static void power_update(void)
+{
 	char bat[256] = "";
 	int pct = -1, charging = 0;
 	if (!battery_state(bat, sizeof bat, &pct, &charging)) pct = 100;
 	int plugged = charger_online();
 	static int prev_plugged = -1;
-	if (prev_plugged == 0 && plugged) vibrate(300);	/* the cable went in (not at boot, nor on unplug) */
+	if (prev_plugged >= 0 && prev_plugged != plugged) say("charger %s", plugged ? "plugged in" : "unplugged");
+	if (prev_plugged == 0 && plugged) vibrate(cfg.vibrate_ms);	/* the cable went in (not at boot, nor on unplug) */
 	prev_plugged = plugged;
 	if (plugged) charging = 1;	/* plugged in counts as charging (see charger_online) */
-	int level = cfg.led_brightness;
-	/* the upper LED: green, red when low, blinking red when critical (not while charging) */
-	int state = level <= 0 ? 0 : (!charging && pct >= 0 && pct <= cfg.led_critical) ? 3 : (!charging && pct >= 0 && pct <= cfg.led_low) ? 2 : 1;
-	if (state != last) {
-		leds_last = state;
-		led_set(green, state == 1 ? "on" : "off", level);
-		led_set(red, state == 3 ? "blink" : state == 2 ? "on" : "off", level);
-		say("LEDs: battery %d%%%s", pct, charging ? ", charging" : "");
-	}
-	/* the lower LED: amber, steady, the whole time the charger is plugged in and the battery isn't full */
-	int amber_on = level > 0 && plugged && (pct < 0 || pct < 100);
-	if (amber_on != amber_last || last == -2) {
-		amber_last = amber_on;
-		led_set(amber, amber_on ? "on" : "off", level);
+	static int last_pct = -1, last_chg = -1;
+	if (pct != last_pct || charging != last_chg) {
+		last_pct = pct;
+		last_chg = charging;
+		say("battery %d%%%s", pct, charging ? ", charging" : "");
 	}
 }
 
@@ -1533,23 +1649,30 @@ int main(int argc, char **argv)
 	find_panel_bl();	/* which backlight banana-ui's idle dim owns */
 
 	int ino = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-	if (ino >= 0) inotify_add_watch(ino, "/dev/input", IN_CREATE | IN_DELETE);
+	int ino_in = -1, ino_run = -1;
+	if (ino >= 0) {
+		ino_in = inotify_add_watch(ino, "/dev/input", IN_CREATE | IN_DELETE);
+		ino_run = inotify_add_watch(ino, "/run/banana", IN_CREATE | IN_MOVED_TO);	/* the /run/banana/vibrate test trigger */
+	}
 	open_inputs();
-	headphones = headphones_in_settled();
+	headphones = headphones_in();	/* the codec's first answer; the loop confirms (and corrects) it (see jack_settle) */
+	jack_settle_begin();
 	slate_sleep_default();	/* the idle rule: dim but don't suspend */
 	/* the saved volumes first, then the route: the restore also brings back the speakers' switch as it was last
 	 * saved (off if headphones were in then), and the route sets it from the jack as it is now */
 	restore_settings();
 	audio_setup();
+	audio_publish_handoff();	/* the DSP settle, for the launchers and the menu (see audio_publish_handoff) */
 	int uev = uevent_open();
 	sd2_scan();	/* a card already in the second slot at boot */
 	load_drivers_present();
 	vibrator_load();	/* so the plug-in's pulse has a motor to use (the module is not loaded at boot) */
-	leds_update();
+	power_update();
 	last_input = mono();
 	double next_battery = 0;
 	int low_count = 0;
-	say("running: auto-sleep %d min, %s", cfg.autosleep_min, cfg.mem_sleep);
+	say("running: auto-sleep %d min, %s%s", cfg.autosleep_min, cfg.mem_sleep,
+	    rtc_wake_possible() ? "" : ", no RTC wake alarm (only power/charger wakes it)");
 
 	for (;;) {
 		struct pollfd pf[MAXDEV + 2];
@@ -1575,9 +1698,13 @@ int main(int argc, char **argv)
 		}
 		if ((save_volume_at > 0 || save_backlight_at > 0) && wait > 0.5) wait = 0.5;
 		if (power_down && wait > 0.1) wait = 0.1;
+		if (vib_off_at > 0 && vib_off_at - tnow < wait) wait = vib_off_at - tnow;	/* a pulse's stop */
+		if (jack_settle_at > 0 && jack_settle_at - tnow < wait) wait = jack_settle_at - tnow;	/* the jack's second look */
 		int timeout = wait <= 0 ? 20 : (int)(wait * 1000) + 20;
 		poll(pf, n, timeout);
 		double now = mono();
+		if (vib_off_at > 0 && now >= vib_off_at) { vib_stop(); vib_off_at = 0; }
+		if (jack_settle_at > 0 && now >= jack_settle_at) jack_settle_poll();
 		if (reload) {
 			reload = 0;
 			cfg.autosleep_set = 0;
@@ -1586,9 +1713,9 @@ int main(int argc, char **argv)
 			slate_sleep_default();	/* the settings screen may have just written a timer, or taken it away */
 			load_timezone();
 			save_volume_at = mono() + 2;	/* the settings screen may have set the volume: keep it as the keys' is kept */
-			leds_last = -2;
-			leds_update();
-			say("settings read again: auto-sleep %d min, LEDs %d", cfg.autosleep_min, cfg.led_brightness);
+			power_update();
+			audio_publish_handoff();	/* a new audio_handoff_ms takes effect for the next handoff */
+			say("settings read again: auto-sleep %d min", cfg.autosleep_min);
 		}
 
 		for (int i = 0; i < ndev; i++) {
@@ -1598,13 +1725,26 @@ int main(int argc, char **argv)
 			while ((r = read(devfd[i], ev, sizeof ev)) > 0)
 				for (int k = 0; k < r / (ssize_t)sizeof ev[0]; k++) handle(&ev[k]);
 		}
-		if (uev_at >= 0 && (pf[uev_at].revents & POLLIN) && uevent_read(uev)) leds_update();
+		if (uev_at >= 0 && (pf[uev_at].revents & POLLIN) && uevent_read(uev)) power_update();
 		save_settings(now);
 		if (ino_at >= 0 && (pf[ino_at].revents & POLLIN)) {
 			char buf[4096];
-			while (read(ino, buf, sizeof buf) > 0) {}
-			sleep_us(200000);	/* udev/mdev sets the node's permissions */
-			open_inputs();
+			ssize_t r;
+			int inputs_changed = 0, vibrate_req = 0;
+			while ((r = read(ino, buf, sizeof buf)) > 0)
+				for (char *p = buf; p < buf + r; ) {
+					struct inotify_event *e = (struct inotify_event *)p;
+					if (e->len && e->wd == ino_run && !strcmp(e->name, "vibrate")) vibrate_req = 1;
+					if ((e->mask & (IN_CREATE | IN_DELETE)) && e->wd == ino_in) inputs_changed = 1;
+					p += sizeof(struct inotify_event) + e->len;
+				}
+			if (vibrate_req) { unlink("/run/banana/vibrate"); vibrate(cfg.vibrate_ms); }	/* a test trigger: `touch /run/banana/vibrate` */
+			if (inputs_changed) {
+				sleep_us(200000);	/* udev/mdev sets the node's permissions */
+				open_inputs();
+				jack_log();		/* a jack that probed after bananad opened the inputs shows up here, not at start */
+				jack_settle_begin();	/* and its state is read again: the boot route may have run before it existed */
+			}
 		}
 
 		if (power_down && now - power_since >= cfg.power_long_ms / 1000.0) { power_down = 0; shutdown_now("power held"); }
@@ -1619,7 +1759,7 @@ int main(int argc, char **argv)
 
 		if (now >= next_battery) {
 			next_battery = now + 60;
-			leds_update();	/* a capacity change has no uevent on every gauge */
+			power_update();	/* a capacity change has no uevent on every gauge */
 			int pct = battery_discharging_pct();
 			low_count = pct >= 0 && pct <= cfg.battery_off_pct ? low_count + 1 : 0;
 			if (low_count >= 2) shutdown_now("battery empty");	/* two readings in a row: not a load spike */

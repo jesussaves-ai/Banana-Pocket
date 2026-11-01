@@ -76,7 +76,7 @@ namespace banana
 		// emulator wrote it (unlocked total in /run/banana/ra-progress, docs/EMULATORS.md), achB 0 when it didn't
 		void recordPlay(int game, long seconds, int achA = -1, int achB = 0);
 		// A game's own RetroArch overrides (its Game options): the core and shader this one game runs with, empty
-		// when it follows the system's core.<system> and the global Settings > Shader. Kept in banana/pergame.conf,
+		// when it follows the system's core.<system> (and RetroArch's own shader). Kept in banana/pergame.conf,
 		// applied by the launcher (run-retroarch reads BANANA_CORE / BANANA_SHADER, docs/EMULATORS.md).
 		std::pair<std::string, std::string> overrideOf(const std::string& system, const std::string& rel) const;
 		void setOverride(const std::string& system, const std::string& rel, const std::string& core, const std::string& shader);

@@ -260,6 +260,16 @@ static bool dspFrontendsFree()
 	void Sound::run()
 	{
 #ifdef BANANA_ALSA
+		// The DSP handoff settle, in ms, from bananad's published value (banana/bananad.conf's audio_handoff_ms,
+		// 800 by default): the launchers' audio-handoff reads the same file, so 0 turns both off together. Read per
+		// handover, so a SIGHUP to bananad changes it without restarting the menu.
+		auto handoffMs = []()
+		{
+			std::ifstream f("/run/banana/audio-handoff-ms");
+			int v = 800;
+			if (!(f >> v) || v < 0) return 800;
+			return v;
+		};
 		// While the device is open the stream never stops: after a sound, silence follows. The DSP's output is
 		// started when the stream powers up, and the first try fails because the I2S clock isn't running yet; a
 		// running stream lets the retry find its clock. Writing 5 ms at a time also lets a new sound cut the one
@@ -413,8 +423,10 @@ static bool dspFrontendsFree()
 						std::this_thread::sleep_for(std::chrono::milliseconds(100));
 					}
 					slog("DSP frontends %s", wasHeld ? "were held: waited" : "were free");
-					if (wasHeld && !closeNow)
-						std::this_thread::sleep_for(std::chrono::milliseconds(600));
+					int settleMs = handoffMs();
+					slog("DSP handoff settle %d ms", settleMs);
+					if (wasHeld && !closeNow && settleMs > 0)
+						std::this_thread::sleep_for(std::chrono::milliseconds(settleMs));
 				}
 				if (first)	// one line, so a silent menu says what the DSP was told and what it answered
 				{

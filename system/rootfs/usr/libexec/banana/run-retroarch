@@ -17,7 +17,7 @@ setting() {
     [ -n "$v" ] || v=$(sed -n "s/^ *$1 *= *//p" /etc/banana/settings.conf 2>/dev/null | tail -n 1)
     printf '%s' "$v"
 }
-# Settings > Other systems > the system's core (settings.conf's core.<system>, BANANA_SYSTEM from banana-ui): another
+# Settings > RetroArch > the system's core (settings.conf's core.<system>, BANANA_SYSTEM from banana-ui): another
 # installed core instead of systems.conf's, e.g. mGBA for the Game Boy Advance (RetroAchievements); one not installed is ignored
 if [ -n "$BANANA_SYSTEM" ]; then
     c=$(setting "core.$BANANA_SYSTEM")
@@ -36,7 +36,7 @@ fi
 [ -f "$CORE" ] || { echo "no core $1" >&2; exit 1; }
 # the core that really runs, in banana-ui's log (its "starting" line names systems.conf's)
 c=${CORE##*/}; c=${c%_libretro.so}
-[ "$c" != "$1" ] && echo "run-retroarch: core $c (Settings > Other systems), not $1" >&2 || echo "run-retroarch: core $c" >&2
+[ "$c" != "$1" ] && echo "run-retroarch: core $c (Settings > RetroArch), not $1" >&2 || echo "run-retroarch: core $c" >&2
 # The RPC's DSP: the frontend RetroArch opens has to be routed to the speaker I2S before the open, and the menu has
 # just let go of that frontend (banana-ui closes its stream when a game starts). The shared handoff does the waiting,
 # the route write and the readiness gate (see audio-handoff); a graph that still outlasts it is covered by the ALSA
@@ -46,11 +46,12 @@ c=${CORE##*/}; c=${c%_libretro.so}
 # since boot, and its graph teardown (which resets the card's route controls) can outlast the handoff's settle -- so
 # a core could come up silent that once (seen on Game Boy, first launch only; the same core was fine on later
 # launches). Give just that launch another beat and re-assert both routes before RetroArch opens. The marker is on
-# tmpfs, so it is gone at the next boot and only this launch pays for it.
+# tmpfs, so it is gone at the next boot and only this launch pays for it. audio-settle carries the same
+# audio_handoff_ms knob as the shared handoff.
 if [ ! -e /run/banana/game-launched ]; then
     mkdir -p /run/banana 2>/dev/null
     touch /run/banana/game-launched 2>/dev/null
-    sleep 0.8
+    /usr/libexec/banana/audio-settle
     for ctl in \
         "SENARY_MI2S_RX Audio Mixer MultiMedia1" \
         "SENARY_MI2S_RX Audio Mixer MultiMedia2"
@@ -208,10 +209,10 @@ esac
 # when it quits, so one trip through its own menus -- Video > Output > Video Driver, Audio > Output Device -- leaves a
 # value the handheld cannot use, and the game then runs with no picture: a black panel over sound, with the menu gone
 # behind it and nothing on screen to fix it with. A card written by another build drifts the same way. None of these
-# are settings Banana shows (the screen, the shader, the latency and VSync come from settings.conf below); they are
+# are settings Banana shows (the screen comes from settings.conf below); they are
 # the frame the whole product is built on.
 # The video driver is Vulkan everywhere: the games and their shaders share one driver, and its shader backend is
-# Slang, so every preset in the image (Shaders > Load Preset, and Settings > Other systems > Shader) is one it can
+# Slang, so every preset in the image (Shaders > Load Preset, and a game's own Shader) is one it can
 # actually run. A core that wants OpenGL -- the N64 core's GLideN64 -- is no problem: RetroArch forces glcore for
 # that core itself (gfx/video_driver.c, video_driver_find_driver), so the software cores and the Vulkan ones run on
 # Vulkan and GLideN64 keeps its GL. The *context* driver and video_rotation follow the compositor: the game runs
@@ -313,33 +314,27 @@ if [ ! -f $S ]; then
     set_cfg menu_show_core_updater false
     touch $S
 fi
-# Settings > Other systems > Shader: RetroArch's global preset, a reference to one of the image's presets. It is
-# applied when the *setting changes*, not on every launch (a marker holds the value Banana last applied and banana-ui
-# deletes it when the Shader row is changed): a preset loaded, saved -- or removed -- in RetroArch's own menu is then
-# left alone, instead of being put back on the next start. Only a global.slangp Banana wrote (its first line) is
-# removed when the setting is Off; one saved from RetroArch's own menu stays, just disabled. The old global.glslp a
-# card before this change carries is Banana's own (its first line) and goes: under Vulkan it is a preset RetroArch
-# cannot load.
+# Shaders are RetroArch's own now: its menu picks them per core and per game (Shaders > Load Preset, and RetroArch's
+# per-core/per-game overrides), and Banana has no global Shader row to apply. Only a *game's own* shader (a game's
+# options, banana-ui's BANANA_SHADER) is written here, as a reference to one of the image's presets. Without one,
+# Banana's own preset from a previous game is taken back and RetroArch's own choice is left alone. Only a global.slangp
+# Banana wrote (its first line) is removed; one saved from RetroArch's own menu stays. The old global.glslp a card
+# before this change carries is Banana's own and goes: under Vulkan (the one video driver, above) it cannot load.
 GP=/data/retroarch/config/global.slangp
 OLD=/data/retroarch/config/global.glslp
-MARK=/data/retroarch/.banana-shader-setting
 ours() { head -n 1 $1 2>/dev/null | grep -q '^# Banana'; }
 ours $OLD && rm -f $OLD
-look=$(setting ra_shader)
-# a game's own shader (Settings' X on a game, banana-ui's BANANA_SHADER): the look this one game runs with, over
-# Settings > Other systems > Shader. The marker below holds whichever was applied last, so a game with its own and
-# one without rewrite the preset as they alternate -- only when the value actually changes.
-if [ -n "$BANANA_SHADER" ]; then look=$BANANA_SHADER; fi
-case $look in
-lcd) SP=handheld/zfast-lcd.slangp ;;
-crt) SP=crt/zfast-crt.slangp ;;
-sharp) SP=pixel-art-scaling/sharp-bilinear-simple.slangp ;;
-*) SP= ;;
-esac
-if [ "$(cat $MARK 2>/dev/null)" != "$look" ]; then
+if [ -n "$BANANA_SHADER" ]; then
+    look=$BANANA_SHADER
+    case $look in
+    lcd) SP=handheld/zfast-lcd.slangp ;;
+    crt) SP=crt/zfast-crt.slangp ;;
+    sharp) SP=pixel-art-scaling/sharp-bilinear-simple.slangp ;;
+    *) SP= ;;
+    esac
     if [ -n "$SP" ]; then
         mkdir -p ${GP%/*}
-        printf '# Banana: Settings > Other systems > Shader (%s)\n#reference "/usr/share/libretro/shaders/slang/%s"\n' "$look" "$SP" > $GP
+        printf '# Banana: a game own shader (%s)\n#reference "/usr/share/libretro/shaders/slang/%s"\n' "$look" "$SP" > $GP
         set_cfg video_shader_enable true
     else
         # Off: remove Banana's own preset; a user's own is left (video_shader_enable false turns it off without
@@ -347,31 +342,26 @@ if [ "$(cat $MARK 2>/dev/null)" != "$look" ]; then
         ours $GP && rm -f $GP
         set_cfg video_shader_enable false
     fi
-    printf '%s' "$look" > $MARK
+else
+    ours $GP && rm -f $GP
 fi
 # A system on glcore (Dreamcast, above) cannot run the Slang preset: leave the shader off for it, the file untouched.
 [ -n "$glc" ] && set_cfg video_shader_enable false
-# Settings > Other systems > Audio latency and VSync: Banana's values written into RetroArch's config before it starts
-# (a change made in RetroArch's own menu afterwards is kept until the setting is changed here again)
-lat=$(setting ra_audio_latency)
-case $lat in 32|64) set_cfg audio_latency $lat ;; *) set_cfg audio_latency 64 ;; esac
-vs=$(setting ra_vsync)
-# One clock paces the emulation, and with VSync on it is the panel's: `audio_sync` makes RetroArch throttle the
-# emulation to the *audio device* instead, and those two clocks disagree by design (the panel is 60.00 Hz, the PS1
-# 59.94), which measured as long stretches of the emulation making no progress at all while a game played
-# (docs/RPC-PORT.md has the numbers). The audio is still right: audio_rate_control resamples it to the device's own
-# rate rather than letting the buffer fill. With VSync off the audio has to be the pacer, or nothing would pace it
-# at all.
-case $vs in off) set_cfg audio_sync true ;; *) set_cfg audio_sync false ;; esac
+# VSync, integer scaling and the audio buffer are RetroArch's own (its menu, or /data/retroarch/retroarch.cfg): Banana
+# no longer has rows for them and does not overwrite them here. One clock still paces the emulation, and with VSync on
+# it is the panel's: `audio_sync` makes RetroArch throttle the emulation to the *audio device* instead, and the two
+# clocks disagree by design (the panel is 60.00 Hz, the PS1 59.94), which measured as long stretches of the emulation
+# making no progress at all while a game played (docs/RPC-PORT.md has the numbers). audio_rate_control resamples it to
+# the device's own rate rather than letting the buffer fill, so the audio stays right either way. Follow whatever VSync
+# RetroArch has: with it off the audio has to be the pacer, or nothing would pace it.
 set_cfg audio_rate_control true
 # RetroArch's own volume is a *software* gain on top of the amplifiers' level, and the only volume this handheld
 # has is the amplifiers' (bananad's volume keys and Settings > Volume, as on ROCKNIX, where the keys drive the
 # default sink). Left alone, a game that had been turned up would come back up -- and a boost clips. Unity, always.
 set_cfg audio_volume 1.0
-case $vs in on) set_cfg video_vsync true ;; off) set_cfg video_vsync false ;; esac
-sc=$(setting ra_scale)
-case $sc in on) set_cfg video_scale_integer true ;; off) set_cfg video_scale_integer false ;; esac
-# Quick resume (Settings > Other systems > Quick resume): RetroArch saves an automatic state when a game quits and
+vs=$(sed -n 's/^video_vsync = "\(.*\)"/\1/p' $CFG | tail -n 1)
+case $vs in true) set_cfg audio_sync false ;; *) set_cfg audio_sync true ;; esac
+# Quick resume (Settings > RetroArch > Quick resume): RetroArch saves an automatic state when a game quits and
 # loads it when the game starts again. On by default -- a handheld should pick up where it was left -- and turned on
 # once for a card that had it off. Written once (the marker): a change made in RetroArch's or Banana's own menu
 # afterwards is kept. The setting writes savestate_auto_save; loading the state at the start follows it.

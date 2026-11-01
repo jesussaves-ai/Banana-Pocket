@@ -84,8 +84,8 @@ Colours are `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb(...)`, `rgba(...)`, `t
 | `time` | ms since the menu started. Using it redraws continuously at `behavior.fps`, so use it only for things that really move all the time |
 | `clock`, `date` | `"13:01"` / `"01:01 PM"` (Settings' clock), `"10/02"` |
 | `battery`, `charging`, `batteryMode` | percent (-1 unknown), 1 on the charger, `"icon"` / `"text"` (Settings) |
-| `online`, `motion`, `brand` | Wi-Fi up, Settings' motion, `"Alpha 0.4.9"` |
-| `accent`, `accent.light/.dark/.band/.low` | the accent colours (Settings' accent, or the theme's) |
+| `online`, `motion`, `brand` | Wi-Fi up, the top screen's bob (always on), the version string |
+| `accent`, `accent.light/.dark/.band/.low` | the accent colours (the theme's `accent`, or the built-in palette) |
 | `palette.<name>` | a colour of the palette (`palette.ink`, ...) |
 | `cursor`, `count`, `scroll` | the selection's index and the count in the current list (systems at home, games in a library); `scroll` is the selection's eased position, a fraction while it moves |
 | `moved`, `entered`, `dir` | ms since the selection last moved, ms since the view changed, the last move's direction (1 / -1) |

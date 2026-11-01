@@ -6,7 +6,7 @@
 
 # libretro's Slang shaders and presets (the kind RetroArch's Vulkan driver runs, and the only kind it can: the GLSL
 # set is for the "gl" driver). In the image so Shaders > Load Preset isn't empty (RetroArch's video_shader_dir points
-# here) and so Settings > Other systems > Shader has presets this driver can load. The GLSL package this replaces is
+# here) and so RetroArch's own Shaders menu has presets this driver can load. The GLSL package this replaces is
 # gone: Banana runs the games on Vulkan, and its shader backend is Slang.
 # `bezel/` (Mega Bezel and friends) is left out: 35 MB of textures for a look the handheld's one screen doesn't need.
 RETROARCH_SLANG_SHADERS_VERSION = 2b0530bac0e8083d9d643c194929dc0a6b69bd35

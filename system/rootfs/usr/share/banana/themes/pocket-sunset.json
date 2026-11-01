@@ -78,14 +78,15 @@
     },
     // a game in the library: its art, its title and what the shelf knows about it
     "row": {
-      "type": "group", "w": 600, "h": 58,
+      "type": "group", "w": 600, "h": 60,
       "children": [
-        { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 58, "radius": 8, "fill": "=sel ? '#2a1240' : card",
-          "border": 2, "borderColor": "=sel ? gold : '#3a1650'" },
-        { "type": "image", "src": "{item.art}", "fallback": "{item.icon}", "fit": "cover", "x": 9, "y": 9, "w": 40, "h": 40, "radius": 4, "placeholder": "#00000033" },
-        { "type": "text", "x": 60, "y": 13, "w": 470, "text": "{item.title}", "font": "pixel-medium", "size": 16, "color": "=ink" },
-        { "type": "text", "x": 60, "y": 35, "w": 470, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=soft" },
-        { "type": "image", "src": "fav.png", "right": 16, "y": 20, "w": 16, "h": 16, "visible": "=item.fav" }
+        { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 60, "radius": 10, "fill": "=card", "border": 2, "borderColor": "=alpha(edge, 0.28)", "visible": "=sel ? 0 : 1" },
+        { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 60, "radius": 10, "border": 2, "borderColor": "=goldLo", "visible": "=sel",
+          "fill": "=gold", "gradient": { "angle": 180, "stops": [ "=goldHi", "=gold", "=goldLo" ] } },
+        { "type": "image", "src": "{item.art}", "fallback": "{item.icon}", "fit": "cover", "x": 8, "y": 8, "w": 44, "h": 44, "radius": 6, "placeholder": "#00000033" },
+        { "type": "text", "x": 62, "y": 12, "w": 466, "text": "{item.title}", "font": "pixel-medium", "size": 17, "color": "=sel ? '#241606' : ink" },
+        { "type": "text", "x": 62, "y": 36, "w": 466, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=sel ? '#5a3d0a' : soft" },
+        { "type": "image", "src": "fav.png", "right": 16, "y": 22, "w": 16, "h": 16, "visible": "=item.fav" }
       ]
     }
   },
@@ -159,7 +160,7 @@
         { "type": "text", "x": 0, "w": "100%", "y": 240, "align": "center", "text": "{empty.title}", "font": "pixel-medium", "size": 20, "color": "=ink", "visible": "=empty" },
         { "type": "text", "x": 40, "w": 560, "y": 276, "align": "center", "text": "{empty.hint}", "font": "pixel", "size": 14, "color": "=soft", "visible": "=empty", "wrap": true },
         { "type": "list", "source": "games", "direction": "column", "x": 24, "y": 104, "w": 592, "h": 384,
-          "itemH": 58, "gap": 6, "scrollMode": "edge", "clip": true,
+          "itemH": 60, "gap": 8, "scrollMode": "edge", "clip": true,
           "item": { "use": "row" } },
         { "type": "list", "source": "hints", "direction": "row", "x": 40, "y": 500, "w": 560, "h": 30, "gap": 12, "flow": true, "scrollMode": "none",
           "justify": "between", "item": { "use": "pill" } }

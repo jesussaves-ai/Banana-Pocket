@@ -396,7 +396,7 @@ static void bootMark(const char* what)
 }
 
 // ---- the low-battery notice ---------------------------------------------------------------------------------------
-// At 20% (the LED turns red), 10% and 5% (it blinks), on the battery: a notice over the top panel for 8 s, which any
+// At 20%, 10% and 5% on the battery: a notice over the top panel for 8 s, which any
 // button hides. Each step once, until the charger has been on; a step passed during a game shows when the menu is
 // back. bananad does the shutting down (battery_shutdown_percent); this only says it is coming.
 struct LowBattery
@@ -540,7 +540,7 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 	ui.setHome(0);
 	// Settings builds its list in the constructor (which runs here), so the theme variant is set just after it
 	Settings settings(&be, o.assets, o.data, sc, variant);
-	settings.setSingle(o.single, canvasH);
+	settings.setPanelHeight(canvasH);
 	settings.setSync(true);
 	settings.searchCount = [&](const std::string& q) { return lib.countMatches(q); };
 	settings.setOverride = [&](const std::string& s, const std::string& r, const std::string& c, const std::string& sh)
@@ -1236,7 +1236,7 @@ int main(int argc, char** argv)
 	float scale = single ? disp.width() / 640.0f : disp.height() / 480.0f;
 	Settings settingsView(&be, o.assets, o.data, scale, variant);
 	settingsView.setFontDir(o.banana + "/fonts");
-	settingsView.setSingle(single, canvasH);
+	settingsView.setPanelHeight(canvasH);
 	settingsView.searchCount = [&](const std::string& q) { return lib.countMatches(q); };
 	settingsView.setVariant(menuTheme());	// (Carts: Inter)
 	settingsView.setOverride = [&](const std::string& s, const std::string& r, const std::string& c, const std::string& sh)

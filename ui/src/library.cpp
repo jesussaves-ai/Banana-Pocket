@@ -1040,7 +1040,7 @@ namespace banana
 			if (readLine(base + "/type") != "Battery")
 			{
 				// a charger plugged in (USB, Mains): the battery's own status can say "Discharging" while it charges, so
-				// its status alone showed no bolt and kept the low-battery notice up on the cable (as bananad's LED)
+				// its status alone showed no bolt and kept the low-battery notice up on the cable (bananad treats a cable the same way)
 				if (readLine(base + "/online") == "1") charger = true;
 				continue;
 			}
