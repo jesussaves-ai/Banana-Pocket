@@ -11,6 +11,7 @@ Banana's own code (ui/src, system/, buildroot/package, tools/) is under the MIT 
 | The SM4450 hardware layer: kernel patches, the Retroid Pocket Classic device trees, the kernel config, the ADSP/WPSS/ACF/QCA firmware and the audio topology | buildroot/board/retroid-pocket-classic | [ROCKNIX](https://github.com/ROCKNIX/distribution) `next`, imported 2026-10-27 | GPL-2.0 |
 | Mesa (freedreno GL + Turnip), pinned and version-bumped so the Adreno 613 is supported | the image's Mesa; buildroot/buildroot-patches (mesa3d) | [Mesa](https://gitlab.freedesktop.org/mesa/mesa) | MIT |
 | The RPC joypad's RetroArch autoconfig | system/rootfs/usr/share/libretro/autoconfig/udev/Retroid Pocket Classic Gamepad.cfg | Banana's own, from the rsinput driver's mapping | MIT |
+| The Retroid Pocket Classic's UCM2 profile (routing + levels for the AudioReach card) | system/rootfs/usr/share/alsa/ucm2/{conf.d/sm8450,Retroid/PocketClassic} | [ROCKNIX](https://github.com/ROCKNIX/distribution) `projects/ROCKNIX/devices/SM4450/filesystem`; the `ucm2` tree from [alsa-ucm-conf](https://www.alsa-project.org/) (buildroot/package/alsa-ucm-conf) | BSD-3-Clause |
 | RetroArch's joypad autoconfigs for the pads people plug in (8BitDo, Xbox, PlayStation) | fetched at build time | [libretro/retroarch-joypad-autoconfig](https://github.com/libretro/retroarch-joypad-autoconfig) | per file, mostly GPL-2.0 |
 
 **OpenABL**, the arm-efi bootloader already in the handheld's `abl_a`/`abl_b` slots, is not built from or

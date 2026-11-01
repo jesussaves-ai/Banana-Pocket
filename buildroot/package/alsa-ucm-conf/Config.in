@@ -1,0 +1,7 @@
+config BR2_PACKAGE_ALSA_UCM_CONF
+	bool "alsa-ucm-conf"
+	help
+	  ALSA Use Case Manager configuration (and topologies): the ucm2 tree, which an opener that speaks UCM
+	  (alsaucm, PipeWire's ACP) reads to set a card's routing and levels. Banana needs it for the RPC's card
+	  (a UCM2 profile in the rootfs overlay), so ACP can bring the AudioReach card up itself.
+	  https://www.alsa-project.org/

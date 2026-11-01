@@ -139,6 +139,18 @@ See [`LICENSE`](LICENSE). The `ui/rnds` engine is imported unchanged from ROCKNI
 
 ---
 
+## 🙏 Standing on ROCKNIX's shoulders
+
+Straight up: none of this exists without **[ROCKNIX](https://github.com/ROCKNIX/distribution)**.
+
+They did the hard, unglamorous work of making modern Qualcomm handhelds run real Linux instead of Android — the SM4450 kernel support and device trees, the ADSP/WPSS/ACF firmware and audio topology, the ALSA UCM2 profile this card needs to come up at all, `inputplumber`, the `rnds` menu engine that Banana UI is built on, and a hundred fiddly details you only learn by bricking a thing a few times. I read their tree constantly, borrowed what fit, and the parts of this project that "just work" on this handheld are very often quietly theirs.
+
+If ROCKNIX runs on a device you own — or you just appreciate people dragging open handheld gaming forward — go star the repo, say hi in their Discord, and support them however you can. They've earned it:
+
+**[github.com/ROCKNIX/distribution](https://github.com/ROCKNIX/distribution)** ❤️
+
+---
+
 ## 💛 Support
 
 If you'd like to support the project, you can buy me a coffee on Ko-fi:

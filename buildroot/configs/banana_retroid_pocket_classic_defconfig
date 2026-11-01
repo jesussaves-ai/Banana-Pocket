@@ -72,7 +72,12 @@ BR2_PACKAGE_LUAJIT=y
 BR2_PACKAGE_LIBUDEV_ZERO=y
 # what the menu, sleep and the games need
 BR2_PACKAGE_ALSA_LIB=y
+# UCM: the ucm2 tree (alsa-ucm-conf, with the RPC's profile in the rootfs overlay) and the alsaucm tool that reads
+# it. PipeWire's ACP needs it to bring the card up itself; alsaucm validates the profile without a sound server.
+BR2_PACKAGE_ALSA_LIB_UCM=y
+BR2_PACKAGE_ALSA_UCM_CONF=y
 BR2_PACKAGE_ALSA_UTILS=y
+BR2_PACKAGE_ALSA_UTILS_ALSAUCM=y
 BR2_PACKAGE_ALSA_UTILS_AMIXER=y
 BR2_PACKAGE_ALSA_UTILS_ALSACTL=y
 BR2_PACKAGE_FREETYPE=y

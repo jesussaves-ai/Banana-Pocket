@@ -5,5 +5,6 @@ source "$BR2_EXTERNAL_BANANA_PATH/package/banana-tube/Config.in"
 source "$BR2_EXTERNAL_BANANA_PATH/package/yt-dlp/Config.in"
 source "$BR2_EXTERNAL_BANANA_PATH/package/portmaster/Config.in"
 source "$BR2_EXTERNAL_BANANA_PATH/package/libudev-zero/Config.in"
+source "$BR2_EXTERNAL_BANANA_PATH/package/alsa-ucm-conf/Config.in"
 source "$BR2_EXTERNAL_BANANA_PATH/package/retroarch/Config.in"
 endmenu
