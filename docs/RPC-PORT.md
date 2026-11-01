@@ -389,11 +389,16 @@ the DSP's response (up to 5 s). But the result was thrown away, so a close the D
 graph a frontend opened right after sees -- was completely silent. Patch `0063-…` logs it, and the close round-trip
 when it is slow (>= 50 ms), so the window is measurable on the unit without dynamic debug. Note the DSP acknowledges the
 *command*, not the full teardown: the residual gap after that ack is the DSP's own and the driver has no event for it, so
-there is no clean wait-for-teardown yet. Until there is, the userspace "one beat" stays, and the amp count plus the new
-close timing are how to tell whether it still earns its keep. That beat is now a single knob -- `audio_handoff_ms` in
-`banana/bananad.conf` (default 800, 0 off), published by bananad as `/run/banana/audio-handoff-ms` and read by
-`usr/libexec/banana/audio-settle` (the shared handoff and run-retroarch's first-launch beat) and by banana-ui's
-`Sound` -- so it can be turned down from the field without a script edit. (A UCM2 profile -- the idea in the PipeWire
+there is no clean wait-for-teardown yet. Until there is, the userspace "one beat" stays where it is needed -- but only
+there. Measured on the unit, the two directions want different values, so there are two knobs in `banana/bananad.conf`.
+**`audio_handoff_ms`** (default **0**) is the launcher's wait before it opens its frontend: 0 is safe because a game
+opens MultiMedia2, the frontend the menu never releases, so a launch does not race the menu's teardown -- the original
+0.8 s was covering a game that shared MultiMedia1, the bug the games' own `$HOME/.asoundrc` fixed (the kernel log shows
+no slow or failed close, and games had sound over many launches and after a reboot). **`audio_menu_ms`** (default
+**600**) is the beat the menu waits before reopening its frontend after a game let go, and that one *does* race the
+outgoing graph: 0 cuts the cues out for a moment, ~400 leaves a trace, 600 is clean. bananad publishes them as
+`/run/banana/audio-handoff-ms` (read by `usr/libexec/banana/audio-settle`) and `/run/banana/audio-menu-ms` (read by
+banana-ui's `Sound`), so either can be raised from the field with a SIGHUP if a stream ever comes up silent. (A UCM2 profile -- the idea in the PipeWire
 episode below -- only helps a UCM-aware opener like PipeWire/ACP, which Banana deliberately does not have: with no
 sound server every opener still sets the route itself, so UCM would only rename the mixer writes, not move them into
 the open.)

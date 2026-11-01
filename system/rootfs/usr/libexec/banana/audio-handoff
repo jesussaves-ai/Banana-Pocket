@@ -25,12 +25,12 @@ while [ $i -lt 15 ]; do
     [ -n "$busy" ] || break
     sleep 0.1; i=$((i + 1))
 done
-# 2. the teardown finishes a beat after the substream reports closed; give it that beat before the graph is
-#    instantiated again. 0.4 s was too short (the DSP's teardown outlasts it: the route write below gets swallowed,
-#    the game's stream then latches unrouted and is silent for its life, and its audio thread blocks on close -- the
-#    exit hang). 0.8 s is the settle the per-launcher wrappers used before this was factored out, and games had sound.
-#    audio-settle reads it from bananad (banana/bananad.conf's audio_handoff_ms), so it can be turned down -- even to
-#    0, with the kernel's q6apm close timing to say whether that is safe -- as a config change, not a script edit.
+# 2. give the DSP the beat its teardown needs before a game instantiates its own graph. It is 0 by default now: a
+#    game opens MultiMedia2, the frontend the menu never releases, so a launch does not race the menu's teardown --
+#    the settle's original 0.8 s was covering a game that shared the menu's MultiMedia1, the bug the games' own
+#    $HOME/.asoundrc fixed. bananad publishes it (banana/bananad.conf's audio_handoff_ms), so raising it if a launch
+#    ever comes up silent is a config change, not a script edit. (The menu's reopen keeps its own settle:
+#    audio_menu_ms.)
 /usr/libexec/banana/audio-settle
 
 # 3. write both speaker frontends' route and read each back: the DSP refuses a write until the card's mixer is ready,

@@ -260,14 +260,16 @@ static bool dspFrontendsFree()
 	void Sound::run()
 	{
 #ifdef BANANA_ALSA
-		// The DSP handoff settle, in ms, from bananad's published value (banana/bananad.conf's audio_handoff_ms,
-		// 800 by default): the launchers' audio-handoff reads the same file, so 0 turns both off together. Read per
+		// The DSP settle the menu waits before reopening its frontend after a game let go, in ms, from bananad's
+		// published value (banana/bananad.conf's audio_menu_ms, 600 by default). The launchers' audio-handoff has
+		// its own knob (audio-handoff-ms): a game opens the frontend the menu never releases, so a launch needs no
+		// wait, while this reopen races the outgoing graph and does (0 cuts the cues out for a moment). Read per
 		// handover, so a SIGHUP to bananad changes it without restarting the menu.
 		auto handoffMs = []()
 		{
-			std::ifstream f("/run/banana/audio-handoff-ms");
-			int v = 800;
-			if (!(f >> v) || v < 0) return 800;
+			std::ifstream f("/run/banana/audio-menu-ms");
+			int v = 600;
+			if (!(f >> v) || v < 0) return 600;
 			return v;
 		};
 		// While the device is open the stream never stops: after a sound, silence follows. The DSP's output is

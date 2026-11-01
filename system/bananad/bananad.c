@@ -67,11 +67,12 @@ static struct {
 	int sleep_floor_pct;		/* discharging at or under this: refuse a sleep when no RTC alarm can wake it */
 	double dim_min;			/* idle minutes in the menu before the panel dims (0: never) */
 	int dim_pct;			/* dimmed to this percent of their brightness */
-	int audio_handoff_ms;		/* the DSP settle the launchers and the menu wait for after a frontend is released (0: none) */
+	int audio_handoff_ms;		/* the DSP settle a launcher waits before opening its frontend, after the menu released its own (0: none) */
+	int audio_menu_ms;		/* the DSP settle the menu's Sound waits before reopening its frontend after a game let go (0: none) */
 	int vibrate_ms;			/* the plug-in pulse length; the motor's drive is already the driver's maximum */
 	char sleep_skip[64];		/* debug: comma list of suspend steps to skip (stop, ui, mute, hooks, sync) */
 	int autosleep_set;		/* autosleep_minutes was written down somewhere: it is asked for, not defaulted */
-} cfg = { "auto", 5, 8, 10, 2000, 3, "deep", 4, 5, 15, 2, 30, 800, 600, "", 0 };
+} cfg = { "auto", 5, 8, 10, 2000, 3, "deep", 4, 5, 15, 2, 30, 0, 600, 600, "", 0 };
 
 /* a suspend step named in sleep_skip: only ever set by hand (banana/bananad.conf), to bisect a sleep that comes straight
  * back on the handheld without rebuilding bananad */
@@ -147,6 +148,7 @@ static void load_conf(const char *path, int asked)
 		else if (!strcmp(k, "dim_minutes")) cfg.dim_min = atof(v);
 		else if (!strcmp(k, "dim_percent")) cfg.dim_pct = atoi(v);
 		else if (!strcmp(k, "audio_handoff_ms")) cfg.audio_handoff_ms = atoi(v);
+		else if (!strcmp(k, "audio_menu_ms")) cfg.audio_menu_ms = atoi(v);
 		else if (!strcmp(k, "vibrate_ms")) cfg.vibrate_ms = atoi(v);
 		else if (!strcmp(k, "sleep_skip")) snprintf(cfg.sleep_skip, sizeof cfg.sleep_skip, "%s", v);
 	}
@@ -898,18 +900,27 @@ static void audio_route_ar(void)
 	}
 }
 
-/* The DSP handoff settle, published for the launchers and the menu so it is a knob, not a magic number in two
- * languages: audio-handoff (and run-retroarch's first-launch beat) and banana-ui's Sound read
- * /run/banana/audio-handoff-ms, and 0 drops the wait entirely. Written on every config read, so editing
- * banana/bananad.conf and sending bananad a SIGHUP changes it live; the kernel's q6apm close timing (patch 0063) is
- * what says whether 0 is safe. */
+/* Two DSP settles, published so they are knobs, not magic numbers in two languages. audio-handoff (and
+ * run-retroarch's first-launch beat) reads /run/banana/audio-handoff-ms -- the launcher's own wait before it opens
+ * its frontend -- and banana-ui's Sound reads /run/banana/audio-menu-ms, the beat the menu waits before it reopens
+ * its frontend after a game let go. They differ on the unit: a game opens MultiMedia2, the frontend the menu never
+ * releases, so a launch needs no wait at all, while the menu's reopen races the outgoing graph and does (0 cuts the
+ * menu's cues out for a moment; 600 ms is clean). Written on every config read, so editing banana/bananad.conf and
+ * sending bananad a SIGHUP changes both live; the kernel's q6apm close timing (patch 0063) is what says whether a
+ * value is safe. */
 static void audio_publish_handoff(void)
 {
 	FILE *f = fopen("/run/banana/audio-handoff-ms.new", "w");
+	if (f) {
+		fprintf(f, "%d\n", cfg.audio_handoff_ms);
+		fclose(f);
+		rename("/run/banana/audio-handoff-ms.new", "/run/banana/audio-handoff-ms");
+	}
+	f = fopen("/run/banana/audio-menu-ms.new", "w");
 	if (!f) return;
-	fprintf(f, "%d\n", cfg.audio_handoff_ms);
+	fprintf(f, "%d\n", cfg.audio_menu_ms);
 	fclose(f);
-	rename("/run/banana/audio-handoff-ms.new", "/run/banana/audio-handoff-ms");
+	rename("/run/banana/audio-menu-ms.new", "/run/banana/audio-menu-ms");
 }
 
 /* The jack's answer, confirmed without blocking the loop. The WCD937x's MBHC answers before it has measured the socket:

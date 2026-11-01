@@ -1,12 +1,13 @@
 #!/bin/sh
-# audio-settle: the beat the DSP gets to tear a released frontend's graph down before the next process instantiates one.
-# An open inside that window comes up half connected and the amplifiers never start ("start failure (-1)"), so
-# audio-handoff and run-retroarch's first-launch beat wait it out. The length is bananad's published
-# /run/banana/audio-handoff-ms -- banana/bananad.conf's audio_handoff_ms, 800 ms by default -- so an experiment is a
-# config change and a SIGHUP to bananad, not a script edit. 0 goes straight on; the kernel's q6apm close timing
-# (patch 0063, `dmesg | grep -i q6apm`) is what says whether that is safe.
+# audio-settle: the beat a *launcher* waits, after the menu released its frontend, before the game instantiates its
+# own. It is 0 by default: a game opens MultiMedia2 -- the frontend the menu never releases -- so the launch does not
+# race the menu's graph teardown, and the kernel's q6apm close timing (patch 0063, `dmesg | grep -i q6apm`) shows no
+# close that is slow or that fails. The knob is still here because the DSP's timing is not ours to guarantee: it is
+# bananad's published /run/banana/audio-handoff-ms (banana/bananad.conf's audio_handoff_ms), so raising it if a game
+# ever comes up silent is a config change and a SIGHUP, not a script edit. (The menu's own reopen keeps its settle --
+# audio_menu_ms -- because that one *does* race the outgoing graph.)
 #   audio-settle
 v=$(cat /run/banana/audio-handoff-ms 2>/dev/null)
-case "$v" in ''|*[!0-9]*) v=800 ;; esac
+case "$v" in ''|*[!0-9]*) v=0 ;; esac
 [ "$v" -gt 0 ] && sleep "$((v / 1000)).$(printf '%03d' $((v % 1000)))"
 exit 0
