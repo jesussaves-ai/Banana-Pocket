@@ -41,6 +41,11 @@ $(BUILDROOT_DIR)/.banana-patched: $(BUILDROOT_DIR)/Makefile $(BUILDROOT_PATCHES)
 	done
 	@touch $@
 
+# A readable alias for the patch step: the stamp's own name is a dot path ($(BUILDROOT_DIR) is absolute), which the
+# CI's core job cannot spell. `make buildroot-patched` is the same target.
+.PHONY: buildroot-patched
+buildroot-patched: $(BUILDROOT_DIR)/.banana-patched
+
 define board
 $(OUT)/$(1)/.config: $(BUILDROOT_DIR)/.banana-patched buildroot/configs/banana_$(subst -,_,$(1))_defconfig
 	$(MAKE) -C $(BUILDROOT_DIR) O=$(OUT)/$(1) BR2_EXTERNAL=$(CURDIR)/buildroot banana_$(subst -,_,$(1))_defconfig

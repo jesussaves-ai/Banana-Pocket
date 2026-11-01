@@ -103,7 +103,7 @@ jobs:
       - name: Build the changed cores
         if: steps.changed.outputs.pkgs != ''
         run: |
-          make .buildroot/.banana-patched
+          make buildroot-patched
           make -s -C .buildroot BR2_EXTERNAL="$PWD/buildroot" O="$PWD/output/cores" banana_retroid_pocket_classic_defconfig
           pkgs="${{ steps.changed.outputs.pkgs }}"
           if [ "$pkgs" = all ]; then pkgs="$(cd buildroot/package && ls -d libretro-* | tr '\n' ' ')"; fi

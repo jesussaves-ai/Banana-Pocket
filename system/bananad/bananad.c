@@ -431,9 +431,10 @@ static void wake_reason(char *out, size_t n)
 	if (f) {
 		char line[256], name[64];
 		long last, best = -1;
-		fgets(line, sizeof line, f);	/* the header row */
-		while (fgets(line, sizeof line, f))
-			if (sscanf(line, "%63s %*u %*u %*u %*u %*u %*u %*u %ld", name, &last) == 2 && last > best) { best = last; snprintf(src, sizeof src, "%s", name); }
+		if (fgets(line, sizeof line, f)) {	/* the header row */
+			while (fgets(line, sizeof line, f))
+				if (sscanf(line, "%63s %*u %*u %*u %*u %*u %*u %*u %ld", name, &last) == 2 && last > best) { best = last; snprintf(src, sizeof src, "%s", name); }
+		}
 		fclose(f);
 	}
 	if (src[0] && src[0] != 'd') snprintf(out, n, "wake %s (irq %s)%s%s", src, irqbuf, dev[0] ? ", failed " : "", dev);
