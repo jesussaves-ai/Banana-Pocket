@@ -2,28 +2,25 @@
 Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Ordered by what is recommended next.
 
 ## Recommended next (in order)
-PipeWire landed in **0.5.0** (see *Done*): the sound server, the UCM profile and the q6apm fixes are in. What is left
-of it first, then the rest:
-1. **Finish removing the pre-PipeWire handoff.** Games and apps are PipeWire clients now, so `run-retroarch`'s and
-   `run-bananatube`'s `audio-handoff`/`audio-settle` calls and their `amixer` csets against `hw:0` only fire rejected
-   writes and add launch latency; strip them and retire `audio-handoff`, `audio-settle`, `/run/banana/audio-route`
-   and the `audio_handoff_ms`/`audio_menu_ms` knobs once nothing reads them.
-2. **Update the docs to the sound-server reality.** `README.md`, `docs/ARCHITECTURE.md`, `docs/RPC-PORT.md` and
-   `docs/EMULATORS.md` still say "no sound server" and describe the direct-ALSA MultiMedia1/2 handover.
-3. **UCM Rule follow-through.** Move the shared FE/BE switches out of `SectionDevice.EnableSequence` so they live
-   only in `SectionVerb.EnableSequence`, as the rule in `AGENTS.md` says.
-4. **A dedicated ADB switch** in Settings > System. Today the TCP listener rides the SSH setting (it has to: this adbd
+The 0.5.0 sound server and its loose ends are done (see *Done*): the pre-PipeWire handoff is retired, the UCM rule is
+followed, and the docs describe the server. Next:
+1. **Retire the last audio leftovers** (small; blocked on hardware). `/run/banana/audio-route` and bananad's
+   `audio_route_ar()` FE/BE csets are read by nobody now, and the csets are already no-ops while PipeWire holds
+   `pcm0p` -- so the jack switch is WirePlumber/ACP's either way; `sound.cpp`'s `routeCheck` also only reopens on
+   bananad's now-identical `asound.conf` rewrite. Delete all three, safely blind (the csets never took), and confirm
+   the jack the next time headphones are to hand.
+2. **A dedicated ADB switch** in Settings > System. Today the TCP listener rides the SSH setting (it has to: this adbd
    has no host key, so an open port is an unauthenticated root shell), which is a security compromise worth its own row.
-5. **Quick-settings overlay** and a **performance overlay** (FPS / temperature).
-6. **Controller remapping UI** (on top of `pad-profile`), and **per-game core options** beyond core + shader.
-7. **Library UX** -- collections/tags, a recent-played shelf, a screenshot gallery, multi-disc `.m3u`, jump-to-letter.
-8. **OTA updates over Wi-Fi** (updates are card-only today; BananaLinux installs over the air).
-9. **Local media / music player**, and porting BananaTube's newer settings screen.
-10. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
-11. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
-12. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-13. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-14. **Store / app catalog** (the Apps shelf only scans local folders).
+3. **Quick-settings overlay** and a **performance overlay** (FPS / temperature).
+4. **Controller remapping UI** (on top of `pad-profile`), and **per-game core options** beyond core + shader.
+5. **Library UX** -- collections/tags, a recent-played shelf, a screenshot gallery, multi-disc `.m3u`, jump-to-letter.
+6. **OTA updates over Wi-Fi** (updates are card-only today; BananaLinux installs over the air).
+7. **Local media / music player**, and porting BananaTube's newer settings screen.
+8. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
+9. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+10. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+11. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+12. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## Completed Baseline (0.4.9+)
 - **Core & CI:** End-to-end QEMU `virt` boot/update/test (`tools/qemu-boot.sh`), A/B OTA updates, first-time setup, `ksmbd`, `dropbear`, `ath10k_snoc`.
@@ -34,6 +31,7 @@ of it first, then the rest:
 
 ## Done
 - [x] **The sound server (0.5.0): PipeWire + WirePlumber + the RPC's UCM2 profile.** ACP brings the AudioReach (`q6apm`) card up from the UCM profile and every client -- the menu's cues, RetroArch, BananaTube -- mixes through `pcm.!default { type pipewire }` instead of the two fronts being handed over one at a time. Three DSP-specific things made it work: the card's UCM verb is re-applied in the node open path immediately before `snd_pcm_open` (`buildroot/patches/pipewire/0002` -- ACP runs its sequences once, before its probe's open/close tear-down, so the held-open sink latched the topology's "off" and boot was silent); the sink's buffering is set per node with a `monitor.alsa.rules` match (`monitor.alsa.properties` never reaches the ACP-created nodes), which is what cured the short-cue crackle; and the menu's old pre-PipeWire handover wait was deleted (`ui/src/sound.cpp`), so the first cue after a game is instant (measured 0.07 s open-to-ready, was ~1.9 s). The speaker is one mono AW88166 (`0-0035`, on FL -- `FL [on]`/`FR [off]` is normal). `AGENTS.md` carries the DSP laws: the FE<->BE switch only takes a write while its front-end's graph is closed, and shared switches belong only in `SectionVerb.EnableSequence`.
+- [x] **The pre-PipeWire audio mess cleaned out (0.5.0).** `audio-handoff` and `audio-settle` are deleted, bananad's `audio_handoff_ms`/`audio_menu_ms` knobs and `audio_publish_handoff()` are gone, and the launchers no longer call the handoff or write the FE/BE route with `amixer` before an open (games are PipeWire clients; the handoff's "wait for the frontend to read closed" never ended under the held-open sink and cost ~1.5 s a launch -- measured: launch file -> game 0.17 s, exit -> menu reopen 0.09 s). `HiFi.conf`'s `SectionDevice` `EnableSequence` copies of the shared FE/BE switches are gone too (only the verb's is left, per the UCM rule). `README`, `ARCHITECTURE` §5, `EMULATORS`, `RPC-PORT`, `BANANATUBE`, `CODEBASE-ANALYSIS` and `BOOT-SOUND` now describe the server. The one leftover -- retiring `/run/banana/audio-route`, bananad's dead csets and `sound.cpp`'s `routeCheck` -- waits on a headphone test (see *Recommended next*).
 - [x] **CI green again (0.5.0).** Five separate reds fixed: `run-bananatube`'s stale `hw:0,1`/format assertions (it plays through the server now), bananad's `-Werror=unused-result` on the `wakeup_sources` header read, the `cores` job calling a `.banana-patched` target that does not exist (the Makefile stamp is absolute), the aarch64 bananad step linking a cross `libasound` the runner has not got (now a compile check), the sleep test releasing the suspend FIFO with no power-key press (broken since the 0.4.54 spurious-wake guard, which `wake()` now satisfies and `rtc_wake()` covers the battery checks), and the defconfig check running on a fresh Buildroot clone without `buildroot/buildroot-patches` (so it dropped the freedreno Vulkan option). Tag pushes no longer trigger CI (`on.push.branches: [main]`), so a release no longer spawns a duplicate run.
 - [x] RetroAchievements progress display on the home shelf.
 - [x] Save-state browser (browse, copy and delete a game's states from the menu).
