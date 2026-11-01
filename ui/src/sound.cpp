@@ -7,8 +7,6 @@
 #include <cstdio>
 #include <cctype>
 #include <cstring>
-#include <fstream>
-#include <glob.h>
 #include <string>
 #ifdef BANANA_ALSA
 #include <alsa/asoundlib.h>
@@ -18,32 +16,6 @@
 
 namespace banana
 {
-// Are the RPC's DSP frontends all free right now? /proc says so, and "closed"/"disconnected" are the two states in
-// which a stream is not holding the graph. The DSP tears a graph down after the close returns, so a route written
-// straight after closing a stream can be written to a graph that is on its way out.
-static bool dspFrontendsFree()
-{
-	// read the status files directly: a `popen("cat ...")` here forked a shell on every handover
-	glob_t g;
-	if (glob("/proc/asound/card0/pcm*p/sub0/status", 0, nullptr, &g)) return true;
-	bool busy = false;
-	for (size_t i = 0; i < g.gl_pathc && !busy; i++)
-	{
-		FILE* f = fopen(g.gl_pathv[i], "r");
-		if (!f) continue;
-		char buf[64];
-		while (fgets(buf, sizeof buf, f))
-		{
-			size_t n = strlen(buf);
-			while (n && isspace((unsigned char)buf[n - 1])) buf[--n] = 0;
-			if (strcmp(buf, "closed") && strcmp(buf, "disconnected")) { busy = true; break; }
-		}
-		fclose(f);
-	}
-	globfree(&g);
-	return !busy;
-}
-
 
 	// 16-bit PCM WAV only (what rnds/gen_sounds.py writes)
 	static bool loadWav(const std::string& path, std::vector<int16_t>& pcm, int& rate, int& channels)
@@ -240,7 +212,6 @@ static bool dspFrontendsFree()
 			slog("release(): the device is handed over");
 #endif
 			closeNow = true;
-			handover = true;	// the game that starts now has the frontend: the menu's next open needs the DSP's settle
 			queued.clear();
 			bgmOn = false;	// the game takes the device; main.cpp calls setBgm(true) again when it comes back
 		}
@@ -260,18 +231,6 @@ static bool dspFrontendsFree()
 	void Sound::run()
 	{
 #ifdef BANANA_ALSA
-		// The DSP settle the menu waits before reopening its frontend after a game let go, in ms, from bananad's
-		// published value (banana/bananad.conf's audio_menu_ms, 600 by default). The launchers' audio-handoff has
-		// its own knob (audio-handoff-ms): a game opens the frontend the menu never releases, so a launch needs no
-		// wait, while this reopen races the outgoing graph and does (0 cuts the cues out for a moment). Read per
-		// handover, so a SIGHUP to bananad changes it without restarting the menu.
-		auto handoffMs = []()
-		{
-			std::ifstream f("/run/banana/audio-menu-ms");
-			int v = 600;
-			if (!(f >> v) || v < 0) return 600;
-			return v;
-		};
 		// While the device is open the stream never stops: after a sound, silence follows. The DSP's output is
 		// started when the stream powers up, and the first try fails because the I2S clock isn't running yet; a
 		// running stream lets the retry find its clock. Writing 5 ms at a time also lets a new sound cut the one
@@ -297,150 +256,17 @@ static bool dspFrontendsFree()
 		auto routeId = [] { struct stat st; return stat("/run/banana/asound.conf", &st) ? 0LL : (long long)st.st_ino * 1000003LL + st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec; };
 		long long routeLoaded = routeId();
 		int routeCheck = 0;
-		bool first = true;		// the first cue of the session says what the DSP answered (see below)
-		/* The DSP's route mixers through the ALSA mixer API, not `amixer`: this used to fork four or five processes
-		 * per open (applyRoute's two, the read-back's popen, the first-cue check), ~20-50 ms each, which on the
-		 * menu's own reopen was most of the delay before the first cue. One handle, kept for the thread's life and
-		 * dropped when alsa-lib's configuration is (the jack moved). */
-		snd_mixer_t* mx = nullptr;
-		auto dropMixer = [&] { if (mx) { snd_mixer_close(mx); mx = nullptr; } };
-		auto mixer = [&]() -> bool
-		{
-			if (mx) return true;
-			if (snd_mixer_open(&mx, 0) < 0) { mx = nullptr; return false; }
-			if (snd_mixer_attach(mx, "hw:0") < 0 || snd_mixer_selem_register(mx, nullptr, nullptr) < 0 || snd_mixer_load(mx) < 0)
-			{
-				snd_mixer_close(mx);
-				mx = nullptr;
-				return false;
-			}
-			return true;
-		};
-		/* The DSP **rebuilds its controls with each graph's life**, and alsa-lib's mixer keeps the element list it
-		 * read: an element found a minute ago points at a control that no longer exists, and the write then goes
-		 * nowhere, silently (measured on the unit with tools/route-probe: a long-lived handle found the selem and
-		 * "set" it with no effect, a fresh one moved it). So every look-up starts from a whole fresh mixer --
-		 * open, attach, register, load, exactly as the probe does; re-registering an already-loaded handle fails,
-		 * which is what the first version of this did (the boot log read '?' for the route). A local parse of the
-		 * same ~180 controls, no device I/O, no fork. */
-		auto refresh = [&] { dropMixer(); return mixer(); };
-		auto selem = [&](const std::string& name) -> snd_mixer_elem_t*
-		{
-			if (!mx) return nullptr;
-			snd_mixer_selem_id_t* sid = nullptr;
-			snd_mixer_selem_id_alloca(&sid);
-			snd_mixer_selem_id_set_index(sid, 0);
-			snd_mixer_selem_id_set_name(sid, name.c_str());
-			return snd_mixer_find_selem(mx, sid);
-		};
-		auto switchTo = [&](const std::string& name, int on) -> bool
-		{
-			snd_mixer_elem_t* e = selem(name);
-			if (!e) return false;
-			/* these switches are not "joined" (the probe: has_playback_switch 1, joined 0), so both channels are set */
-			snd_mixer_selem_set_playback_switch_all(e, on);
-			return true;
-		};
-		/* bananad's published route, written into the DSP's mixer: "control=values" a line, its speakers or its
-		 * codec depending on the jack. The fallback (no file: an older card, or a cue before bananad has written
-		 * one) is the speakers, which is what every handheld without a DSP routing switch wants. */
-		auto applyRoute = [&]
-		{
-			if (!refresh()) return;
-			std::ifstream rt("/run/banana/audio-route");
-			std::string line;
-			bool any = false;
-			while (std::getline(rt, line))
-			{
-				size_t eq = line.rfind('=');
-				if (eq == std::string::npos || eq + 1 >= line.size()) continue;
-				if (switchTo(line.substr(0, eq), line.compare(eq + 1, 2, "on") == 0 ? 1 : 0)) any = true;
-			}
-			if (!any) switchTo("SENARY_MI2S_RX Audio Mixer MultiMedia1", 1);
-		};
-		/* Still as bananad published it? A graph keeps the route it was instantiated with, so a route taken away
-		 * under a live stream cannot be repaired by writing it again -- only by opening a new stream. Reading one
-		 * mixer is microseconds now; a cue that would otherwise be heard nowhere is not. */
-		auto routeIsAsPublished = [&]
-		{
-			if (!refresh()) return true;
-			std::ifstream rt("/run/banana/audio-route");
-			std::string line;
-			if (!std::getline(rt, line)) return true;	// nothing published (not the RPC's card): never stale
-			size_t eq = line.rfind('=');
-			if (eq == std::string::npos) return true;
-			std::string name = line.substr(0, eq);
-			/* the first channel's answer only: these DSP mixers take the value for the pair and answer with the
-			 * second one forced off ("on,on" reads back "on,off"), so comparing every value would call a perfectly
-			 * good route stale and have the menu rebuild its stream on every cue */
-			snd_mixer_elem_t* e = selem(name);
-			if (!e) return true;	// (not up yet, or not this card: don't hold the open up)
-			int v = 0;
-			if (snd_mixer_selem_get_playback_switch(e, SND_MIXER_SCHN_FRONT_LEFT, &v) < 0) return true;
-			return v == (line.compare(eq + 1, 2, "on") == 0 ? 1 : 0);
-		};
-		/* The RPC's DSP (audioreach): a frontend's graph is instantiated at the open and takes the mixer values it
-		 * finds at that moment, and closing a stream tears that graph down -- asynchronously, which is the part that
-		 * matters here. So the order that works is: make sure nothing holds the frontend, write the route, open.
-		 * Written while a teardown is still running, the value is dropped with the graph it was meant for, and the
-		 * stream that opens next takes the topology's own "off" and stays silent for its whole life. run-retroarch
-		 * waits exactly this way; the menu now does the same. */
+		/* The DSP's route (which frontend, which codec path, the FE<->BE switches) belongs to the sound server now:
+		 * ACP applies the UCM profile and PipeWire re-applies the verb right before it opens the PCM (the UCM-open
+		 * patch), and RetroArch is itself a PipeWire client. So this opens `default` -- the server -- directly, with
+		 * no route write, frontend handover or settle: the menu used to do all of that only because it owned the
+		 * frontend, and it was seconds of delay after every game. A jack move still needs the reopen (asound.conf is
+		 * read once), which is the routeId check below. */
 		auto openDev = [&](const Clip& c) -> bool
 		{
 			if (closeNow) return false;	// release() won the race: do not open a device the game is about to claim
 			slog("opening the device");
-			if (long long r = routeId(); r != routeLoaded) { snd_config_update_free_global(); dropMixer(); routeLoaded = r; }
-			if (access("/proc/asound/card0", F_OK) == 0)
-			{
-				/* The DSP latches the mixer values when the frontend's graph is instantiated -- at our open, not
-				 * at bananad's -- so the route has to be written before anything opens the frontend. A probe that
-				 * opened and closed first instantiated the graph with the mixers still at their boot defaults (the
-				 * kernel: "no backend DAIs enabled for MultiMedia1 Playback") and left its teardown racing the real
-				 * open, which came up half connected: the first write returned -EIO and prepare -EBUSY, and the
-				 * stream was silent until it closed and reopened. run-retroarch writes its route the same way. */
-				applyRoute();
-				/* The DSP does not take a mixer write until it is ready, and rcS's and bananad's own retries can be
-				 * over by then (their logs read "still reads 'off,off' 3 s after rcS gave up"); the menu would open
-				 * an unrouted graph, which is instantiated with the topology's own 'off' and stays silent for the
-				 * whole session. Make sure the route this stream is about to latch reads back as published before
-				 * opening, retrying the write rather than opening on hope. routeIsAsPublished answers true when
-				 * nothing is published (not this card), so this is a no-op elsewhere. */
-				for (int t = 0; t < 75 && !closeNow && !routeIsAsPublished(); t++)
-				{
-					applyRoute();
-					std::this_thread::sleep_for(std::chrono::milliseconds(200));
-				}
-				if (closeNow) return false;
-				/* The frontend poll and the settle are for a *handover*: the game that just ended may still be
-				 * holding the DSP frontend, and an open inside its teardown comes up half connected (the amps answer
-				 * "start failure (-1)": measured on the RPC with a game and a menu cue overlapping by a few hundred
-				 * ms). The menu's *own* reopen -- its own graph just went down -- needs neither, and they were most
-				 * of the delay before its first cue. release() raises `handover` for the open that follows a game. */
-				if (handover.exchange(false))
-				{
-					bool wasHeld = false;
-					for (int t = 0; t < 12 && !closeNow && !dspFrontendsFree(); t++)
-					{
-						wasHeld = true;
-						std::this_thread::sleep_for(std::chrono::milliseconds(100));
-					}
-					slog("DSP frontends %s", wasHeld ? "were held: waited" : "were free");
-					int settleMs = handoffMs();
-					slog("DSP handoff settle %d ms", settleMs);
-					if (wasHeld && !closeNow && settleMs > 0)
-						std::this_thread::sleep_for(std::chrono::milliseconds(settleMs));
-				}
-				if (first)	// one line, so a silent menu says what the DSP was told and what it answered
-				{
-					refresh();
-					snd_mixer_elem_t* e = selem("SENARY_MI2S_RX Audio Mixer MultiMedia1");
-					int v = -1;
-					if (e) snd_mixer_selem_get_playback_switch(e, SND_MIXER_SCHN_FRONT_LEFT, &v);
-					fprintf(stderr, "banana-ui: sound: the speaker route reads '%s' before the first cue\n",
-						v < 0 ? "?" : v ? "on" : "off");
-					first = false;
-				}
-			}
+			if (long long r = routeId(); r != routeLoaded) { snd_config_update_free_global(); routeLoaded = r; }
 			if (closeNow) return false;
 			int e = snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
 			if (e < 0) { slog("open failed: %s", snd_strerror(e)); pcm = nullptr; return false; }
@@ -540,18 +366,6 @@ static bool dspFrontendsFree()
 				static bool loggedCue = false;
 				if (!loggedCue || name == "insert") { slog("cue %s", name.c_str()); loggedCue = true; }
 				const Clip& c = clips[name];
-				/* bananad republishes the route (it writes /run/banana/audio-route and rewrites /run/banana/asound.conf
-				   together) only on a jack change, so while asound.conf is the one this stream was opened with the DSP
-				   still holds the route applyRoute wrote then: there is nothing to check, and the amixer fork the
-				   check makes has no business on every cue (it is the cue's own start that is delayed). When the route
-				   did move, the check runs as before. */
-				if (pcm && routeId() != routeLoaded && !routeIsAsPublished())
-				{
-					/* write it back, and only if the DSP will not take it that way (a graph keeps the route it was
-					   instantiated with) rebuild the stream -- one extra mixer read, on the one cue that was wrong */
-					applyRoute();
-					if (!routeIsAsPublished()) closeDev("route stale");
-				}
 				if (pcm && (openRate != c.rate || openCh != c.channels)) closeDev("format");
 				if (!pcm && !openDev(c))
 				{
@@ -626,7 +440,6 @@ static bool dspFrontendsFree()
 			}
 		}
 		closeDev("end");
-		dropMixer();
 #else
 		std::unique_lock<std::mutex> l(m);
 		for (;;)

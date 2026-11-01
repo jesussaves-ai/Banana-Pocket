@@ -50,7 +50,6 @@ namespace banana
 		bool stop = false;
 		std::atomic<bool> closeNow{false};	// read by openDev() without m (release() must be able to abort an open)
 		std::atomic<bool> screenOff{false};	// the guard blanked the panel: let the device go (see setScreenOn)
-		std::atomic<bool> handover{false};	// the last close was release(): the next open follows a game's handover
 		std::atomic<bool> devOpen{false};	// the playback device is open (see release())
 		std::atomic<bool> bgmOn{false};		// the setting (and 0 while a game or a sleep holds the device)
 		std::atomic<bool> warmUp{false};	// the boot warm-up: open the device and hold it until the first cue
