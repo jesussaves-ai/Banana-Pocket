@@ -3,6 +3,9 @@
 This is a self-contained write-up of why Banana's boot animation could not play its click on the RPC, the
 measurements, the confirmed root cause, the fixes, and what is left. It is meant to be read on its own.
 
+*Historical: this predates the 0.5.0 sound server (the queue is `aplay` on `hw:0` here). See `ARCHITECTURE.md` §5 and
+`RPC-PORT.md`'s PipeWire sections for how the card is driven now -- the q6apm timing facts below still hold.*
+
 Cross-reference: `docs/RPC-PORT.md` ("The menu's audio delay") and `docs/ARCHITECTURE.md` ("Sound").
 
 ## TL;DR
@@ -29,7 +32,7 @@ Cross-reference: `docs/RPC-PORT.md` ("The menu's audio delay") and `docs/ARCHITE
 ## The device and its audio stack
 
 - **Hardware**: Retroid Pocket Classic — Qualcomm Snapdragon G1 Gen 2 (SM4450), one 1240×1080 AMOLED panel, no lid.
-- **OS**: Banana (Buildroot, read-only squashfs root + exFAT data partition; no systemd, no udev, no sound server).
+- **OS**: Banana (Buildroot, read-only squashfs root + exFAT data partition; no systemd, no udev; the sound server came in 0.5.0).
 - **Audio**: WCD937x codec + **two AW88166 amplifiers** on I2S, driven by Qualcomm's **AudioReach DSP** (the
   `sc8280xp` / `q6apm` machine stack). No UCM profile: the route mixers are written *before* a playback frontend is
   opened, because the DSP instantiates a frontend's graph at the open and latches the mixer values it finds then.

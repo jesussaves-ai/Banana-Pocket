@@ -3,8 +3,8 @@
 *The little operating system for the **Retroid Pocket Classic** — a handheld you can hold in one hand, and a menu you can read from across the room.*
 
 It boots from two A/B slots so an update never touches the system you're running, keeps its games and saves on an
-exFAT card, and draws its whole interface **by hand on the CPU**. No systemd. No sound server. No compositor for the
-menu — just the panel, a dot grid, and a lot of gold.
+exFAT card, and draws its whole interface **by hand on the CPU**. No systemd, no PulseAudio (the sound server is
+PipeWire + WirePlumber). No compositor for the menu — just the panel, a dot grid, and a lot of gold.
 
 The menu is **Banana's own Pixel UI**: a raised bezel, a carousel of chunky square tiles, a fat gold highlight on
 whatever you're about to pick, and a cartridge that drops into a console while your game boots. It comes in five
@@ -34,7 +34,8 @@ All of these are the handheld's real 1240×1080 panel, grabbed by the QEMU boot 
 | Part | What it does |
 |---|---|
 | `banana-ui` | the menu: the ROCKNIXDS Pixel layout engine on a software backend, KMS dumb buffers, `inotify`-watched ROM folders |
-| `bananad` | the quiet one: input, sleep, battery, the sound route, the clock and Wi-Fi |
+| `bananad` | the quiet one: input, sleep, battery, the mixer/volume and jack, the clock and Wi-Fi |
+| PipeWire + WirePlumber | the sound server: ACP brings the AudioReach card up from its UCM profile, and the menu and every game/app mix through it |
 | `banana-perf` | the clock profiles: `ui`, `powersave`, `balanced`, `performance` |
 | RetroArch + cores | the emulators, launched from the library with the menu's settings |
 

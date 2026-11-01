@@ -13,6 +13,7 @@
 - **Audio (`q6apm` + PipeWire/WirePlumber):** AudioReach (`sc8280xp`/q6apm) + `WCD937x` + single mono `AW88166` (`0-0035`, on FL; `FL [on]`/`FR [off]` is normal).
   - **DSP Hardware Law:** `q6apm` rejects FE<->BE mixer changes (`MultiMedia1`, etc.) while that FE's PCM (`pcm0p`) is `RUNNING`. Routes MUST be set while PCM is `CLOSED` prior to `snd_pcm_open`.
   - **UCM Rule:** Shared FE/BE switches belong ONLY in `SectionVerb` `EnableSequence` (NEVER in `SectionDevice` `DisableSequence`, or inactive port teardown will clobber the active route).
+  - **Clients:** `banana-ui`, `run-retroarch` and `run-bananatube` are pure PipeWire clients via ALSA `default` (`type pipewire`): NO direct `hw:0` route writes, no FE/BE handoff, no pre-open `amixer`/`alsaucm`. ACP + the UCM profile + `buildroot/patches/pipewire/0002` own the routing.
   - **C Code:** NEVER fork `amixer`/`alsaucm` in C/C++; use ALSA C API (`snd_mixer_*`). Volume: `Left PCM`/`Right PCM` HW gain (`0..511`).
 - **Input/Power:** Stickless slate (`rsinput` MCU + `FT5452` touch + power/vol; NO `SW_LID`, NO RTC `wakealarm`). Preserve AMOLED burn-in guard (`/run/banana/screen-off`) + `s2idle`/`deep` wake-key swallowing.
 - **Storage:** RO A/B `squashfs` (`banana-root-a`/`b`), RW `exFAT` `/data` (`BANANA`), `tmpfs` `/run/banana`.

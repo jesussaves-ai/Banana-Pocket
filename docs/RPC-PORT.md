@@ -285,7 +285,8 @@ fast run of presses left the device open between them and was heard.
 Fix: the menu holds its stream open between cues exactly as it does on the RG DS (20 s quiet, then close). The game's
 claim on the frontend does not need the early close -- `Sound::release()` already gives it up, and `runGame()` calls
 it for every launch -- and `run-retroarch` now waits for the frontends to report themselves free before RetroArch
-opens one. bananad's `audio-exclusive` marker is gone with it: nothing reads it.
+opens one. bananad's `audio-exclusive` marker is gone with it: nothing reads it. *(Since 0.5.0 the menu's stream is a
+PipeWire client and `run-retroarch` does no such wait -- see the PipeWire section below.)*
 
 ## Booting the fixed image, and what the boot log said (2026-10-27)
 
@@ -390,22 +391,12 @@ graph a frontend opened right after sees -- was completely silent. Patch `0063-�
 when it is slow (>= 50 ms), so the window is measurable on the unit without dynamic debug. Note the DSP acknowledges the
 *command*, not the full teardown: the residual gap after that ack is the DSP's own and the driver has no event for it, so
 there is no clean wait-for-teardown yet. Until there is, the userspace "one beat" stays where it is needed -- but only
-there. Measured on the unit, the two directions want different values, so there are two knobs in `banana/bananad.conf`.
-**`audio_handoff_ms`** (default **0**) is the launcher's wait before it opens its frontend: 0 is safe because a game
-opens MultiMedia2, the frontend the menu never releases, so a launch does not race the menu's teardown -- the original
-0.8 s was covering a game that shared MultiMedia1, the bug the games' own `$HOME/.asoundrc` fixed (the kernel log shows
-no slow or failed close, and games had sound over many launches and after a reboot). **`audio_menu_ms`** (default
-**600**) is the beat the menu waits before reopening its frontend after a game let go, and that one *does* race the
-outgoing graph: 0 cuts the cues out for a moment, ~400 leaves a trace, 600 is clean. A fast relaunch races too -- the
-outgoing game's graph can still be tearing down when the new one is instantiated -- so `audio-settle` also carries a
-short cooldown of its own: the launchers note when they exit (`/run/banana/last-game-end`, milliseconds of uptime) and
-it waits out the remainder, which leaves an ordinary launch at 0 and only pays right after a game let go. bananad
-publishes them as
-`/run/banana/audio-handoff-ms` (read by `usr/libexec/banana/audio-settle`) and `/run/banana/audio-menu-ms` (read by
-banana-ui's `Sound`), so either can be raised from the field with a SIGHUP if a stream ever comes up silent. (A UCM2 profile -- the idea in the PipeWire
-episode below -- only helps a UCM-aware opener like PipeWire/ACP, which Banana deliberately does not have: with no
-sound server every opener still sets the route itself, so UCM would only rename the mixer writes, not move them into
-the open.)
+there. Measured on the unit, the two directions wanted different values, so there were two knobs in
+`banana/bananad.conf` (`audio_handoff_ms`, `audio_menu_ms`, published as `/run/banana/audio-handoff-ms` and
+`/run/banana/audio-menu-ms`) and two scripts read them: `audio-handoff` (the launchers, which also waited for the
+frontend to read `closed` and re-asserted the route) and `audio-settle` (a fast relaunch's cooldown). **All of that is
+gone in 0.5.0** -- see *PipeWire: shipped* below: once the server owns the card its held-open sink means the
+"frontend reads closed" wait never ends, and the route write that followed landed on a live graph the DSP rejects.
 
 **A boot-time bug found chasing the intermittent "game audio silent until a restart".** bananad's codec setup used the
 *raw* CTL API with the *simple-mixer* names (`"HPHL"`, `"HPHL_RDAC"`, `"HPHL_COMP"`, …), but those controls are named
@@ -687,8 +678,9 @@ What a key press means now, anywhere: 5% of the amplifiers' 127.75 dB range (~6.
 `pactl -- set-sink-volume @DEFAULT_SINK@ N%` -- one *system* sink, not the app's own volume -- and its UCM for this
 device is what makes that sink's control the amplifiers: `LibraryConfig.remap.Config` presents a single virtual
 `Speaker Volume` spanning `Left PCM Playback Volume` (vindex 0) and `Right PCM Playback Volume` (vindex 1), and its
-`BootSequence` sets both to 511. Banana has no PipeWire and no UCM, so `/usr/libexec/banana/volume` drives the two
-controls directly -- the same effect -- and the keys reach them from the menu *and* from a game. ROCKNIX shows the
+`BootSequence` sets both to 511. Banana ships this UCM profile and PipeWire now, but `/usr/libexec/banana/volume` still
+drives the two amp controls directly (the HW gain is what is heard) -- the same effect -- and the keys reach them from
+the menu *and* from a game. ROCKNIX shows the
 level with `mako-notify` (a Wayland notification the compositor paints over the game); Banana tried the equivalent,
 RetroArch's `SHOW_MSG` on the command FIFO, but that is a plain grey text box -- a jarring look over a game -- so the
 only indicator is the menu's own pill. A game changes the volume with no on-screen indication, which was judged
@@ -756,7 +748,7 @@ waits. The handheld has 5 GB free and the image is ~700 MB uncompressed, so `run
 `CDROM_LoadImageToRAM = "true"` (and `PreCacheCHD`): the whole disc is read once at startup and nothing touches the
 card again.
 
-## PipeWire: built, tried, not shipped (2026-10-28)
+## PipeWire: built, tried, rolled back (2026-10-28) -- shipped in 0.5.0
 
 ROCKNIX's RetroArch runs on PipeWire, and its absence is the difference heard on this card: the DSP's single frontend
 belongs to whichever app opened it first (so the menu and a game hand it over), and there is nothing between
@@ -778,11 +770,13 @@ down -- which is exactly why `run-retroarch` and banana-ui re-assert the route *
 writes it before the menu starts. With PipeWire the one-and-only open is the *server's*: the sink came up, the
 streams opened, the card ran (`state: RUNNING`), the route read `on,off` -- and nothing was audible. The remaining
 layer is the DSP's graph latch and the amplifiers' start, and userspace has no hook at the server's open.
-**The next attempt should carry a UCM2 profile for this card** (which is what ROCKNIX's `alsa-ucm-conf` gives their
-handhelds, and what makes ACP set the routing itself at each profile activation) rather than asking a WirePlumber
-rule and bananad to take turns at it. *(Superseded for the no-sound-server design: UCM is only applied by a UCM-aware
-opener -- PipeWire/ACP -- so with no sound server it would only rename the mixer writes Banana already makes before each
-open. See the handover section for what was done instead: `0063-…` makes the graph-close window measurable.)*
+**Shipped in 0.5.0 (2026-11-01):** the next attempt carried the UCM2 profile, exactly as guessed -- ACP sets the
+routing at each profile activation, so the server never writes an FE<->BE switch by hand. Two more pieces were needed
+that userspace alone could not supply: the server re-applies the UCM verb immediately before `snd_pcm_open` (the DSP
+latches an FE's mixer only while its graph is closed, and ACP runs its sequences once, before its probe tears the graph
+down: `buildroot/patches/pipewire/0002`), and the sink's q6apm-safe buffering is set per node. With those, boot, menu
+and game audio all come through the server and the pre-open handoff is gone (see the *handover* section above). The
+`a sink that hung the game` row was a UCM-less artifact: with the profile, ACP opens the right PCM.
 
 ## RetroArch's black panel (2026-10-27)
 
@@ -848,11 +842,12 @@ Beyond the module chain above, three things about *this* DSP's behaviour decide 
    setting it while a stream is open has no effect, and the stream stays silent for its life. `rcS` therefore sets
    it -- and reads it back, retrying -- *before* `banana-perf ui` starts, because the menu opens its playback stream
    at startup and keeps it.
-2. **Only `MultiMedia1` produces sound.** `MultiMedia2` accepts writes ("played 96000 frames") and is silent, so
-   everything shares the first frontend: the menu releases it when a game starts (`Sound::release()`), and
-   `run-retroarch` re-asserts the route right before RetroArch opens it.
-3. **There is no UCM profile and no ALSA plugin directory** in the image (`/usr/lib/alsa-lib` is empty), so the
-   `hooks` PCM plugin can't be used for routing; `plug` and `asym` are built into libasound and are fine.
+2. **Only `MultiMedia1` produces sound.** `MultiMedia2` accepts writes ("played 96000 frames") and is silent. Under
+   the old no-server design everything shared the first frontend (the menu released it for a game, and `run-retroarch`
+   re-asserted the route before RetroArch opened it); **since 0.5.0 the server owns `MultiMedia1` and every client
+   mixes through it**, so nothing is handed over.
+3. **A UCM profile and PipeWire are in the image now** (`/usr/share/alsa/ucm2`, `/usr/lib/spa-0.2/alsa`); ACP applies
+   the profile, so the `hooks` PCM plugin is not needed for routing (`plug`/`asym` are built into libasound anyway).
 
 The menu's own stream volume (`stream0.vol_ctrl0 MultiMedia1 Playback Volume`) and the amps' `Left PCM`/`Right PCM`
 (-12.75 dB at 460/511) are set by `rcS` too; `bananad` reports on failure to syslog.

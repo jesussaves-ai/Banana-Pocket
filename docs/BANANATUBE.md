@@ -82,9 +82,9 @@ youtubei/v1/search`, the public web client key) — one HTTPS request, parsed in
 `yt-dlp --flat-playlist` path, so search keeps working. Thumbnails are fetched in the background (libcurl → SDL2_image)
 and cached under **`/data/banana/cache/tube/<id>.jpg`**, so revisiting a result is instant.
 
-**Audio output:** S16 to the second AudioReach frontend (MultiMedia2, `hw:0,1`) — see the launcher and the note
-below — with a small `--audio-buffer` matched to the tiny AudioReach period, and a graceful stop (mpv's own `quit`
-over IPC, then TERM) so the frontend is released cleanly and the next open does not hit `EBUSY`.
+**Audio output:** S16 to the sound server's `default` (PipeWire; mpv is a client like the menu) — see the launcher
+and the note below — with a small `--audio-buffer` matched to the tiny AudioReach period, and a graceful stop (mpv's
+own `quit` over IPC, then TERM).
 
 
 
@@ -116,9 +116,9 @@ search), so the touchscreen and the buttons can be mixed freely.
 
 ## Audio
 
-`run-bananatube` calls `/usr/libexec/banana/audio-handoff` once, before `banana-tube` (and so before mpv): the menu
-has just released its AudioReach frontend and the DSP needs a beat to tear the graph down. mpv then opens the ALSA
-`default` device from `/run/banana/asound.conf` (there is no PulseAudio/PipeWire). The same contract `run-retroarch`
+`run-bananatube` does no audio handoff: mpv opens the ALSA `default` device from `/run/banana/asound.conf`, which is
+the **sound server** (PipeWire). So BananaTube is a PipeWire client like the menu and RetroArch -- it mixes with them
+instead of taking the DSP's single frontend, and no route is written before the open. The same contract `run-retroarch`
 has.
 
 ## Packages

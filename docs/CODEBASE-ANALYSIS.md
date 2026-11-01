@@ -17,7 +17,7 @@ amplifiers, a fan, and no lid. **Version:** 0.4.52. No submodules; the hardware 
 | `docs/` | **Docs** | `ARCHITECTURE.md`, `RPC-PORT.md`, `RPC-TEST.md`, `ROADMAP.md`, `PERFORMANCE.md` |
 
 Runtime architecture (from `docs/ARCHITECTURE.md`): **no systemd, no EmulationStation, no desktop, no initramfs, no
-udev, no sound server; no compositor for the menu** (the menu draws straight on KMS, and a game runs under cage, a
+udev, no PulseAudio (PipeWire is the sound server); no compositor for the menu** (the menu draws straight on KMS, and a game runs under cage, a
 kiosk Wayland compositor, so the panel's turn is applied once to everything). A read-only squashfs root + an exFAT
 data partition; busybox init; two always-resident userland processes (`banana-ui`, `bananad`).
 
@@ -54,9 +54,10 @@ verifies, writes the *inactive* slot, reads back, then rewrites `DEFAULT` (`Prev
   Two KMS dumb buffers, page flips on vblank; damage-only copies into the uncached scanout buffer.
 - **Input**: the MCU's `rsinput` gamepad (`ui/src/input.cpp` reads it, never grabs it; bananad reads it too) and
   the FT5452 touchscreen (the one panel, so its events are screen 0; nothing to route).
-- **Audio**: no sound server. `bananad` publishes the route to `/run/banana/audio-route` and writes
-  `/run/banana/asound.conf`; the AudioReach DSP (the `sc8280xp`/q6apm stack) takes the mixer route at each open,
-  so banana-ui and `run-retroarch` re-assert it before opening the frontend. WCD937x + 2×AW88166.
+- **Audio**: **PipeWire + WirePlumber** is the sound server (ACP brings the card up from the RPC's UCM2 profile);
+  `bananad` writes `/run/banana/asound.conf`, whose `default` is `type pipewire`. The menu, RetroArch and BananaTube
+  are PipeWire clients and mix through it -- no `hw:0` handover. WCD937x + 1×AW88166 (mono, `0-0035`). q6apm rules in
+  `AGENTS.md` §2.
 - **GPU**: the Adreno a613 through Mesa freedreno (both the kernel catalog and Mesa need the 613 id).
 - **Power**: `bananad` — a no-lid slate (its idle timer dims but does not suspend unless asked), the power key,
   the charger off `power_supply` uevents (a pulse on the vibrator when the cable goes in), the fan left to the kernel's `pwm_fan`. (Its RTC-alarm battery check is inert on
