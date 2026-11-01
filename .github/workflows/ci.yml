@@ -40,9 +40,11 @@ jobs:
         run: for f in system/rootfs/etc/init.d/* system/rootfs/usr/bin/* system/rootfs/usr/libexec/banana/* system/rootfs/etc/banana/sleep.d/* system/tests/*.sh system/bananad/tests/*.sh buildroot/board/retroid-pocket-classic/*.sh tools/*.sh; do sh -n "$f" || exit 1; done
       - name: Buildroot defconfigs keep every option
         run: |
-          git clone --depth 1 --branch 2026.02.3 https://github.com/buildroot/buildroot /tmp/br
+          # Buildroot itself is patched (buildroot/buildroot-patches: the Mesa freedreno Vulkan option the defconfig
+          # needs, the 26.2.6 bump, mpv+Lua); a fresh clone without them would drop the option and fail here.
+          make buildroot-patched
           for d in banana_retroid_pocket_classic_defconfig; do
-            make -s -C /tmp/br BR2_EXTERNAL=$PWD/buildroot O=/tmp/out-$d $d
+            make -s -C .buildroot BR2_EXTERNAL=$PWD/buildroot O=/tmp/out-$d $d
             grep -E '^BR2_|^# BR2_.* is not set' buildroot/configs/$d | while IFS= read -r l; do
               grep -qxF "$l" /tmp/out-$d/.config || { echo "$d drops: $l"; exit 1; }
             done
