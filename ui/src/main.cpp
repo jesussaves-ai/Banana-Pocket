@@ -1564,7 +1564,9 @@ int main(int argc, char** argv)
 	while (!quit)
 	{
 		double now = nowMs();
-		// the burn-in guard: dim the panel to a night level after 90 s idle, turn it off after 180 s
+		// the burn-in guard: dim the panel to a night level after 90 s idle, turn it off after 180 s -- but never
+		// blank it while on the charger (a dark panel on the cable read as a sleep)
+		guard.setCharging(lib.charging());
 		if (guard.tick(now, &sound) && guard.stage() == 2) sound.setBgm(false);	// blanked: let the sound device go too
 		{
 			std::lock_guard<std::mutex> l(worker.uiLock);

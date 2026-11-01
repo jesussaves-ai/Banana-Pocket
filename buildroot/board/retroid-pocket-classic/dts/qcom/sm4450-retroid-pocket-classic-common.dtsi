@@ -2258,6 +2258,9 @@
 };
 
 &pon_pwrkey {
+	/* A 15.6 ms debounce: the pwrkey is the only armed wake source and its IRQ (edge-both) can fire on a glitch, so
+	 * without this a stray edge lights the panel in the night. The driver ignores events before the debounce ends. */
+	debounce = <15625>;
 	status = "okay";
 };
 

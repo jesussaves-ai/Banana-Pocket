@@ -26,6 +26,9 @@ namespace banana
 			dimPct = percent < 1 ? 1 : percent > 100 ? 100 : percent;
 		}
 		void input(double now) { lastInput = now; }
+		// On the charger the panel must not be blanked (that is what looked like a sleep): the guard stops at the dim
+		// stage while this is set. main() sets it from the battery's charging state.
+		void setCharging(bool on) { charging = on; }
 		int stage() const { return st; }			// 0 awake, 1 dimmed, 2 blanked
 		int level() const { int c = -1; std::ifstream(bl) >> c; return c; }
 
@@ -35,13 +38,15 @@ namespace banana
 			int was = st;
 			if (dimMs <= 0) return false;
 			if (st == 0 && attached() && now - lastInput >= dimMs) dim(sound);
-			else if (st == 1 && now - lastInput >= blankMs) blank(sound);
+			else if (st == 1 && !charging && now - lastInput >= blankMs) blank(sound);
+			else if (st == 2 && charging) dimAgain(sound);	// the cable went in while blanked: back to dimmed
 			return st != was;
 		}
-		// ms until the guard's next step, or -1 when there is none (blanked, or nothing attached)
+		// ms until the guard's next step, or -1 when there is none (blanked, charging at the dim stage, or nothing attached)
 		int nextMs(double now) const
 		{
 			if (dimMs <= 0 || st == 2 || !attached()) return -1;
+			if (st == 1 && charging) return -1;	// charging: the panel stays dimmed, never blanked
 			double due = lastInput + (st == 0 ? dimMs : blankMs);
 			int left = (int)(due - now) + 1;
 			return left < 1 ? 1 : left;
@@ -98,6 +103,7 @@ namespace banana
 		std::string bl, blMax;
 		double lastInput = 0;
 		int st = 0, savedBright = -1;
+		bool charging = false;	// on the charger: stop at the dim stage, never blank
 		int dimMs = 90000, blankMs = 180000, dimPct = 5;	// the headless test's defaults; main() configures from bananad.conf
 		void write(int v) { if (!bl.empty()) { std::ofstream o(bl); o << v << "\n"; } }
 		void dim(Sound* sound)
@@ -114,6 +120,16 @@ namespace banana
 				std::ofstream("/run/banana/dim") << (cur * 1000 / max) << "\n";	// the level before, for Settings
 			}
 			if (sound) sound->setBgmGain(120);	// the loop a little quieter while dimmed
+			st = 1;
+		}
+		// the cable went in while we had blanked the panel: back to the dimmed level (never full -- the idle timer is
+		// still running), and the sound device back with it
+		void dimAgain(Sound* sound)
+		{
+			int max = -1;
+			{ std::ifstream f(blMax); f >> max; }
+			if (max > 0) { int v = max * dimPct / 100; if (v < 1) v = 1; write(v); }
+			if (sound) { sound->setScreenOn(true); sound->setBgmGain(120); }
 			st = 1;
 		}
 		// blanked: the panel off, and the sound device released with it -- the screen being off is the real idle,

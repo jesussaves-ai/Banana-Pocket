@@ -35,6 +35,7 @@
 #include <string.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
+#include <sys/mount.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <sys/reboot.h>
@@ -335,6 +336,23 @@ static void drain_inputs(void)
 		while (read(devfd[i], ev, sizeof ev) > 0) {}
 }
 
+/* Did the user really press power while it slept? The PMIC pwrkey is the only armed wake source and its IRQ can fire
+ * on a glitch (and on the release of the very press that asked for the sleep), so a wake only counts when a real
+ * KEY_POWER press is among the queued events. The events are consumed here, so the wake-up sequence's drain_inputs()
+ * then finds nothing. */
+static int wake_key_press(void)
+{
+	int pressed = 0;
+	struct input_event ev[64];
+	for (int i = 0; i < ndev; i++) {
+		ssize_t r;
+		while ((r = read(devfd[i], ev, sizeof ev)) > 0)
+			for (ssize_t k = 0; k < r / (ssize_t)sizeof ev[0]; k++)
+				if (ev[k].type == EV_KEY && ev[k].code == KEY_POWER && ev[k].value == 1) pressed = 1;
+	}
+	return pressed;
+}
+
 /* ---- sleep ------------------------------------------------------------------------------------------------------
  * Pressing power (or an idle timer): the game is paused, the pre-sleep hooks run (Wi-Fi down, 10-wifi), the card is
  * flushed (the kernel syncs too: this config does not set SUSPEND_SKIP_SYNC, so it is a belt-and-braces), an RTC alarm
@@ -395,8 +413,9 @@ static int sleep_too_low(void)
 	return pct >= 0 && pct <= cfg.sleep_floor_pct;
 }
 
-/* why the kernel resumed: the wakeup IRQ it recorded (/sys/power/pm_wakeup_irq; 0 or absent: not debug-enabled) and,
- * when a suspend failed, the device/step that failed. For the "a power-key sleep comes back after ~2 s" hunt. */
+/* Why the kernel resumed. /sys/power/pm_wakeup_irq is often 0 or absent here, so read the debug wakeup_sources table
+ * and name the source that moved last -- the waker (pwrkey, mmc0, ...). debugfs is mounted at start for this (main()).
+ * Also carries the device/step that failed, when a suspend failed. */
 static void wake_reason(char *out, size_t n)
 {
 	int irq = read_int("/sys/power/pm_wakeup_irq", -1);
@@ -405,7 +424,18 @@ static void wake_reason(char *out, size_t n)
 	else snprintf(irqbuf, sizeof irqbuf, "?");
 	read_str("/sys/power/suspend_stats/last_failed_dev", dev, sizeof dev);
 	read_str("/sys/power/suspend_stats/last_failed_step", step, sizeof step);
-	if (dev[0]) snprintf(out, n, "wake irq %s, failed %s at %s", irqbuf, dev, step[0] ? step : "?");
+	char src[64] = "";
+	FILE *f = fopen("/sys/kernel/debug/wakeup_sources", "r");
+	if (f) {
+		char line[256], name[64];
+		long last, best = -1;
+		fgets(line, sizeof line, f);	/* the header row */
+		while (fgets(line, sizeof line, f))
+			if (sscanf(line, "%63s %*u %*u %*u %*u %*u %*u %*u %ld", name, &last) == 2 && last > best) { best = last; snprintf(src, sizeof src, "%s", name); }
+		fclose(f);
+	}
+	if (src[0] && src[0] != 'd') snprintf(out, n, "wake %s (irq %s)%s%s", src, irqbuf, dev[0] ? ", failed " : "", dev);
+	else if (dev[0]) snprintf(out, n, "wake irq %s, failed %s at %s", irqbuf, dev, step[0] ? step : "?");
 	else snprintf(out, n, "wake irq %s", irqbuf);
 }
 
@@ -488,7 +518,8 @@ static void suspend_now(const char *why)
 	wake_only_power();	/* the power key alone may bring it back (see its comment) */
 	double t_prep = mono();
 	if (cfg.sleep_skip[0]) sleep_log("sleep %s: skipping '%s' (debug)", why, cfg.sleep_skip);
-	int cycles = 0, rtc_wakes = 0, failures = 0;
+	int cycles = 0, rtc_wakes = 0, failures = 0, spurious = 0;
+	int plugged0 = charger_online();
 	double asleep = 0;
 	const char *woke = "?";
 	for (;;) {
@@ -543,6 +574,14 @@ static void suspend_now(const char *why)
 				return;
 			}
 			continue;	/* enough battery: back to sleep at once */
+		}
+		/* The pwrkey is the only armed wake source and its IRQ is glitchy (it fires on the release of the very press
+		 * that asked for this sleep), so a wake with no real KEY_POWER press and no cable change is the panel lighting
+		 * up for nothing: go back to sleep, a bounded number of times, and only then stay awake. */
+		if (spurious < 3 && !wake_key_press() && !(charger_online() && !plugged0)) {
+			spurious++;
+			sleep_log("wake with no key or cable (spurious): back to sleep (%d/3)", spurious);
+			continue;
 		}
 		woke = "power button";
 		break;
@@ -1646,6 +1685,10 @@ int main(int argc, char **argv)
 	sa.sa_handler = on_hup;		/* no SA_RESTART: poll() returns, and the loop reloads */
 	sigaction(SIGHUP, &sa, NULL);
 	mkdir("/run/banana", 0755);
+	/* debugfs carries the wakeup_sources table wake_reason() names the waker from (the RPC's pm_wakeup_irq is
+	 * absent); mounting it again is a harmless EBUSY if something else already did */
+	mkdir("/sys/kernel/debug", 0755);
+	if (mount("none", "/sys/kernel/debug", "debugfs", 0, NULL) && errno != EBUSY) {}
 	find_panel_bl();	/* which backlight banana-ui's idle dim owns */
 
 	int ino = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
