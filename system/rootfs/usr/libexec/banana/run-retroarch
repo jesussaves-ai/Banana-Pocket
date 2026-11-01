@@ -477,4 +477,6 @@ done
 /usr/libexec/banana/ra-secrets scrub; rm -f $RA
 exec 3>&-; rm -f $FIFO
 set_cfg stdin_cmd_enable false
+# note when the game let go of its audio frontend: a launch right after waits out the rest of audio-settle's cooldown
+awk '{printf "%d", $1 * 1000}' /proc/uptime > /run/banana/last-game-end 2>/dev/null
 exit $S

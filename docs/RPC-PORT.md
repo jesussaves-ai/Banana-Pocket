@@ -396,7 +396,11 @@ opens MultiMedia2, the frontend the menu never releases, so a launch does not ra
 0.8 s was covering a game that shared MultiMedia1, the bug the games' own `$HOME/.asoundrc` fixed (the kernel log shows
 no slow or failed close, and games had sound over many launches and after a reboot). **`audio_menu_ms`** (default
 **600**) is the beat the menu waits before reopening its frontend after a game let go, and that one *does* race the
-outgoing graph: 0 cuts the cues out for a moment, ~400 leaves a trace, 600 is clean. bananad publishes them as
+outgoing graph: 0 cuts the cues out for a moment, ~400 leaves a trace, 600 is clean. A fast relaunch races too -- the
+outgoing game's graph can still be tearing down when the new one is instantiated -- so `audio-settle` also carries a
+short cooldown of its own: the launchers note when they exit (`/run/banana/last-game-end`, milliseconds of uptime) and
+it waits out the remainder, which leaves an ordinary launch at 0 and only pays right after a game let go. bananad
+publishes them as
 `/run/banana/audio-handoff-ms` (read by `usr/libexec/banana/audio-settle`) and `/run/banana/audio-menu-ms` (read by
 banana-ui's `Sound`), so either can be raised from the field with a SIGHUP if a stream ever comes up silent. (A UCM2 profile -- the idea in the PipeWire
 episode below -- only helps a UCM-aware opener like PipeWire/ACP, which Banana deliberately does not have: with no
