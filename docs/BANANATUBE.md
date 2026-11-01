@@ -119,7 +119,7 @@ search), so the touchscreen and the buttons can be mixed freely.
 `run-bananatube` calls `/usr/libexec/banana/audio-handoff` once, before `banana-tube` (and so before mpv): the menu
 has just released its AudioReach frontend and the DSP needs a beat to tear the graph down. mpv then opens the ALSA
 `default` device from `/run/banana/asound.conf` (there is no PulseAudio/PipeWire). The same contract `run-retroarch`
-and `run-dolphin` have.
+has.
 
 ## Packages
 

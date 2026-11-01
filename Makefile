@@ -76,7 +76,6 @@ ui:
 test: ui
 	tools/check-systems.py
 	system/tests/run-retroarch-test.sh
-	system/tests/run-dolphin-test.sh
 	system/tests/rpc-thermals-test.sh
 	system/tests/run-banana-tube-test.sh
 	ui/tests/run.sh

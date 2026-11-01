@@ -18,7 +18,7 @@ system (or one per kind), named in `ui/assets/rnds/systems.cfg`.
 The theme reads one PNG per entry and draws it at a fixed size on the panel, so the file's own pixels are only a
 source. Sizes in use:
 
-- **128×128** — the crisp choice (see below). Current: `dreamcast`, `gamegear`, `wii`, `zxspectrum`, `c64`,
+- **128×128** — the crisp choice (see below). Current: `dreamcast`, `gamegear`, `zxspectrum`, `c64`,
   `mastersystem`, `saturn`, `psp`.
 - **32×32** — the older/imported set (BenJelter's pack, and what `gen-icons.py` writes).
 
@@ -68,7 +68,7 @@ brackets until art is made (a 128×128 PNG in `overrides/icons`, wired in `syste
 
 - **Sega** — `sg1000` (console), `saturn` ✓, `master system` ✓, `game gear` ✓ · have: 32X, Mega-CD, Dreamcast
 - **Nintendo** — `gc`/`gamecube` (disc), `wiiu` (disc), `switch` (disc), `virtualboy` (console), `gameandwatch`
-  (handheld), `pokemini` (handheld), `3ds` (handheld) · have: GB/GBC/GBA, NES, SNES, N64, Wii, NDS
+  (handheld), `pokemini` (handheld), `3ds` (handheld) · have: GB/GBC/GBA, NES, SNES, N64, NDS
 - **Sony** — `ps2` (disc), `ps3` (disc), `psvita` (handheld) · have: PS1 (`psx`), PSP ✓
 - **Microsoft** — `xbox`, `xbox360` (console)
 - **SNK** — `neogeo`, `neogeocd` (arcade/disc) · have: Neo Geo Pocket

@@ -40,7 +40,7 @@ while :; do
 			[ -r "$p/scaling_cur_freq" ] || continue
 			printf ' %s=%s' "${p##*/}" "$(ghz "$(cat "$p/scaling_cur_freq" 2>/dev/null)")"
 		done
-		printf ' gpu=%s' "$(cat "$SYS"/class/devfreq/*/cur_freq 2>/dev/null | head -n 1)"
+		printf ' gpu=%s' "$(cat "$SYS"/class/devfreq/*gpu*/cur_freq 2>/dev/null | head -n 1)"
 		printf ' load=%s' "$(cut -d' ' -f1-3 "$PROC/loadavg" 2>/dev/null)"
 		printf '\n'
 	} 2>/dev/null

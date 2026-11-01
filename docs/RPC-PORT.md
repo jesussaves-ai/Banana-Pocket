@@ -261,9 +261,12 @@ Two layers had to agree that the GPU is an **a613**:
 - the kernel: `a6xx_catalog.c` needed `.revn = 613` in the a613 entry -- `MSM_PARAM_GPU_ID` returns exactly that
   field, and with it missing Mesa read gpu id 0 and refused the GPU (`fd_pipe_new2: unsupported GPU id 0x0`). With
   it, `debugfs/dri/1/gpu` says `revision: 613 (06010300)` and `gpu-initialized: 1`.
-- userland: Mesa 26.0.1's `freedreno_devices.py` has no a613, so `fd_dev_is_supported()` still failed
-  (`unsupported GPU id 0x265 / chip id 0x6010300`). Mesa 26.2.0 has `GPUId(613)` in the a6xx gen1 low block;
-  `patches/mesa3d/0001-freedreno-add-a613.patch` (applied through `BR2_GLOBAL_PATCH_DIR`) adds the same line.
+- userland: Mesa ships the a613 itself from **26.2.0** on -- `freedreno_devices.py` has `GPUId(613)` in the a6xx
+  gen1 low block, grouped with the 608/612 as `GPUProps(reg_size_vec4 = 32)` (which the kernel backend agrees with:
+  the a613 catalog entry takes `.hwcg = a612_hwcg`). Banana builds **Mesa 26.2.6** (see
+  `buildroot/buildroot-patches/0002-mesa3d-bump-to-26.2.6.patch`), so `fd_dev_is_supported()` passes on the stock
+  device table and no source patch is needed; the earlier `patches/mesa3d/0001-freedreno-add-a613.patch`, which
+  aliased the 26.0.1 table to the generic low block, was dropped with the bump.
 
 Also RetroArch's `video_monitor_index` was 2 (Banana's "top panel" on the DS pair); a single connector is only ever
 RetroArch's monitor 1, so even with the GPU up it found no display. The template now says 1.
@@ -480,7 +483,7 @@ How it is built and wired:
   and starts RetroArch under cage, the kiosk compositor that turns the output (see the section below).
 - **`run-ps1`**: writes `swanstation_GPU_Renderer = "Vulkan"` and `ResolutionScale = "5"`.
 
-On the device `vulkaninfo` reports `Turnip Adreno (TM) 613`, `DRIVER_ID_MESA_TURNIP`, Mesa 26.0.1, apiVersion
+On the device `vulkaninfo` reports `Turnip Adreno (TM) 613`, `DRIVER_ID_MESA_TURNIP`, Mesa 26.2.6, apiVersion
 1.0.335. Crash Bandicoot runs a steady 60 fps at 5x for ~11-13% of one core, where the software renderer and the
 freedreno OpenGL path both fell short.
 

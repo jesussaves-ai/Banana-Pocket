@@ -3,8 +3,8 @@
 # its cue stream when it started the game (banana-ui's Sound::release), and the DSP tears that graph down a beat
 # after the substream reads "closed"; the DSP also latches the route switches at the *next* frontend's open, so
 # whoever is about to play has to write them here -- a stream opened with the switch still off has no backend DAI and
-# stays unrouted (silent) for its whole life. This is the shared handoff run-dolphin and run-retroarch both use, so
-# the two launchers cannot drift apart.
+# stays unrouted (silent) for its whole life. This is the shared handoff run-retroarch uses, so
+# the launchers cannot drift apart.
 #
 # Bounded and blocking: every step has a cap, so the launcher is delayed by at most ~4 s and then goes ahead anyway.
 #   audio-handoff
@@ -59,7 +59,7 @@ done
 
 # 4. Keep the route standing until the emulator's own stream is up. The DSP finishes tearing the menu's graph down
 #    *after* its substream already reads closed, and a switch written during that teardown is swallowed and reset to
-#    off; a frontend instantiated with the switch off stays unrouted for its whole life -- the silent Wii. So re-assert
+#    off; a frontend instantiated with the switch off stays unrouted for its whole life -- silent. So re-assert
 #    both routes in the background (bounded, ~15 s) until a playback substream reads RUNNING (the emulator's open) and
 #    then stop. The launcher does not wait for this: it is backgrounded so the game starts while it watches. Writing
 #    the switch after the graph is instantiated is ignored by the DSP, so this cannot disturb a playing stream.

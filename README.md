@@ -48,7 +48,7 @@ Twenty-two shelves, each with the emulator it needs already in the image — not
 
 | | |
 |---|---|
-| **Nintendo** | Game Boy, Game Boy Color, Game Boy Advance, NES, Super Nintendo, Nintendo 64, Wii |
+| **Nintendo** | Game Boy, Game Boy Color, Game Boy Advance, NES, Super Nintendo, Nintendo 64 |
 | **Sega** | Master System, Game Gear, Mega Drive/Genesis, Sega CD, Sega 32X, Dreamcast |
 | **Sony** | PlayStation |
 | **NEC, SNK** | PC Engine & PC Engine CD, Neo Geo Pocket Color |

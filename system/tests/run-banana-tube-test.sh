@@ -6,7 +6,7 @@
 #   2. the search parsers: the InnerTube `videoRenderer` walk and the yt-dlp `--print` line split;
 #   3. the launcher: `run-bananatube` must call the shared audio-handoff and give the client the second AudioReach
 #      frontend (MultiMedia2, hw:0,1) with an AudioReach-sized ALSA default (S16, 48000, 2ch), on the display the
-#      menu releases (cage) -- the same contract run-dolphin/run-retroarch have, checked the same way.
+#      menu releases (cage) -- the same contract run-retroarch has, checked the same way.
 #
 # The client selftest runs under SDL's dummy driver (no panel here): the run stops before the event loop.
 #   system/tests/run-banana-tube-test.sh
