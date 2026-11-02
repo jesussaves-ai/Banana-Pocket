@@ -1892,8 +1892,11 @@ namespace banana
 		ustatus = readLine("/run/banana/update-status");
 		if (checking)
 		{
-			// the check is done: re-list the packages (the download, if any, landed) and keep the line as the message
-			if (ustatus.compare(0, 10, "downloaded") == 0 || ustatus.compare(0, 9, "up to date") == 0 || ustatus.compare(0, 6, "failed") == 0)
+			// the check is done: re-list the packages (the download, if any, landed) and keep the line as the message.
+			// A check that never writes a finish line (no Wi-Fi, a hung TLS) is cut off, so the page can never stick.
+			bool done = ustatus.compare(0, 10, "downloaded") == 0 || ustatus.compare(0, 10, "up to date") == 0 || ustatus.compare(0, 6, "failed") == 0;
+			if (!done && now - checkStart > 90) { done = true; ustatus = "failed: no answer from GitHub"; }
+			if (done)
 			{
 				std::string keep = ustatus;
 				openUpdates();
@@ -1924,6 +1927,7 @@ namespace banana
 				unlink("/run/banana/update-status");
 				ustatus = "checking for updates";
 				checking = true;
+				checkStart = now;
 				armed = -1;
 				nextStatus2 = now + 500;
 				spawn("/usr/libexec/banana/update-check", "");
@@ -1957,14 +1961,14 @@ namespace banana
 			: updated ? "Written: restart to run it"
 			: ustatus.compare(0, 6, "failed") == 0 ? "Failed"
 			: ustatus.compare(0, 10, "downloaded") == 0 ? "Downloaded: " + ustatus.substr(11)
-			: ustatus.compare(0, 9, "up to date") == 0 ? "Up to date"
+			: ustatus.compare(0, 10, "up to date") == 0 ? "Up to date"
 			: "Running " + (version.empty() ? std::string("dev") : version) + (slot.empty() ? "" : ", slot " + slot);
 		std::string help;
 		if (checking) help = "Looking on GitHub for the newest release and, if there is one, downloading its package to banana/updates. Wi-Fi has to be on; the update itself checks the package before it is applied.";
 		else if (applying) help = "The new version is being written to the other slot and checked; this one isn't touched. Don't turn the handheld off. It takes a minute or two.";
 		else if (updated) help = "The new version is in the other slot and will run from the next restart. A restarts now. If it ever fails to start, Previous version brings this one back.";
 		else if (ustatus.compare(0, 6, "failed") == 0) help = "That didn't work: " + ustatus.substr(8) + ". This version is untouched.";
-		else if (ustatus.compare(0, 9, "up to date") == 0) help = "This is the newest release. The running version stays until you apply a package and restart.";
+		else if (ustatus.compare(0, 10, "up to date") == 0) help = "This is the newest release. The running version stays until you apply a package and restart.";
 		else if (ustatus.compare(0, 10, "downloaded") == 0) help = "The package is in banana/updates now; A on it writes it to the other slot.";
 		else if (pkgs.empty()) help = "No packages on the card yet. A on \"Check for updates\" downloads the newest from GitHub over Wi-Fi; or put a banana-" + (board.empty() ? std::string("<board>") : board) + "-<version>.update.tar in banana/updates (File sharing can copy it over Wi-Fi).";
 		else help = "A on a package writes it to the other slot and checks it; the running version stays until the restart. Packages are in banana/updates on the card.";

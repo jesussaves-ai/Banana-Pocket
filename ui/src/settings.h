@@ -179,6 +179,7 @@ namespace banana
 		std::string ustatus;			// the updater's status line ("writing 42%", "done 0.2.0", "failed: ...")
 		bool applying = false, updated = false, checking = false;
 		double nextStatus2 = 0;
+		double checkStart = 0;			// when the "Check for updates" run began (it must not hang the page)
 		std::string slot, version, board;
 		void openUpdates();
 		void pollUpdate();
