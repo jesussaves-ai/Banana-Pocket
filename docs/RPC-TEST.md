@@ -80,9 +80,9 @@ into a computer gives that computer a network interface **and an address** with 
 - [ ] If nothing enumerates, re-seat the cable: the port attaches when the cable is in a computer, and the gadget is
       bound at boot whether or not one is there. Run `sh tools/rpc-usb-trace.sh 40` (pushed to the card) across a
       re-plug: a single `configured` and no `adbd exited` lines is a good plug
-- [ ] If it charges but shows no interface, the Type-C plug is the wrong way round (the `pmic-glink` mux quirk):
-      flip it and, if the UDC stays `not attached`, reboot -- userspace cannot switch it back. `bananad` logs
-      `usb: typec data_role=... power_role=... controller=...` to `/run/banana/messages` for the record
+- [ ] Reverse-orientation hotplug (charges, no interface): the port reports `orientation=reverse` and `bananad`
+      re-binds the gadget within ~3 s, so the interface appears without a reboot (`usb: re-bound the gadget ...` and
+      `usb: typec ...` lines in `/run/banana/messages`). If it does not, replug; `tools/rpc-usb-trace.sh` records it
 - [ ] Settings > System > **Mass storage**: Off shows no disk; Read-only gives the computer a read-only exFAT volume
       (`roms/`, `saves/`) while the menu keeps running; Read-write stops the menu and hands the card over (copy a file
       on from the computer), and ejecting -- or `usb-msc off`, or a short press of the power button (the menu is

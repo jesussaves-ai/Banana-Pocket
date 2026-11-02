@@ -1633,23 +1633,25 @@ static void slate_sleep_default(void)
 	cfg.autosleep_min = 0;
 }
 
-/* Log the Type-C port's roles when they change, so a reverse-orientation plug can be told from a role problem in
- * the message log (syslogd -> /run/banana/messages; tools/rpc-usb-trace.sh dumps it). This is diagnostic only: on
- * the RPC a reverse-orientation hotplug leaves the UDC `not attached` even though the controller is already in
- * `device` mode, and neither writing /sys/class/typec/port0/data_role nor the usb_role switch under /sys/class/usb_role
- * changes it -- the fix for that is in the pmic-glink/UCSI CC handling, not here (see ARCHITECTURE section 8). */
-static void usb_role_log(double now)
+/* Periodic USB housekeeping: (1) log the Type-C roles when they change, to diagnose a reverse-orientation plug
+ * (syslogd -> /run/banana/messages); (2) re-bind the gadget when a port role flip cleared its UDC. A reverse
+ * hotplug drops the gadget -- configfs UDC goes empty and /sys/class/udc reads "not attached" -- and nothing
+ * re-binds it (there is no UDC "add" event), so the host sees nothing even though the port, PHY and mux are fine.
+ * Writing the UDC back recovers it (verified on the unit); it is harmless at boot and while the cable is out. */
+static void usb_housekeeping(double now)
 {
 	static double next;
 	static char said[48];
 	if (now < next) return;
-	next = now + 5;
+	next = now + 3;
 	DIR *d = opendir("/sys/class/udc");
 	if (!d) return;
 	int configured = 0;
+	char udcname[64] = "";
 	struct dirent *e;
 	while ((e = readdir(d))) {
 		if (e->d_name[0] == '.') continue;
+		if (!udcname[0]) snprintf(udcname, sizeof udcname, "%s", e->d_name);
 		char p[300], st[32];
 		snprintf(p, sizeof p, "/sys/class/udc/%s/state", e->d_name);
 		read_str(p, st, sizeof st);
@@ -1669,6 +1671,15 @@ static void usb_role_log(double now)
 		say("usb: typec data_role=%s power_role=%s controller=%s", cur[0] ? cur : "?",
 		    pcur[0] ? pcur : "?", configured ? "configured" : "not configured");
 	}
+	if (configured || !udcname[0]) return;
+	char bound[16] = "";
+	read_str("/sys/kernel/config/usb_gadget/banana/UDC", bound, sizeof bound);
+	if (bound[0]) return;	/* still bound (unplugged, or a host that never dropped it) */
+	if (access("/sys/kernel/config/usb_gadget/banana/functions/ncm.usb0", F_OK) ||
+	    access("/sys/kernel/config/usb_gadget/banana/configs/c.1/ncm.usb0", F_OK))
+		return;		/* the tree is incomplete: usb-gadget owns the build */
+	if (write_file("/sys/kernel/config/usb_gadget/banana/UDC", udcname) == 0)
+		say("usb: re-bound the gadget to %s (a port role flip had cleared it)", udcname);
 }
 
 int main(int argc, char **argv)
@@ -1796,7 +1807,7 @@ int main(int argc, char **argv)
 		    !pid_of("/run/banana/awake.pid"))
 			suspend_now("idle");
 
-		usb_role_log(now);	/* diagnose a reverse-orientation plug (the roles, and whether the UDC is up) */
+		usb_housekeeping(now);	/* log the Type-C roles; re-bind a gadget a role flip cleared */
 		if (now >= next_battery) {
 			next_battery = now + 60;
 			power_update();	/* a capacity change has no uevent on every gauge */
