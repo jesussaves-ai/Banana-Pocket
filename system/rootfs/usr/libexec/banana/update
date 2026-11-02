@@ -68,6 +68,9 @@ apply)
     if [ -f "$P" ]; then
         # a tar: unpacked on the card next to it (the squashfs is too big for memory to be sure of)
         X=$UPDATES/.unpack; rm -rf "$X"; mkdir -p "$X"
+        # an archive is user-supplied: reject absolute and ../ members before unpacking (tar would otherwise
+        # follow them out of $X), then unpack
+        if tar -tf "$P" 2>/dev/null | grep -qE '(^/|(^|/)\.\./)'; then fail "the package has an unsafe path"; fi
         tar -xf "$P" -C "$X" || fail "the package can't be unpacked"
         DIR=$(ls -d "$X"/*/ 2>/dev/null | head -n 1); DIR=${DIR%/}
         [ -n "$DIR" ] || DIR=$X

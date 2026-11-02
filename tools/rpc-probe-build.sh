@@ -20,8 +20,8 @@ $CC -O2 -Wall -Wextra -o /tmp/opencode/rpc/rpc-gpu-probe \
     -Wl,-rpath,/usr/lib
 echo "built: /tmp/opencode/rpc/rpc-gpu-probe"
 
-# route-probe: what the ALSA mixer API makes of the DSP's route switches (the menu writes them with it), for the
-# card whose DSP rebuilds its controls with each graph's life -- the reason ui/src/sound.cpp re-reads the mixer
+# route-probe: reads back the DSP's route switches (a diagnostic; the sound server owns them), for the
+# card whose DSP rebuilds its controls with each graph's life
 $CC -O2 -Wall -Wextra -o /tmp/opencode/rpc/route-probe \
     -I"$SYS/usr/include" "$here/tools/route-probe.c" \
     -L"$SYS/usr/lib" -lasound -Wl,-rpath,/usr/lib

@@ -10,10 +10,9 @@
  *   - The charger: bananad watches the power supplies and pulses the vibrator when the cable goes in. The handheld
  *     has no LEDs, so there is nothing else to drive.
  *   - Brightness and volume are kept across reboots (/data/banana/backlight, /data/banana/asound.state).
- *   - Sound goes where it should with no sound server: the RPC's audioreach card, whose DSP frontends (MultiMedia1/2)
- *     bananad mixes into the speaker I2S or the WCD937x codec by hand (no UCM profile does it on this image). The
- *     route is ALSA's default device, written to /run/banana/asound.conf (/etc/asound.conf points there), so
- *     everything opened after a change follows it; the volume keys change the card that plays.
+ *   - Sound is the server's (PipeWire + WirePlumber, brought up by rcS's sound-server): ACP loads the RPC's UCM2
+ *     profile and owns the DSP's routing and levels. bananad keeps ALSA's default device pointed at it
+ *     (/run/banana/asound.conf, which /etc/asound.conf reads) and changes the amplifier's level for the volume keys.
  *
  * Settings: /etc/banana/bananad.conf, then /data/banana/bananad.conf (key = value lines, see bananad.conf); SIGHUP
  * reads them again (the menu's settings screen sends it).
@@ -490,9 +489,21 @@ static void backlights_power(int on)
 }
 
 static int charger_online(void);
+/* Mass storage read-write "transfer mode" (usb-msc, Settings > System > Mass storage): the card is the computer's
+ * disk and /data is unmounted here. Do not sleep the handheld then -- a suspend would stall the transfer mid-write. */
+static int msc_rw(void)
+{
+	char m[8];
+	read_str("/run/banana/usb-msc.mode", m, sizeof m);
+	return !strcmp(m, "rw");
+}
 static void suspend_now(const char *why)
 {
 	double t0 = mono();
+	if (msc_rw()) {
+		sleep_log("not sleeping (%s): USB transfer mode (the card is the computer's disk)", why);
+		return;
+	}
 	if (sleep_too_low()) {
 		/* Nothing can wake it on a timer: a deep sleep here is a handheld that only comes back if someone presses
 		 * power. Leave the panel dark (what a sleep looks like) and stay awake, so the 60 s battery poll can still
@@ -636,7 +647,7 @@ static double save_volume_at, save_backlight_at;	/* debounced: written a moment 
 
 /* ---- sound: the card that plays ----------------------------------------------------------------------------------- */
 static int card_play = -1;	/* the card sound plays on; -1: none yet (or none at all) */
-static int card_ar = -1;	/* the audioreach card (the RPC): its DSP graph is routed by mixer controls, no UCM */
+static int card_ar = -1;	/* the audioreach card (the RPC): the sound server routes its DSP graph from the UCM2 profile */
 
 /* the card, from /proc/asound/cards (" 0 [sm8450 ]: simple-card - ...") */
 /* The card and its route through the ALSA C mixer: no `amixer` fork. The DSP rebuilds its controls with each
@@ -868,35 +879,6 @@ static void sleep_quiet_end(void)
 	sleep_rx0[0] = sleep_rx1[0] = 0;
 }
 
-/* The audioreach card (the RPC): the frontends (MultiMedia1, MultiMedia2 -- the menu and RetroArch each open one)
- * have to be mixed into the speaker I2S (the AW88266 amps) or into the WCD937x codec (headphones) by hand. A UCM
- * profile would do this; this image has none, and without it the DSP refuses every open with "no backend DAIs
- * enabled for MultiMedia1 Playback". */
-static void audio_route_ar(void)
-{
-	if (card_ar < 0) return;
-	const char *spk = headphones ? "off" : "on", *hp = headphones ? "on" : "off";
-	for (int i = 1; i <= 2; i++) {
-		char n[64];
-		snprintf(n, sizeof n, "SENARY_MI2S_RX Audio Mixer MultiMedia%d", i);
-		cset(card_ar, n, spk);
-		snprintf(n, sizeof n, "RX_CODEC_DMA_RX_0 Audio Mixer MultiMedia%d", i);
-		cset(card_ar, n, hp);
-	}
-	/* Say what was chosen, for whoever opens a stream next. The DSP latches these switches when the frontend's
-	 * graph is instantiated -- at *that* program's open, not at ours -- and the graph is torn down again when its
-	 * last stream closes, so the route has to be written every time by whoever is about to play: banana-ui before
-	 * its first cue after a game, run-retroarch before RetroArch opens the device. They read the jack's decision
-	 * here rather than guessing "speakers", so plugging in does not end up un-muting the amps. */
-	FILE *f = fopen("/run/banana/audio-route.new", "w");
-	if (f) {
-		fprintf(f, "SENARY_MI2S_RX Audio Mixer MultiMedia1=%s,%s\n", spk, spk);
-		fprintf(f, "RX_CODEC_DMA_RX_0 Audio Mixer MultiMedia1=%s,%s\n", hp, hp);
-		fclose(f);
-		rename("/run/banana/audio-route.new", "/run/banana/audio-route");
-	}
-}
-
 /* The jack's answer, confirmed without blocking the loop. The WCD937x's MBHC answers before it has measured the socket:
  * on the Retroid Pocket Classic the first read of a boot (and, worse, a first read after a wake) can say "headphones in"
  * with nothing plugged in, and acting on that routes the sound to a codec feeding an empty jack -- a silent handheld,
@@ -934,7 +916,6 @@ static void audio_route(void)
 		say("sound: routing to the %s (jack read %s)", headphones ? "headphones" : "speakers",
 		    headphones_in() ? "in" : "out");
 	last = headphones;
-	audio_route_ar();
 	/* The audioreach card plays at 48 kHz (the rate the DSP graph and the amps expect), so "default"'s playback and
 	 * capture are pinned to S16 stereo 48 kHz: every open gets the same stream instead of renegotiating it, and
 	 * ALSA's plug resamples a core that asks for another rate. */
@@ -1012,19 +993,18 @@ static void audio_setup(void)
 	 * other machine there is no such control to wait for, and waiting would only stall the start. */
 	for (int i = 0; on_rpc() && card_ar < 0 && i < 40; i++) { sleep_us(100000); audio_find_cards(); }
 	if (card_play < 0) { audio_route(); return; }	/* no sound card at all (QEMU, a host with none): nothing to set */
-	if (card_ar < 0) say("sound: no audioreach card (the volume keys and the route have nothing to drive)");
+	if (card_ar < 0) say("sound: no audioreach card (the volume keys have nothing to drive)");
 	else say("sound: the audioreach card is %d", card_ar);
 	audio_route();
-	/* The RPC's DSP reads the routes when a stream is instantiated, which is why rcS puts them in before the menu
-	 * opens its own. rcS runs its own wait but gives up after 6 s, and a card that enumerated later than that leaves
-	 * the handheld silent for the whole session with nothing in the log to say so. Look again here, briefly, and
-	 * only when the jack says nothing is plugged in: with headphones in, the speaker route *should* read off, and
-	 * waiting for it to read on is waiting for something wrong. Then the amps' level -- not the frontend's
+	/* The RPC's DSP latches its routes when a graph is instantiated, and the sound server (ACP + the UCM2 profile)
+	 * owns them now. The codec's own DAPM switches below are still re-asserted here, belt-and-braces: bananad runs
+	 * after rcS and after restore_settings() replays asound.state, and a card that enumerated late would otherwise
+	 * run at the reset levels -- silent or very quiet -- all session. Then the amps' level -- not the frontend's
 	 * `stream0.vol_ctrl0 ...`, which is the user's volume (the volume keys and the saved setting own it). */
 	if (card_ar >= 0) {
 		/* One line every boot, because this codec's jack is what decides where sound goes and it is known to answer
 		 * before it has measured anything: "headphones in" here with nothing plugged in is the whole story of a
-		 * silent menu -- a game re-asserts the speaker route itself, which is why games do have sound. */
+		 * silent menu -- the sound server's device choice follows the same stale answer. */
 		say("sound: the jack says %s at start", headphones ? "headphones in" : "nothing in");
 		jack_log();	/* the per-device switch, next to the answer bananad acts on */
 		/* The codec's DAPM controls (the switches and muxes below) can be registered a moment after the card's
@@ -1033,9 +1013,9 @@ static void audio_setup(void)
 		int have = 0;
 		for (int i = 0; i < 25 && !(have = ctl_exists(card_ar, "RX_MACRO RX0 MUX")); i++) sleep_us(200000);
 		if (!have) say("sound: the codec's mux controls are not up: the headphone path may be unset");
-		/* ROCKNIX's UCM2 BootSequence levels for this card (there is no UCM on this image): the codec's and the RX
-		 * macro's output volumes and the mic's. Set here as well as in rcS, because a card that enumerated after
-		 * rcS's wait would otherwise run at the reset levels -- silent or very quiet -- all session. */
+		/* The codec's and the RX macro's output volumes and the mic's: the UCM2 profile's own BootSequence levels,
+		 * re-asserted here in case the card enumerated after rcS ran (a late card would otherwise sit at the reset
+		 * levels -- silent or very quiet -- all session). */
 		cset(card_ar, "RX_RX0 Digital Volume", "84");
 		cset(card_ar, "RX_RX1 Digital Volume", "84");
 		cset(card_ar, "HPHL Volume", "20");
@@ -1067,20 +1047,6 @@ static void audio_setup(void)
 		cset(card_ar, "RX INT1_1 MIX1 INP0", "RX1");
 		cset(card_ar, "RX INT0 DEM MUX", "CLSH_DSM_OUT");
 		cset(card_ar, "RX INT1 DEM MUX", "CLSH_DSM_OUT");
-	}
-	if (card_ar >= 0 && !headphones) {
-		char route[64], val[64];
-		snprintf(route, sizeof route, "SENARY_MI2S_RX Audio Mixer MultiMedia1");
-		int tries = 0;
-		while (tries < 30) {
-			audio_route_ar();
-			mixer_get(card_ar, route, val, sizeof val);
-			if (strstr(val, "on")) break;
-			sleep_us(100000);
-			tries++;
-		}
-		if (tries == 30)
-			say("sound: %s still reads '%s' 3 s after rcS gave up", route, val[0] ? val : "nothing");
 	}
 }
 
@@ -1524,9 +1490,16 @@ static int uevent_read(int fd)
 		}
 		if (add && alias) load_driver(alias);
 		if (block && mmc) sd2_scan();	/* a card in or out of the second slot (the script looks at what's there) */
-		if (add && udc) {	/* an OTG role switch back to peripheral: rcS's one-shot run cannot see this */
-			char *argv[] = { "/usr/libexec/banana/usb-gadget", NULL };
-			spawn_bg(argv);
+		if (add && udc && !msc_rw()) {	/* an OTG role switch back to peripheral: rcS's one-shot run cannot see this */
+			/* one role switch can send several add events, and two usb-gadget runs at once tear the gadget
+			 * down; one run every couple of seconds is plenty */
+			static double last_udc;
+			double u = mono();
+			if (u - last_udc >= 2.0) {
+				last_udc = u;
+				char *argv[] = { "/usr/libexec/banana/usb-gadget", NULL };
+				spawn_bg(argv);
+			}
 		}
 	}
 	return hit;
@@ -1593,6 +1566,14 @@ static void handle(const struct input_event *e)
 	case BTN_SOUTH: if (e->value && fn_held) ra_cmd("TOGGLE_ANALOG_DPAD"); break;
 	case KEY_POWER:
 		if (now < ignore_power_until) break;
+		/* Transfer mode (Settings > System > Mass storage, read-write): the menu is stopped and /data is the
+		 * computer's. A press brings the card back -- usb-msc off ejects the disk from the host, mounts /data and
+		 * restarts the menu -- rather than sleeping. Eject on the computer first if it is safe to do so. */
+		if (e->value && msc_rw()) {
+			char *argv[] = { "/usr/libexec/banana/usb-msc", "off", NULL };
+			spawn_bg(argv);
+			break;
+		}
 		/* The menu's burn-in guard has the screen dimmed or blanked (/run/banana/screen-off): this press is to wake
 		 * it, so it must not also start a sleep -- two things at once is what makes waking it feel broken. The next
 		 * press, screen on, sleeps it as usual. */
@@ -1650,6 +1631,52 @@ static void slate_sleep_default(void)
 		return;
 	say("sleep: idle only dims (%g min), never suspends; autosleep_minutes asks for the timer", cfg.dim_min);
 	cfg.autosleep_min = 0;
+}
+
+/* The Type-C port can come up wrong on a reverse-orientation plug: the handheld is charging (power_role sink) but
+ * the port still calls itself the data host, so the controller stays a host and the gadget never binds -- charging
+ * works, enumeration does not (the pmic-glink/UCSI data-lane quirk from ARCHITECTURE §8). When no controller is
+ * configured and the port says host while sinking power, ask the typec class for the device role again. An OTG
+ * adapter (a gamepad) is power_role source, so it is left alone. Logs the role once per change, so the trace script
+ * tells the story. */
+static void usb_role_fix(double now)
+{
+	static double next;
+	static char said[48];
+	if (now < next) return;
+	next = now + 5;
+	DIR *d = opendir("/sys/class/udc");
+	if (!d) return;
+	int configured = 0;
+	struct dirent *e;
+	while ((e = readdir(d))) {
+		if (e->d_name[0] == '.') continue;
+		char p[300], st[32];
+		snprintf(p, sizeof p, "/sys/class/udc/%s/state", e->d_name);
+		read_str(p, st, sizeof st);
+		if (!strcmp(st, "configured")) configured = 1;
+	}
+	closedir(d);
+	char dr[32] = "", pr[32] = "", cur[16] = "", pcur[16] = "";
+	read_str("/sys/class/typec/port0/data_role", dr, sizeof dr);
+	read_str("/sys/class/typec/port0/power_role", pr, sizeof pr);
+	sscanf(dr, "%15s", cur);
+	sscanf(pr, "%15s", pcur);
+	char state[64];
+	snprintf(state, sizeof state, "%s/%s/%s", cur[0] ? cur : "?", pcur[0] ? pcur : "?",
+	    configured ? "up" : "down");
+	if (strcmp(state, said)) {
+		snprintf(said, sizeof said, "%s", state);
+		say("usb: typec data_role=%s power_role=%s controller=%s", cur[0] ? cur : "?",
+		    pcur[0] ? pcur : "?", configured ? "configured" : "not configured");
+	}
+	if (configured) return;
+	if (!strcmp(cur, "host") && !strcmp(pcur, "sink")) {
+		if (write_file("/sys/class/typec/port0/data_role", "device") == 0)
+			say("usb: the port was host while charging; asked for the device role again");
+		else
+			say("usb: the port is host while charging and would not switch");
+	}
 }
 
 int main(int argc, char **argv)
@@ -1777,6 +1804,7 @@ int main(int argc, char **argv)
 		    !pid_of("/run/banana/awake.pid"))
 			suspend_now("idle");
 
+		usb_role_fix(now);	/* a reverse-orientation plug can leave the port a host while charging */
 		if (now >= next_battery) {
 			next_battery = now + 60;
 			power_update();	/* a capacity change has no uevent on every gauge */

@@ -27,6 +27,7 @@ namespace banana
 		const char* const ON_OFF[] = { "on", "off" };
 		const char* const ACCENTS[] = { "yellow", "blue", "red", "green", "purple", "pink" };
 		const char* const BOXART[] = { "libretro", "both", "twilight" };
+		const char* const MSC[] = { "off", "ro", "rw" };
 
 		// The values /etc/banana/settings.conf documents, and the ones a card is completed with when that file is
 		// missing (the host test, or a card whose root is older than the menu). Keep in step with the template file.
@@ -44,6 +45,7 @@ namespace banana
 			{ "share", "off", ENUM, ON_OFF, 0, 0 },
 			{ "ssh", "off", ENUM, ON_OFF, 0, 0 },
 			{ "adb", "off", ENUM, ON_OFF, 0, 0 },
+			{ "usb_mass_storage", "off", ENUM, MSC, 0, 0 },
 			{ "timezone", "UTC0", TIMEZONE, nullptr, 0, 0 },
 			{ "boxart_source", "libretro", ENUM, BOXART, 0, 0 },
 			{ "boxart_twilight_url", "https://boxart.kirovair.com", TEXT, nullptr, 0, 0 },

@@ -1169,8 +1169,9 @@ int main(int argc, char** argv)
 
 	// the library and the menu are made on another thread while the boot animation plays
 	std::shared_ptr<Menu> uiPtr;
-	// one panel (the Retroid Pocket Classic): its screen is wider than the 640x480 canvas, so the canvas
-	// is what the panel gives at the 640-wide scale, and the menu is drawn for a single screen
+	// One panel (the Retroid Pocket Classic): Display::openSingle() hard-sets count = 1, so `single` is always true
+	// here. The !single arms below are the old dual 480-height DS layout, kept for the headless renderer
+	// (Options::single) but unreachable on this hardware; do not add new dual-screen paths.
 	const bool single = disp.panels() == 1;
 	// a single panel (the RPC's 1240x1080): the DS's 640-wide layout, and the extra height of the panel below it
 	const float sc = single ? disp.width() / 640.0f : disp.height() / 480.0f;
@@ -1851,9 +1852,10 @@ int main(int argc, char** argv)
 				ssize_t len;
 				while ((len = read(launchWatch, buf, sizeof buf)) > 0)
 				{
-					for (char* e = buf; e < buf + len; )
+					for (char* e = buf; e + sizeof(inotify_event) <= buf + len; )
 					{
 						auto* ev = (inotify_event*)e;
+						if (e + sizeof(inotify_event) + ev->len > buf + len) break;	// a short/corrupt read: don't walk past the buffer
 						if (ev->len && !strcmp(ev->name, "screen.req")) shotWanted = true;
 						else if (ev->len && !strcmp(ev->name, "cheevos")) cheevosSeen = true;
 						else if (ev->len && !strcmp(ev->name, "toast")) cheevosSeen = true;

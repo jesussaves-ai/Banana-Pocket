@@ -8,6 +8,10 @@
 #
 #   usb-gadget          bring it up (idempotent: a second run leaves a working gadget alone)
 #   usb-gadget down     tear it down
+#   usb-gadget msc off|ro|rw   the mass-storage disk off, read-only, read-write (usb-msc drives this)
+#
+# Settings > System > Mass storage adds a USB disk (the card's data partition) for the computer; see usb-msc for the
+# read-write "transfer mode" and its /data unmount dance.
 #
 # The port is `dr_mode = "otg"` with `role-switch-default-mode = "peripheral"` (the device tree), so with an ordinary
 # cable to a computer it is a *device*, not a host -- which is exactly this. The kernel has the gadget stack and the
@@ -27,6 +31,13 @@ ADDR=169.254.170.2
 HOSTADDR=169.254.170.1
 CONF=/run/banana/udhcpd-usb.conf
 
+# Mass storage (Settings > System > Mass storage): the card's data partition (p4, exFAT) as a USB disk for the
+# computer. This script makes the function; the /data dance for read-write is usb-msc's. At boot the disk is ALWAYS
+# read-only -- a read-write host against a mounted /data is corruption -- and only usb-msc turns it read-write, after
+# it has stopped the menu and unmounted /data. The setting is read from settings.conf, which the toggle writes.
+DISK=$(cat /run/banana/disk 2>/dev/null || echo /dev/mmcblk0)
+MSC_MODE=$(sed -n 's/^ *usb_mass_storage *= *\([a-z]*\).*/\1/p' /data/banana/settings.conf 2>/dev/null | tail -n 1)
+
 # say <text>: one line to the log, which is on the card (the rootfs is read-only)
 say() {
     [ -d "${LOG%/*}" ] || mkdir -p "${LOG%/*}" 2>/dev/null
@@ -34,10 +45,19 @@ say() {
 }
 
 # one at a time: rcS runs this, and bananad runs it again on the UDC netlink event, and two runs at once tear each
-# other's gadget down (the exists-check is not atomic, and this now waits for the adb function to be ready)
+# other's gadget down (the exists-check is not atomic, and this now waits for the adb function to be ready). Wait
+# briefly for the other run rather than leaving a `msc`/`down` request unserved, and never report success for one we
+# did not do. Children must NOT inherit fd 8 (the `8>&-` on the adbd/udhcpd spawns below): a long-lived child with the
+# lock fd would keep the lock for the whole session and every later run would bail out ("another usb-gadget is
+# running") -- which silently broke `usb-gadget msc`.
 mkdir -p /run/banana 2>/dev/null
 exec 8>/run/banana/usb-gadget.lock 2>/dev/null
-flock -n 8 2>/dev/null || { say "another usb-gadget is running; leaving it alone"; exit 0; }
+i=0
+while ! flock -n 8 2>/dev/null; do
+    i=$((i + 1))
+    if [ $i -ge 50 ]; then say "another usb-gadget is running; giving up"; exit 1; fi
+    sleep 0.1
+done
 
 down() {
     if [ "$(cat $G/UDC 2>/dev/null)" ]; then
@@ -54,8 +74,10 @@ down() {
     # configfs refuses to remove a function while it is still linked into a configuration
     rm -f $G/configs/c.1/ncm.usb0
     rm -f $G/configs/c.1/ffs.adb
+    rm -f $G/configs/c.1/mass_storage.0
     rmdir $G/functions/ncm.usb0 2>/dev/null
     rmdir $G/functions/ffs.adb 2>/dev/null
+    rmdir $G/functions/mass_storage.0 2>/dev/null
     umount /dev/usb-ffs/adb 2>/dev/null
     rmdir $G/configs/c.1/strings/0x409 $G/configs/c.1 2>/dev/null
     rmdir $G/strings/0x409 2>/dev/null
@@ -69,6 +91,54 @@ if [ "$1" = down ]; then
     exit 0
 fi
 
+# usb-gadget msc off|ro|rw : the mass-storage disk's mode on the live gadget (off takes the disk away; ro/rw set the
+# read-only flag). configfs refuses to link or unlink a function on a bound configuration, so the controller is
+# unbound for the change and bound again -- one re-enumeration, which is what a user plugging in a disk expects.
+# usb-msc calls this around its /data unmount/remount and never asks for rw before it has unmounted /data.
+if [ "$1" = msc ]; then
+    [ -d "$G" ] || { say "msc: no gadget"; exit 0; }
+    U=$(cat $G/UDC 2>/dev/null)
+    [ -n "$U" ] && echo "" > $G/UDC 2>/dev/null
+    F=$G/functions/mass_storage.0
+    case "$2" in
+    off)
+        [ -L $G/configs/c.1/mass_storage.0 ] && rm -f $G/configs/c.1/mass_storage.0
+        rmdir $F 2>/dev/null
+        say "msc: the disk is taken away"
+        ;;
+    ro|rw)
+        PART=${DISK}p4
+        if [ ! -b "$PART" ]; then
+            say "msc: $PART is not there"
+            [ -n "$U" ] && echo "$U" > $G/UDC 2>/dev/null
+            exit 1
+        fi
+        mkdir -p $F
+        # Set the LUN's attributes BEFORE the backing file: once lun.0/file is set the kernel refuses to change ro
+        # ("Device or resource busy"), so a file-first order silently leaves the disk read-write -- the one thing it
+        # must never be while /data is mounted.
+        echo 0 > $F/lun.0/cdrom
+        echo 1 > $F/lun.0/removable
+        if [ "$2" = rw ]; then echo 0 > $F/lun.0/ro; else echo 1 > $F/lun.0/ro; fi
+        echo "$PART" > $F/lun.0/file
+        if [ "$2" = ro ] && [ "$(cat $F/lun.0/ro 2>/dev/null)" != "1" ]; then
+            say "msc: the disk would not go read-only; not exposing it"
+            rmdir $F 2>/dev/null
+            [ -n "$U" ] && echo "$U" > $G/UDC 2>/dev/null
+            exit 1
+        fi
+        [ -L $G/configs/c.1/mass_storage.0 ] || ln -sf $F $G/configs/c.1/
+        say "msc: $PART exposed $2"
+        ;;
+    *)
+        echo "usage: usb-gadget msc off|ro|rw" >&2
+        exit 2
+        ;;
+    esac
+    [ -n "$U" ] && echo "$U" > $G/UDC 2>/dev/null
+    exit 0
+fi
+
 UDC=$(ls /sys/class/udc 2>/dev/null | head -n 1)
 if [ -z "$UDC" ]; then
     # a machine with no USB device controller (the QEMU test's virtio GPU): nothing to do, and not an error
@@ -76,9 +146,23 @@ if [ -z "$UDC" ]; then
     exit 0
 fi
 
+REBUILD=1
 if [ -d $G ] && [ -n "$(cat $G/UDC 2>/dev/null)" ]; then
     say "already up on $UDC"
-else
+    REBUILD=0
+elif [ -d $G ] && [ -d $G/functions/ncm.usb0 ] && [ -L $G/configs/c.1/ncm.usb0 ] &&
+     { [ ! -x /usr/bin/adbd ] || [ -L $G/configs/c.1/ffs.adb ]; }; then
+    # the tree is complete and only the controller let go of it (a Type-C role switch took the port to host or to
+    # none and back): bind it again in place. Rebuilding here (what this used to do) killed adbd and re-enumerated
+    # everything, which is what made a role bounce look like a random disconnect.
+    if echo "$UDC" > $G/UDC 2>/dev/null; then
+        say "re-bound $UDC (the port had dropped its gadget)"
+        REBUILD=0
+    else
+        say "could not re-bind $UDC; rebuilding"
+    fi
+fi
+if [ "$REBUILD" = 1 ]; then
     # configfs is not mounted by anything at boot (there is no udev or systemd to do it)
     grep -q ' /sys/kernel/config ' /proc/mounts 2>/dev/null || mount -t configfs none /sys/kernel/config 2>/dev/null
     if [ ! -d /sys/kernel/config/usb_gadget ]; then
@@ -130,10 +214,34 @@ else
         ln -sf $G/functions/ffs.adb $G/configs/c.1/
         mkdir -p /dev/usb-ffs/adb 2>/dev/null
         grep -q ' /dev/usb-ffs/adb ' /proc/mounts 2>/dev/null || mount -t functionfs adb /dev/usb-ffs/adb 2>/dev/null
-        setsid /usr/libexec/banana/usb-adb up >/dev/null 2>&1 &
+        setsid /usr/libexec/banana/usb-adb up >/dev/null 2>&1 8>&- &
         i=0
         while [ "$(cat $G/functions/ffs.adb/ready 2>/dev/null)" != "1" ] && [ $i -lt 60 ]; do sleep 0.1; i=$((i+1)); done
     fi
+
+    # the card's data partition as a disk, if Settings > System > Mass storage is on. Read-only at boot (see above):
+    # usb-msc is what makes it read-write, after it has stopped the menu and unmounted /data. Created before the
+    # controller binds, so the first enumeration already carries the disk.
+    if [ "$MSC_MODE" = ro ] || [ "$MSC_MODE" = rw ]; then
+        if [ -b "${DISK}p4" ]; then
+            M=$G/functions/mass_storage.0
+            mkdir -p $M
+            # attributes before the backing file (see usb-gadget msc above): ro only takes before lun.0/file
+            echo 0 > $M/lun.0/cdrom
+            echo 1 > $M/lun.0/removable
+            echo 1 > $M/lun.0/ro
+            echo "${DISK}p4" > $M/lun.0/file
+            if [ "$(cat $M/lun.0/ro 2>/dev/null)" = "1" ]; then
+                ln -sf $M $G/configs/c.1/
+            else
+                say "mass storage: the disk would not go read-only; not exposing it"
+                rmdir $M 2>/dev/null
+            fi
+        else
+            say "mass storage is on in Settings but ${DISK}p4 is not there"
+        fi
+    fi
+
     if [ -z "$(cat $G/UDC 2>/dev/null)" ]; then
         echo "$UDC" > $G/UDC || { say "the controller would not take the gadget"; exit 1; }
     fi
@@ -165,5 +273,5 @@ max_leases 1
 lease_file /dev/null
 EOF
 # BusyBox's udhcpd writes no pid file, so ask the process list rather than a file that will never appear
-pgrep -f /run/banana/udhcpd-usb.conf >/dev/null 2>&1 || udhcpd $CONF >/dev/null 2>&1
+pgrep -f /run/banana/udhcpd-usb.conf >/dev/null 2>&1 || udhcpd $CONF >/dev/null 2>&1 8>&-
 say "addressed $ADDR/16, handing $HOSTADDR to the computer (ssh root@$ADDR)"

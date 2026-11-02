@@ -1,4 +1,5 @@
-// route-probe: what the ALSA mixer API makes of the RPC's DSP route switches, on the handheld.
+// route-probe: read back what the ALSA mixer API makes of the RPC's DSP route switches, on the handheld
+// (a diagnostic; the sound server owns these switches now).
 //   route-probe [name] [0|1]      (default: the speaker route, on)
 #include <alsa/asoundlib.h>
 #include <stdio.h>

@@ -39,3 +39,18 @@
 ui/tests/golden/
 resources-*.txt
 *.log
+
+# Vendored third-party (never edited)
+ui/third_party/
+
+# Imported rnds engine: a parity copy, edited upstream then tools/import-rnds.sh
+ui/rnds/
+
+# Historical port log: kept at its path so cross-references stay valid, but not searched
+docs/RPC-PORT.md
+
+# Artifacts git already ignores; so rg --no-ignore-vcs skips them too
+qemu-out/
+ui/tests/out/
+__pycache__/
+*.jpeg

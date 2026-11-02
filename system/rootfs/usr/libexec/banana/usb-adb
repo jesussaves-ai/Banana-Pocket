@@ -65,9 +65,30 @@ else
 fi
 # adbd has to be running before the controller takes the gadget -- an ffs function whose ep0 is not open makes the
 # bind fail (ENODEV) -- so run the supervisor here and bind once the function is ready. usb-gadget does the same and
-# whichever gets there first wins; and if adbd ever restarts (which deactivates the function and can leave the
-# controller with no gadget), this binds it again.
-( while :; do /usr/bin/adbd; say "adbd exited ($?), restarting"; sleep 1; done ) &
+# whichever gets there first wins. An adbd that exits has closed ep0 and deactivated the ffs function, so the
+# supervisor unbinds (a clean detach), waits for the descriptors again and binds: a restart then looks like a
+# deliberate re-plug, not a random disconnect. A run that lasted is a fresh start (the counter resets); one that keeps
+# dying within seconds is broken, so it stops after a few and says so instead of flapping forever.
+(
+    strikes=0
+    while :; do
+        t0=$(date +%s 2>/dev/null || echo 0)
+        /usr/bin/adbd
+        rc=$?
+        t1=$(date +%s 2>/dev/null || echo 0)
+        say "adbd exited ($rc) after $((t1 - t0)) s"
+        if [ $((t1 - t0)) -ge 30 ]; then strikes=0; else strikes=$((strikes + 1)); fi
+        if [ $strikes -ge 5 ]; then say "adbd keeps exiting; not restarting it"; break; fi
+        U=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+        [ -n "$U" ] && echo "" > $G/UDC 2>/dev/null
+        sleep $((strikes < 5 ? strikes : 5))
+        i=0
+        while [ "$(cat $G/functions/ffs.adb/ready 2>/dev/null)" != "1" ] && [ $i -lt 40 ]; do sleep 0.1; i=$((i+1)); done
+        if [ -n "$U" ] && [ "$(cat $G/functions/ffs.adb/ready 2>/dev/null)" = "1" ]; then
+            echo "$U" > $G/UDC 2>/dev/null && say "re-bound $U after the adbd restart" || say "could not re-bind $U"
+        fi
+    done
+) &
 i=0
 while [ "$(cat $G/functions/ffs.adb/ready 2>/dev/null)" != "1" ] && [ $i -lt 60 ]; do sleep 0.1; i=$((i+1)); done
 U=$(ls /sys/class/udc 2>/dev/null | head -n 1)

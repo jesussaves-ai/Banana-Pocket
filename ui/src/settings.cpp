@@ -332,6 +332,8 @@ namespace banana
 		add(S, "gear", "Previous version", "Restarts into the other slot: the version that ran before the last update. Press A twice.", "", "switch", { "" }, { "" }, Item::ACTION);
 		add(S, "gear", "SSH", "", menu, "ssh", { "Off", "On" }, { "off", "on" });
 		add(S, "gear", "ADB debugging", "", menu, "adb", { "Off", "On" }, { "off", "on" });
+		add(S, "gear", "Mass storage", "The card's games and saves as a USB disk on the computer over the cable. Read-only copies off the card; Read-write (transfer mode) stops the menu and hands the card over until you eject it.",
+			menu, "usb_mass_storage", { "Off", "Read-only", "Read-write" }, { "off", "ro", "rw" });
 		if (access("/run/banana/sd2/slot", F_OK) == 0)	// a second card slot (bananad's sd2 script)
 		add(S, "gear", "Second SD card", "Games on the card in the second slot (its roms folder, with the same system folders as this card) show up in the library with the others while it's in. exFAT or FAT32.", menu, "sd2_roms", { "Show its games", "Off" }, { "on", "off" });
 		add(S, "gear", "First-time setup", "The steps from the first boot again: Wi-Fi, the time zone and the RetroAchievements account.", "", "setup", {}, {}, Item::PAGE);
@@ -637,6 +639,7 @@ namespace banana
 		if (it.key == "wifi") spawn("/usr/libexec/banana/wifi", v == "on" ? "up" : "down");
 		if (it.key == "ssh") spawn("/usr/libexec/banana/ssh", v == "on" ? "up" : "down");
 		if (it.key == "adb") spawn("/usr/libexec/banana/adb", v == "on" ? "up" : "down");
+		if (it.key == "usb_mass_storage") spawn("/usr/libexec/banana/usb-msc", v.empty() ? "off" : v.c_str());
 		if (it.key == "share") spawn("/usr/libexec/banana/share", v == "on" ? "up" : "down");
 		if (it.key == "sd2_roms") spawn("/usr/libexec/banana/sd2", "scan");
 	}
@@ -724,6 +727,7 @@ namespace banana
 			spawn("/usr/libexec/banana/wifi", rs["wifi"] == "off" ? "down" : "up");
 			spawn("/usr/libexec/banana/ssh", rs["ssh"] == "on" ? "up" : "down");
 			spawn("/usr/libexec/banana/adb", rs["adb"] == "on" ? "up" : "down");
+			spawn("/usr/libexec/banana/usb-msc", "off");
 			spawn("/usr/libexec/banana/share", rs["share"] == "on" ? "up" : "down");
 			spawn("/usr/libexec/banana/sd2", "scan");
 			poke("bananad");
@@ -1295,6 +1299,11 @@ namespace banana
 				"network can get a root shell while it is on -- leave it off on networks you don't trust. Over the USB "
 				"cable adb always works.";
 		if (cur.key == "switch" && !message.empty()) help = message;
+		if (cur.key == "usb_mass_storage")
+			help = "The card's games and saves as a USB disk on the computer over the cable. Read-only lets the "
+				"computer copy them off (the menu keeps running). Read-write is a transfer mode: the menu stops and "
+				"the card is the computer's, so files can be copied onto it; eject the disk when done and the menu "
+				"comes back.";
 		if (cur.key == "share")
 		{
 			std::string at = ip.empty() ? "<address>" : ip;
@@ -1380,7 +1389,7 @@ namespace banana
 		be->endScreen();
 	}
 
-	// one panel: what the second screen said, in the strip under the list (the panel is taller than a DS screen)
+	// the one panel's strip under the list (the panel is taller than a DS screen)
 	void Settings::footer(const std::string& t, const rnds::Color& c)
 	{
 		SPal p = pal(light);
@@ -1388,7 +1397,7 @@ namespace banana
 		be->fill(0, X(480), X(640), X(h), p.screenBg);
 		if (!t.empty() && h > 26)
 		{
-			// the second screen's words, framed like the header, on the strip one panel has below the list
+			// the help text, framed like the header, on the strip below the list
 			box("bubble", false, 12, 486, 616, h - 12);
 			int lines = std::max(1, (int)((h - 20) / 22));	// (17px text: a line is 24 high)
 			wrapped(t, 16, 28, 494, 584, lines, c);

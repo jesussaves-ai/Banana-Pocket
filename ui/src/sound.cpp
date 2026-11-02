@@ -241,32 +241,25 @@ namespace banana
 		int openRate = 0, openCh = 0;
 		std::vector<int16_t> silence, mix;
 		auto closeDev = [&](const char* why) { if (pcm) { slog("closing (%s)", why); snd_pcm_drop(pcm); snd_pcm_close(pcm); pcm = nullptr; devOpen = false; } };
-		// Where sound plays (speakers or headphones) is bananad's /run/banana/asound.conf, which it replaces when the
-		// jack changes. alsa-lib reads its configuration once per process (a file it loaded through a hook, as
-		// /etc/asound.conf is, isn't looked at again), so a change means: close, forget the configuration, open again.
+		// Where sound plays (speakers or headphones) is the sound server's now: ACP/WirePlumber follow the jack,
+		// and bananad only keeps ALSA's "default" pointed at PipeWire in /run/banana/asound.conf (read via
+		// /etc/asound.conf), so there is nothing here to reopen when the jack moves.
 
-		/* The RPC's DSP allows one stream per frontend, so the menu does have to hand its own over before a game
-		 * opens the same one -- and that is what Sound::release() is for, which runGame() calls for every launch.
-		 * Closing the device shortly after each cue as well (150 ms here, once) cost the handheld a whole graph
-		 * instantiation per button press: the DSP had the frontend up only after the cue was over, so a single press
-		 * was silent and only a fast run of them -- which kept the device open across the gaps -- was heard. The
-		 * stream now stays open between cues as it does on every other board, and the game's claim on it is the
-		 * explicit release. */
+		/* The stream stays open between cues: closing it shortly after each one (150 ms, once) cost a whole
+		 * graph instantiation per button press, so a single press was silent and only a fast run of them -- which
+		 * kept the device open across the gaps -- was heard. The menu still releases it when a game starts and
+		 * when the burn-in guard blanks the panel (Sound::release()). */
 		const auto quiet = QUIET;
-		auto routeId = [] { struct stat st; return stat("/run/banana/asound.conf", &st) ? 0LL : (long long)st.st_ino * 1000003LL + st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec; };
-		long long routeLoaded = routeId();
-		int routeCheck = 0;
 		/* The DSP's route (which frontend, which codec path, the FE<->BE switches) belongs to the sound server now:
 		 * ACP applies the UCM profile and PipeWire re-applies the verb right before it opens the PCM (the UCM-open
 		 * patch), and RetroArch is itself a PipeWire client. So this opens `default` -- the server -- directly, with
 		 * no route write, frontend handover or settle: the menu used to do all of that only because it owned the
-		 * frontend, and it was seconds of delay after every game. A jack move still needs the reopen (asound.conf is
-		 * read once), which is the routeId check below. */
+		 * frontend, and it was seconds of delay after every game. A jack move is ACP's too, so nothing here reopens
+		 * the device for it. */
 		auto openDev = [&](const Clip& c) -> bool
 		{
 			if (closeNow) return false;	// release() won the race: do not open a device the game is about to claim
 			slog("opening the device");
-			if (long long r = routeId(); r != routeLoaded) { snd_config_update_free_global(); routeLoaded = r; }
 			if (closeNow) return false;
 			int e = snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
 			if (e < 0) { slog("open failed: %s", snd_strerror(e)); pcm = nullptr; return false; }
@@ -397,8 +390,6 @@ namespace banana
 				}
 			}
 			if (!pcm) continue;
-			// the jack changed while the stream runs (every 250 ms): the next sound opens where sound plays now
-			if (++routeCheck >= 25) { routeCheck = 0; if (routeId() != routeLoaded) { closeDev("route changed"); cur = nullptr; continue; } }
 
 			const bool haveBgm = wantBgm && bgmLoaded && bgmGain.load() > 0;
 			size_t nframes = (size_t)(openRate / 200);	// the next 5 ms: the cue, the loop, or silence

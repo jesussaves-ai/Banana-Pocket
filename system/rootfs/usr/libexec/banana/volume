@@ -35,7 +35,9 @@ get() {
     percent "$CONTROL"
 }
 set_to() {
-    p=$1; [ $p -lt 0 ] && p=0; [ $p -gt 100 ] && p=100
+    p=$1
+    case "$p" in ''|*[!0-9]*) echo "volume: not a level: $p" >&2; exit 2 ;; esac
+    [ $p -lt 0 ] && p=0; [ $p -gt 100 ] && p=100
     if [ -n "$CH" ]; then
         IFS='|'; for c in $CH; do amixer -q -c $CARD sset "$c" $p% || { unset IFS; exit 1; }; done
         unset IFS

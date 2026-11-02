@@ -445,7 +445,7 @@ while :; do
         done
     ) &
     wait $P; S=$?
-    while kill -0 $P 2>/dev/null; do wait $P; S=$?; done	# a trap interrupted the wait: until RetroArch has quit
+    while kill -0 $P 2>/dev/null; do wait $P 2>/dev/null; S=$?; sleep 0.1; done	# a trap interrupted the wait: until RetroArch has quit
     tries=$((tries + 1))
     [ $S -eq 134 ] && [ $tries -lt 3 ] || break
     echo "run-retroarch: RetroArch could not take the audio device, starting it again ($tries)" >&2

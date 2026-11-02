@@ -207,7 +207,7 @@ namespace banana
 		std::string fontDir;		// Inter's TTFs (the Carts theme)
 		bool cleanFonts = false;
 		float canvasH = 480;		// the panel's height in CSS px (the strip under the list uses the part past 480)
-		// what the second screen said, under the list on one panel: its lines start where the DS screen ends
+		// the one panel's strip under the list, where the second DS screen's lines would have been
 		void footer(const std::string& text, const rnds::Color& c);
 		std::string fontsLoaded;	// the fonts R and M are (setVariant): a user theme's, or "carts"
 		struct Cached { rnds::TexPtr tex; int ox = 0, oy = 0; float w = 0; };

@@ -1,0 +1,120 @@
+#!/bin/sh
+# usb-msc: Settings > System > Mass storage. Hands the card's data partition (p4, exFAT: roms/, bios/, saves/, the
+# settings) to the computer as a USB disk, so games and saves copy without SMB or adb. The gadget's mass-storage
+# function itself is usb-gadget's; this script owns the /data side, which is the dangerous half:
+#
+#   usb-msc ro    read-only. The computer can copy OFF the card and cannot write; /data stays mounted here and the
+#                 menu keeps running. This is the safe default the Settings row offers.
+#   usb-msc rw    read-write "transfer mode". The host owns the filesystem, so the menu is stopped and /data is
+#                 unmounted first -- a read-write host against a mounted filesystem is corruption. The menu comes
+#                 back when the disk is ejected (off).
+#   usb-msc off   take the disk away, mount /data again and restart the menu.
+#
+# If /data cannot be unmounted (something still has it open) the read-write request is refused and nothing changes.
+# The mode lives in /run/banana/usb-msc.mode (tmpfs, so a reboot always comes up safe: /data mounted, no disk).
+
+DISK=$(cat /run/banana/disk 2>/dev/null || echo /dev/mmcblk0)
+PART=${DISK}p4
+G=/sys/kernel/config/usb_gadget/banana
+FLAG=/run/banana/usb-msc.mode
+SVC=/run/banana/usb-msc.svcs
+
+say() { echo "usb-msc: $*" >> /run/banana/usb-msc.log 2>/dev/null; }
+
+mkdir -p /run/banana 2>/dev/null
+exec 9>/run/banana/usb-msc.lock 2>/dev/null
+flock -n 9 2>/dev/null || { say "another usb-msc is running"; exit 1; }
+
+# bring /data back the way rcS mounts it (see rcS's data())
+data_back() {
+    grep -q ' /data ' /proc/mounts 2>/dev/null && return 0
+    sync
+    mount -t exfat -o noatime,uid=0,gid=0,fmask=0000,dmask=0000,iocharset=utf8,errors=remount-ro "$PART" /data \
+        || { say "could not mount /data again"; return 1; }
+    return 0
+}
+
+# the network services that held /data (ksmbd's share, ssh's key): back the way the settings ask for them now
+svcs_back() {
+    [ -f "$SVC" ] || return 0
+    # 9>&-: do not let ksmbd/sshd inherit the lock fd, or they would hold it for as long as they run
+    grep -q share "$SVC" && grep -q '^ *share *= *on' /data/banana/settings.conf 2>/dev/null && /usr/libexec/banana/share up 9>&-
+    grep -q ssh "$SVC" && grep -q '^ *ssh *= *on' /data/banana/settings.conf 2>/dev/null && /usr/libexec/banana/ssh up 9>&-
+    rm -f "$SVC"
+}
+
+case "$1" in
+ro|rw|off|"") ;;
+*) echo "usage: usb-msc ro|rw|off" >&2; exit 2 ;;
+esac
+
+case "$1" in
+ro)
+    # safe: /data stays ours (and mounted); the host gets a read-only volume. Coming from read-write, /data is
+    # unmounted -- put it back first.
+    if ! grep -q ' /data ' /proc/mounts 2>/dev/null; then
+        data_back || exit 1
+        svcs_back
+    fi
+    /usr/libexec/banana/usb-gadget msc ro || { say "the gadget would not take the disk"; exit 1; }
+    echo ro > "$FLAG"
+    say "read-only: the computer can copy off the card"
+    ;;
+
+rw)
+    if [ -e /run/banana/game.pid ]; then
+        say "a game is running; not going read-write"
+        exit 1
+    fi
+    if [ -z "$(cat $G/UDC 2>/dev/null)" ]; then
+        say "the USB port has no gadget up (not attached?); not going read-write"
+        exit 1
+    fi
+    [ -b "$PART" ] || { say "$PART is not there"; exit 1; }
+
+    # the flag first: banana-ui-session holds any respawn here while /data is the computer's
+    echo rw > "$FLAG"
+
+    # remember the services that will need stopping (and /data to start them), then stop the menu
+    : > "$SVC"
+    grep -q '^ *share *= *on' /data/banana/settings.conf 2>/dev/null && { echo share >> "$SVC"; /usr/libexec/banana/share down; }
+    grep -q '^ *ssh *= *on' /data/banana/settings.conf 2>/dev/null && { echo ssh >> "$SVC"; /usr/libexec/banana/ssh down; }
+
+    pkill -f '/usr/bin/banana-ui' 2>/dev/null
+    i=0
+    while pidof banana-ui >/dev/null 2>&1 && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+
+    sync
+    i=0
+    while [ $i -lt 10 ] && ! umount /data 2>/dev/null; do sleep 0.3; i=$((i+1)); done
+    if grep -q ' /data ' /proc/mounts 2>/dev/null; then
+        # still busy: put everything back and refuse -- a mounted filesystem must never go to the host read-write
+        say "could not unmount /data ($i tries); refusing read-write"
+        rm -f "$FLAG"
+        data_back
+        svcs_back
+        /usr/libexec/banana/usb-gadget msc off 2>/dev/null
+        exit 1
+    fi
+
+    if ! /usr/libexec/banana/usb-gadget msc rw; then
+        say "the gadget would not take the disk read-write"
+        rm -f "$FLAG"
+        data_back
+        svcs_back
+        exit 1
+    fi
+    say "read-write: /data is the computer's until the disk is ejected (usb-msc off)"
+    ;;
+
+off|"")
+    /usr/libexec/banana/usb-gadget msc off 2>/dev/null
+    if ! data_back; then
+        say "left in transfer mode: /data could not be mounted"
+        exit 1
+    fi
+    svcs_back
+    rm -f "$FLAG"
+    say "disk taken away; /data is back"
+    ;;
+esac

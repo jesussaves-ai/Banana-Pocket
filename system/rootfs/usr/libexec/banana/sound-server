@@ -25,8 +25,8 @@ export XDG_RUNTIME_DIR=$RUNDIR
 
 case "$1" in
 down)
-    pkill -f '/usr/bin/wireplumber' 2>/dev/null
-    pkill -f '/usr/bin/pipewire' 2>/dev/null
+    pkill -x wireplumber 2>/dev/null
+    pkill -x pipewire 2>/dev/null
     say "down"
     exit 0
     ;;
@@ -58,31 +58,39 @@ while [ ! -S "$RUNDIR/pipewire-0" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); 
 [ -S "$RUNDIR/pipewire-0" ] || say "no pipewire socket after 5 s"
 
 if [ -x /usr/bin/wireplumber ] && ! pidof wireplumber >/dev/null 2>&1; then
+    # The DSP's audioreach controls (and the codec's, over SoundWire) appear a moment after the card itself; ACP's
+    # probe wants them. Wait for one, so the first probe has a card to find.
+    i=0
+    while [ $i -lt 50 ] && ! amixer -c 0 sget "RX_MACRO RX0 MUX" >/dev/null 2>&1; do sleep 0.1; i=$((i+1)); done
     say "starting wireplumber"
     setsid wireplumber >/dev/null 2>&1 &
 fi
 
-# The card's DSP latches its routing when a graph is instantiated and clears the FE->BE switch at graph teardown
-# (measured on the unit, with the switch watched from boot: rcS's write is cleared within ~200 ms, and it never comes
-# back). So the write has to land *after* a graph exists -- a write to a live graph sticks -- and ACP's UCM
-# verb/device enables are one-shot (the probe consumes them). Wait for a client stream to appear (the graph is then
-# instantiated), then apply the profile's routes and read the speaker switch back, retrying briefly.
+# ACP (PipeWire's ALSA monitor, run by WirePlumber) has to actually find the card. At boot its probe can still run
+# before the card is ready, and libudev-zero -- which supplies udev here -- delivers no later "add" event, so a probe
+# that misses leaves the card, and every sink, gone until the monitor is restarted. Wait for a sink and restart
+# wireplumber when there is none: a fresh wireplumber re-probes. Until then the menu has no device to open (this is
+# the "open failed" loop in banana-ui's sound log).
 i=0
-while [ $i -lt 100 ]; do
-    XDG_RUNTIME_DIR=$RUNDIR wpctl status 2>/dev/null | awk '/^Audio/,/^Video/' | sed -n '/Streams:/,$p' | grep -qE '^[[:space:]]*[0-9]+\.' && break
-    sleep 0.2; i=$((i+1))
+while [ $i -lt 60 ]; do
+    if wpctl status 2>/dev/null | sed -n '/^Audio/,/^Video/p' | grep -q 'playback'; then
+        say "the card is in PipeWire (after ${i} tries)"
+        break
+    fi
+    i=$((i+1))
+    if [ $((i % 6)) -eq 0 ] && [ -x /usr/bin/wireplumber ]; then
+        pkill -x wireplumber 2>/dev/null
+        sleep 0.5
+        setsid wireplumber >/dev/null 2>&1 &
+        say "no sink yet; restarted wireplumber (try $((i / 6)))"
+    fi
+    sleep 0.5
 done
-i=0
-while [ $i -lt 20 ]; do
-    alsaucm -c hw:0 set _verb HiFi >/dev/null 2>&1
-    amixer -c 0 sget "SENARY_MI2S_RX Audio Mixer MultiMedia1" 2>/dev/null | grep -q '\[on\]' && { sleep 0.3; amixer -c 0 sget "SENARY_MI2S_RX Audio Mixer MultiMedia1" 2>/dev/null | grep -q '\[on\]' && break; }
-    sleep 0.25; i=$((i+1))
-done
-if amixer -c 0 sget "SENARY_MI2S_RX Audio Mixer MultiMedia1" 2>/dev/null | grep -q '\[on\]'; then
-    say "the HiFi verb took (the card's speaker route is on, after ${i} tries)"
-else
-    say "the HiFi verb would not hold (the speaker route is off)"
-fi
+[ $i -ge 60 ] && say "no PipeWire sink after 30 s: the card is not in PipeWire"
 
+# The card's DSP routing and levels are ACP's: it loads the UCM2 profile in /usr/share/alsa/ucm2, and PipeWire
+# re-applies the verb immediately before each open (buildroot/patches/pipewire/0002), which is when the DSP latches
+# its FE->BE switches. Nothing here forces the verb or writes a mixer control -- a write to a live graph, or a second
+# application of a one-shot UCM sequence, is exactly what the DSP law in AGENTS.md rules out.
 say "up (runtime dir $RUNDIR)"
 exit 0
