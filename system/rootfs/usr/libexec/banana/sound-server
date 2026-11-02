@@ -68,12 +68,14 @@ fi
 
 # ACP (PipeWire's ALSA monitor, run by WirePlumber) has to actually find the card. At boot its probe can still run
 # before the card is ready, and libudev-zero -- which supplies udev here -- delivers no later "add" event, so a probe
-# that misses leaves the card, and every sink, gone until the monitor is restarted. Wait for a sink and restart
-# wireplumber when there is none: a fresh wireplumber re-probes. Until then the menu has no device to open (this is
-# the "open failed" loop in banana-ui's sound log).
+# that misses leaves the card, and every sink, gone until the monitor is restarted. Wait for the **Speaker** sink and
+# restart wireplumber when it is not there: a fresh wireplumber re-probes. It is the Speaker sink, not just any
+# "playback" one -- ACP makes the Headphones sink first, and stopping at that leaves no Speaker (silent) and the menu
+# spinning on failed opens (laggy). Until then the menu has no device to open (the "open failed" loop in its sound
+# log).
 i=0
 while [ $i -lt 60 ]; do
-    if wpctl status 2>/dev/null | sed -n '/^Audio/,/^Video/p' | grep -q 'playback'; then
+    if wpctl status 2>/dev/null | sed -n '/^Audio/,/^Video/p' | grep -q 'Speaker playback'; then
         say "the card is in PipeWire (after ${i} tries)"
         break
     fi
@@ -82,11 +84,11 @@ while [ $i -lt 60 ]; do
         pkill -x wireplumber 2>/dev/null
         sleep 0.5
         setsid wireplumber >/dev/null 2>&1 &
-        say "no sink yet; restarted wireplumber (try $((i / 6)))"
+        say "no speaker sink yet; restarted wireplumber (try $((i / 6)))"
     fi
     sleep 0.5
 done
-[ $i -ge 60 ] && say "no PipeWire sink after 30 s: the card is not in PipeWire"
+[ $i -ge 60 ] && say "no Speaker sink in PipeWire after 30 s"
 
 # The card's DSP routing and levels are ACP's: it loads the UCM2 profile in /usr/share/alsa/ucm2, and PipeWire
 # re-applies the verb immediately before each open (buildroot/patches/pipewire/0002), which is when the DSP latches
