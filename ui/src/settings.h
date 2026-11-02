@@ -177,7 +177,7 @@ namespace banana
 		std::vector<Pkg> pkgs;
 		int usel = 0;
 		std::string ustatus;			// the updater's status line ("writing 42%", "done 0.2.0", "failed: ...")
-		bool applying = false, updated = false;
+		bool applying = false, updated = false, checking = false;
 		double nextStatus2 = 0;
 		std::string slot, version, board;
 		void openUpdates();

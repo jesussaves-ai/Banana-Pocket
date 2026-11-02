@@ -324,7 +324,7 @@ namespace banana
 			add(S, "gear", "Time zone", "The clock's time zone, summer time included, for the menu and the games. The time itself comes from Wi-Fi or the handheld's own clock.",
 				menu, "timezone", names, tzs);
 		}
-		add(S, "gear", "Update", "A new version of Banana from a package on the card, written to the other slot and run from the next restart; this one stays as it is until then.", "", "update", {}, {}, Item::PAGE);
+		add(S, "gear", "Update", "A new version of Banana, written to the other slot and run from the next restart; this one stays as it is until then. Over Wi-Fi, \"Check for updates\" downloads the newest release from GitHub; a package on the card in banana/updates (File sharing can copy one) works too.", "", "update", {}, {}, Item::PAGE);
 		add(S, "picture", "Box art", "Covers, title screens, genres and years for your games, from libretro's free collections (no account, Wi-Fi needed). It keeps going in the background; games that already have art are skipped, so running it again only fetches what is new.",
 			"", "scrape", {}, {}, Item::PAGE);
 		add(S, "picture", "Box art from", "libretro: libretro's collections. libretro + Twilight: TwilightBoxart (boxart.kirovair.com) for the covers libretro has none of. Twilight first: TwilightBoxart's covers where it has them. TwilightBoxart is asked one game a second.",
@@ -1467,7 +1467,7 @@ namespace banana
 			if (joining.empty() && now >= nextScan) startScan();
 		}
 		bool changed = scrapeChanged;
-		if (page == UPDATES && applying && now >= nextStatus2)
+		if (page == UPDATES && (applying || checking) && now >= nextStatus2)
 		{
 			std::string before = ustatus;
 			pollUpdate();
@@ -1519,7 +1519,7 @@ namespace banana
 	int Settings::pageWake(double t) const
 	{
 		if (scanJob.running() || statusJob.running()) return 100;
-		if (page == UPDATES && applying) return std::max(0, (int)(nextStatus2 - t));
+		if (page == UPDATES && (applying || checking)) return std::max(0, (int)(nextStatus2 - t));
 		if (page != NETWORKS || !wifiEnabled) return -1;
 		double due = joining.empty() ? nextScan : std::min(nextStatus, joinStart + 30001);
 		return std::max(0, (int)(due - t));
@@ -1870,7 +1870,7 @@ namespace banana
 		usel = 0; armed = -1;
 		message.clear();
 		ustatus.clear();
-		applying = false; updated = false;
+		applying = false; updated = false; checking = false;
 		pkgs.clear();
 		if (FILE* p = popen("/usr/libexec/banana/update list 2>/dev/null", "r"))
 		{
@@ -1890,37 +1890,60 @@ namespace banana
 	{
 		nextStatus2 = now + 500;
 		ustatus = readLine("/run/banana/update-status");
+		if (checking)
+		{
+			// the check is done: re-list the packages (the download, if any, landed) and keep the line as the message
+			if (ustatus.compare(0, 10, "downloaded") == 0 || ustatus.compare(0, 9, "up to date") == 0 || ustatus.compare(0, 6, "failed") == 0)
+			{
+				std::string keep = ustatus;
+				openUpdates();
+				ustatus = keep;
+			}
+			return;
+		}
 		if (ustatus.compare(0, 4, "done") == 0) { applying = false; updated = true; }
 		else if (ustatus.compare(0, 6, "failed") == 0) applying = false;
 	}
 
 	Settings::Result Settings::pressUpdates(Key k)
 	{
-		int n = (int)pkgs.size();
+		int n = (int)pkgs.size() + 1;			// row 0 is "Check for updates", then one row per package
+		if (usel >= n) usel = n - 1;
 		switch (k)
 		{
 		case Key::UP: case Key::DOWN:
-			if (!n || applying) return NONE;
+			if (applying || checking) return NONE;
 			usel = (usel + (k == Key::UP ? -1 : 1) + n) % n;
 			armed = -1;
 			return MOVED;
 		case Key::A: case Key::RIGHT:
 			if (updated) return REBOOT;			// "Restart": the new version runs from the next boot
-			if (!n || applying) return NONE;
+			if (applying || checking) return NONE;
+			if (usel == 0)						// "Check for updates": look on GitHub, download the newest package
+			{
+				unlink("/run/banana/update-status");
+				ustatus = "checking for updates";
+				checking = true;
+				armed = -1;
+				nextStatus2 = now + 500;
+				spawn("/usr/libexec/banana/update-check", "");
+				return MOVED;
+			}
+			if (pkgs.empty()) return NONE;
 			if (armed != 1000 + usel) { armed = 1000 + usel; return MOVED; }	// A again to go ahead
 			armed = -1;
 			unlink("/run/banana/update-status");
 			ustatus = "starting";
 			applying = true;
 			nextStatus2 = now + 500;
-			spawn("/usr/libexec/banana/update", "apply", pkgs[usel].path.c_str());
+			spawn("/usr/libexec/banana/update", "apply", pkgs[usel - 1].path.c_str());
 			return MOVED;
 		case Key::B: case Key::LEFT:
-			if (applying) return NONE;			// not while a slot is being written
+			if (applying || checking) return NONE;	// not while a slot is being written or a package is coming down
 			page = LIST; armed = -1; message.clear();
 			return MOVED;
 		case Key::START:
-			if (applying) return NONE;
+			if (applying || checking) return NONE;
 			page = LIST; mOpen = false; return CLOSED;
 		default: return NONE;
 		}
@@ -1929,12 +1952,21 @@ namespace banana
 	void Settings::renderUpdates()
 	{
 		SPal p = pal(light);
-		std::string st = applying ? "Writing the update: " + ustatus : updated ? "Written: restart to run it" : ustatus.compare(0, 6, "failed") == 0 ? "Failed" : "Running " + (version.empty() ? std::string("dev") : version) + (slot.empty() ? "" : ", slot " + slot);
+		std::string st = checking ? "Checking for updates: " + ustatus
+			: applying ? "Writing the update: " + ustatus
+			: updated ? "Written: restart to run it"
+			: ustatus.compare(0, 6, "failed") == 0 ? "Failed"
+			: ustatus.compare(0, 10, "downloaded") == 0 ? "Downloaded: " + ustatus.substr(11)
+			: ustatus.compare(0, 9, "up to date") == 0 ? "Up to date"
+			: "Running " + (version.empty() ? std::string("dev") : version) + (slot.empty() ? "" : ", slot " + slot);
 		std::string help;
-		if (applying) help = "The new version is being written to the other slot and checked; this one isn't touched. Don't turn the handheld off. It takes a minute or two.";
+		if (checking) help = "Looking on GitHub for the newest release and, if there is one, downloading its package to banana/updates. Wi-Fi has to be on; the update itself checks the package before it is applied.";
+		else if (applying) help = "The new version is being written to the other slot and checked; this one isn't touched. Don't turn the handheld off. It takes a minute or two.";
 		else if (updated) help = "The new version is in the other slot and will run from the next restart. A restarts now. If it ever fails to start, Previous version brings this one back.";
-		else if (ustatus.compare(0, 6, "failed") == 0) help = "The update wasn't applied: " + ustatus.substr(8) + ". This version is untouched.";
-		else if (pkgs.empty()) help = "No update packages found. Put a banana-" + (board.empty() ? std::string("<board>") : board) + "-<version>.update.tar from a release in banana/updates on the card (File sharing can copy it over Wi-Fi), then come back here.";
+		else if (ustatus.compare(0, 6, "failed") == 0) help = "That didn't work: " + ustatus.substr(8) + ". This version is untouched.";
+		else if (ustatus.compare(0, 9, "up to date") == 0) help = "This is the newest release. The running version stays until you apply a package and restart.";
+		else if (ustatus.compare(0, 10, "downloaded") == 0) help = "The package is in banana/updates now; A on it writes it to the other slot.";
+		else if (pkgs.empty()) help = "No packages on the card yet. A on \"Check for updates\" downloads the newest from GitHub over Wi-Fi; or put a banana-" + (board.empty() ? std::string("<board>") : board) + "-<version>.update.tar in banana/updates (File sharing can copy it over Wi-Fi).";
 		else help = "A on a package writes it to the other slot and checks it; the running version stays until the restart. Packages are in banana/updates on the card.";
 		help = st + ". " + help;
 
@@ -1946,22 +1978,31 @@ namespace banana
 		std::string count = std::to_string(pkgs.size()) + (pkgs.size() == 1 ? " package" : " packages");
 		float cw = text(count, true, 17, 0, 0, p.muted, false, 0, true);
 		text(count, true, 17, 602 - cw, 31, p.muted);
-		for (int r = 0; r < ROWS && r < (int)pkgs.size(); r++)
+		int rows = (int)pkgs.size() + 1;			// row 0: Check for updates, then one per package
+		for (int r = 0; r < ROWS && r < rows; r++)
 		{
-			const Pkg& k = pkgs[r];
 			bool on = r == usel;
 			float y = 82 + r * 64;
 			box(on ? "pick" : "slot", on, 18, y, 604, 56);
 			Color c = on ? p.onPick : p.muted;
+			if (r == 0)
+			{
+				text("Check for updates", true, 20, 38, y + 16, c);
+				std::string tag = checking ? ustatus : "Wi-Fi";
+				float tw = text(tag, true, 17, 0, 0, c, false, 0, true);
+				text(tag, true, 17, 586 - tw, y + 18, c);
+				continue;
+			}
+			const Pkg& k = pkgs[r - 1];
 			text(fit("Banana " + k.version, true, 20, 330), true, 20, 38, y + 16, c);
 			std::string tag = armed == 1000 + r ? "Press A again" : (k.board == board || board.empty() || k.board == "universal" ? (k.board == "universal" ? std::string("for both handhelds") : "for the " + k.board) : "not for this handheld");
 			float tw = text(tag, true, 17, 0, 0, c, false, 0, true);
 			text(tag, true, 17, 586 - tw, y + 18, armed == 1000 + r ? (on ? p.onPickAccent : p.accent) : c);
 		}
-		if (pkgs.empty()) text("Nothing in banana/updates on the card.", true, 20, 38, 98, p.muted);
+		if (pkgs.empty()) text("Nothing in banana/updates on the card yet.", true, 20, 38, 82 + 64 + 16, p.muted);
 		float bw = faceWidth("B", "Back");
-		if (!applying) face("B", "Back", 18, bw);
-		std::string act = updated ? "Restart" : applying || pkgs.empty() ? "" : armed == 1000 + usel ? "Confirm" : "Update";
+		if (!applying && !checking) face("B", "Back", 18, bw);
+		std::string act = updated ? "Restart" : (applying || checking) ? "" : usel == 0 ? "Check" : pkgs.empty() ? "" : armed == 1000 + usel ? "Confirm" : "Update";
 		if (!act.empty())
 		{
 			float aw = faceWidth("A", act);

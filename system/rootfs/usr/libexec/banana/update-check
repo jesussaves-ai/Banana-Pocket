@@ -1,0 +1,75 @@
+#!/bin/sh
+# Check GitHub for a newer Banana release and, if there is one, download its update package to the card -- the OTA
+# half of Settings > System > Update. The apply half is the `update` script, unchanged: it writes the other slot and
+# checks the package's own sha256sums, so this only has to get the .update.tar into banana/updates.
+#
+# The image's busybox wget is http/ftp only (no TLS), so the fetch is python3 (yt-dlp's dependency, with the CA
+# bundle at /etc/ssl/certs). Every release so far is an alpha *prerelease*, and GitHub's releases/latest skips those,
+# so this reads the releases list and takes the newest package for this board by version. Progress goes to
+# /run/banana/update-status, the line the Update page already polls:
+#   checking for updates / downloading <ver> N% / downloaded <ver> / up to date: <cur> / failed: <why>
+#
+#   update-check
+BOARD=$(cat /etc/banana/board 2>/dev/null)
+CUR=$(cat /etc/banana/version 2>/dev/null)
+command -v python3 >/dev/null 2>&1 || { echo "failed: no python3" > /run/banana/update-status 2>/dev/null; exit 1; }
+exec python3 - "$BOARD" "$CUR" <<'PY'
+import json, os, sys, urllib.request
+
+REPO = "jesussaves-ai/Banana-Pocket"
+board, cur = (sys.argv[1:3] + ["", ""])[:2]
+DEST, STATUS = "/data/banana/updates", "/run/banana/update-status"
+
+def say(s):
+    try:
+        with open(STATUS, "w") as f: f.write(s + "\n")
+    except OSError:
+        pass
+
+def ver(v):                       # "0.10.2" -> (0,10,2); case aside, non-digits dropped per field
+    return tuple(int("".join(c for c in p if c.isdigit()) or 0) for p in v.lower().split("."))
+
+if not board:
+    say("failed: this image has no /etc/banana/board"); sys.exit(1)
+os.makedirs(DEST, exist_ok=True)
+say("checking for updates")
+try:
+    req = urllib.request.Request("https://api.github.com/repos/%s/releases" % REPO,
+                                 headers={"User-Agent": "banana-update", "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        rels = json.load(r)
+except Exception as e:
+    say("failed: %s" % e); sys.exit(1)
+
+best = None                       # (version, url, name) of the newest package built for this board
+for rel in rels:
+    for a in rel.get("assets", []):
+        n = a.get("name", "")
+        if n.startswith("banana-%s-" % board) and n.endswith(".update.tar"):
+            v = n[len("banana-%s-" % board):-len(".update.tar")]
+            if best is None or ver(v) > ver(best[0]):
+                best = (v, a.get("browser_download_url"), n)
+if not best:
+    say("failed: no package for the %s" % board); sys.exit(1)
+v, url, name = best
+if cur and ver(v) <= ver(cur):
+    say("up to date: %s" % cur); sys.exit(0)
+
+part = os.path.join(DEST, name + ".part")
+say("downloading %s 0%%" % v)
+try:
+    req = urllib.request.Request(url, headers={"User-Agent": "banana-update"})
+    with urllib.request.urlopen(req, timeout=60) as r, open(part, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0); got = 0
+        while True:
+            b = r.read(1 << 16)
+            if not b: break
+            f.write(b); got += len(b)
+            if total: say("downloading %s %d%%" % (v, got * 100 // total))
+    os.replace(part, os.path.join(DEST, name))
+except Exception as e:
+    try: os.unlink(part)
+    except OSError: pass
+    say("failed: %s" % e); sys.exit(1)
+say("downloaded %s" % v)
+PY
