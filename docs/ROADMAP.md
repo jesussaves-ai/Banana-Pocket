@@ -2,8 +2,8 @@
 Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Ordered by what is recommended next.
 
 ## Recommended next (in order)
-The 0.5.0 sound server, its loose ends, and the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
-are done (see *Done*). Next:
+The 0.5.0 sound server, its loose ends, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter) and
+OTA updates over Wi-Fi are done (see *Done*). Next:
 1. **Retire the last audio leftovers** (small; blocked on hardware). `/run/banana/audio-route` and bananad's
    `audio_route_ar()` FE/BE csets are read by nobody now, and the csets are already no-ops while PipeWire holds
    `pcm0p` -- so the jack switch is WirePlumber/ACP's either way; `sound.cpp`'s `routeCheck` also only reopens on
@@ -11,13 +11,12 @@ are done (see *Done*). Next:
    the jack the next time headphones are to hand.
 2. **Controller remapping UI** (on top of `pad-profile`), and **per-game core options** beyond core + shader.
 3. **Library UX, the rest** -- collections/tags and a screenshot gallery (the recent-played shelf, multi-disc `.m3u` grouping and the shoulder-button jump-to-letter are done, 0.5.x).
-4. **OTA updates over Wi-Fi** (updates are card-only today; BananaLinux installs over the air).
-5. **Local media / music player**, and porting BananaTube's newer settings screen.
-6. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
-7. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
-8. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-9. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-10. **Store / app catalog** (the Apps shelf only scans local folders).
+4. **Local media / music player**, and porting BananaTube's newer settings screen.
+5. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
+6. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+7. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+8. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+9. **Store / app catalog** (the Apps shelf only scans local folders).
 
 *(Dropped: a quick-settings/performance overlay. Performance is fine and RetroArch's own OSD -- `fps_show` /
 `statistics_show`, already rotated by its patches -- covers FPS/CPU if wanted, so there is nothing to build.)*
@@ -30,6 +29,7 @@ are done (see *Done*). Next:
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **OTA updates over Wi-Fi (0.5.x).** Settings > System > Update gains a **"Check for updates"** row: A runs `/usr/libexec/banana/update-check` (a sh wrapper around python3 `urllib` -- busybox wget has no TLS here, CA bundle in `/etc/ssl`), which reads the GitHub releases list (`releases/latest` skips the alpha prereleases), takes the newest `banana-<board>-*.update.tar` by numeric version and streams it into `banana/updates`, writing progress to `/run/banana/update-status`; the page polls that and re-lists when it lands, and the existing apply/verify/Restart path takes over. Verified on the unit (`up to date: 0.5.0`; the asset URL resolves at 238 MB). A first cut stuck the page (`compare(0,9,"up to date")` never matched the 10-char literal, so `checking` never cleared and the page ignored every key); fixed to 10 with a 90 s bound.
 - [x] **Library UX: multi-disc `.m3u` and shoulder-button jump-to-letter (0.5.x).** The scan reads a `.m3u` (lines relative to its folder; `#`/absolute/`..` skipped) and hides the disc files it names, so a PS1 game is the playlist entry alone -- verified on the unit, an `.m3u` naming 2 discs + `Alpha/Beta/Delta` shows 4 games, not 6. Shoulder **L/R** jump the games by the title's first letter (`Library::letterStep`, and a new `Menu::jumpTo` across the Rnds/Layout/Carts engines): R the next letter, L this letter's first game or the previous letter's; the D-pad still steps one at a time, and on the home shelf L/R still walk the systems. (The recent-played shelf was already there, commit `10fcecf`.)
 - [x] **The sound server (0.5.0): PipeWire + WirePlumber + the RPC's UCM2 profile.** ACP brings the AudioReach (`q6apm`) card up from the UCM profile and every client -- the menu's cues, RetroArch, BananaTube -- mixes through `pcm.!default { type pipewire }` instead of the two fronts being handed over one at a time. Three DSP-specific things made it work: the card's UCM verb is re-applied in the node open path immediately before `snd_pcm_open` (`buildroot/patches/pipewire/0002` -- ACP runs its sequences once, before its probe's open/close tear-down, so the held-open sink latched the topology's "off" and boot was silent); the sink's buffering is set per node with a `monitor.alsa.rules` match (`monitor.alsa.properties` never reaches the ACP-created nodes), which is what cured the short-cue crackle; and the menu's old pre-PipeWire handover wait was deleted (`ui/src/sound.cpp`), so the first cue after a game is instant (measured 0.07 s open-to-ready, was ~1.9 s). The speaker is one mono AW88166 (`0-0035`, on FL -- `FL [on]`/`FR [off]` is normal). `AGENTS.md` carries the DSP laws: the FE<->BE switch only takes a write while its front-end's graph is closed, and shared switches belong only in `SectionVerb.EnableSequence`.
 - [x] **ADB debugging gets its own switch (0.5.x).** The TCP `5555` listener no longer rides the SSH setting: Settings > System > **ADB debugging** (persisted as `adb` in `settings.conf`, off by default) spawns `/usr/libexec/banana/adb up|down`, which restarts the adb supervisor in `usb-adb`; that reads `adb` and starts adbd with `BANANA_ADB_TCP` (on) or without it (off). `ssh` no longer touches adb, and USB adb over the cable is always served, so turning the network listener off cannot disturb SSH or the adb/NCM link.
