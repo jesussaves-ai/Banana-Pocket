@@ -68,7 +68,7 @@ namespace banana
 		bool extraHints = true;
 		double launchMs = 900, settleMs = 600, scrollMs = 70, fps = 30;
 		std::vector<std::pair<std::string, double>> cues;
-		bool wrap = false, debug = false;
+		bool wrap = false, debug = false, crisp = false;
 		int serials = 0;
 
 		// fonts by name: the theme's, then the built-in ones
@@ -292,6 +292,7 @@ namespace banana
 			}
 			else cues.emplace_back("insert", 560);
 			debug = doc->flag("debug");
+			crisp = doc->flag("crisp");
 			const JVal* sc = doc->get("screens");
 			for (auto& e : sc->obj)
 			{
@@ -709,6 +710,27 @@ namespace banana
 			float sx = (float)num(c, "shadow.x", 0) * k * s, sy = (float)num(c, "shadow.y", 0) * k * s;
 			if (!hasFill && stops.empty() && !(border > 0 && bc >> 24) && !(shc >> 24)) return;
 			float dx = x * s, dy = y * s, dw = w * s, dh = h * s;
+			// crisp mode (theme "crisp"): hard-edged boxes -- no coverage anti-aliasing and integer pixels, the
+			// border drawn as solid rows/columns inside the box. Boxes and borders only; text keeps the glyph
+			// rasterizer's edges. Falls back to the smooth path for gradients, shadows and rounded corners.
+			if (crisp && stops.empty() && !(shc >> 24) && rad[0] <= 0 && rad[1] <= 0 && rad[2] <= 0 && rad[3] <= 0)
+			{
+				int ix = (int)std::lround(dx), iy = (int)std::lround(dy);
+				int iw = (int)std::lround(dx + dw) - ix, ih = (int)std::lround(dy + dh) - iy;
+				if (iw <= 0 || ih <= 0) return;
+				if (hasFill && (fill >> 24)) m->be->fill((float)ix, (float)iy, (float)iw, (float)ih, colorFrom(fill, f.opacity));
+				if (border > 0 && (bc >> 24))
+				{
+					int b = (int)std::lround(border);
+					if (b < 1) b = 1;
+					rnds::Color bcol = colorFrom(bc, f.opacity);
+					m->be->fill((float)ix, (float)iy, (float)iw, (float)b, bcol);
+					m->be->fill((float)ix, (float)(iy + ih - b), (float)iw, (float)b, bcol);
+					m->be->fill((float)ix, (float)iy, (float)b, (float)ih, bcol);
+					m->be->fill((float)(ix + iw - b), (float)iy, (float)b, (float)ih, bcol);
+				}
+				return;
+			}
 			bool plain = stops.empty() && !(border > 0 && bc >> 24) && !(shc >> 24) && rad[0] <= 0 && rad[1] <= 0 && rad[2] <= 0 && rad[3] <= 0;
 			if (plain) { m->be->fill(std::round(dx), std::round(dy), std::round(dx + dw) - std::round(dx), std::round(dy + dh) - std::round(dy), colorFrom(fill, f.opacity)); return; }
 			int iw = (int)std::lround(dw), ih = (int)std::lround(dh);

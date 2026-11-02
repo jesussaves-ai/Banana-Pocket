@@ -33,6 +33,7 @@ Each `shot` writes `<prefix><name>-top.png` and `-bot.png`. Theme errors are pri
   "name": "My theme",
   "base": "dark", "accent": "#7c9cff", "colors": { ... }, "fonts": { ... },   // as a colour theme: the Settings screen
   "font": "inter",              // the default font of text elements
+  "crisp": false,               // true: boxes and borders drawn hard-edged (retro), no coverage anti-aliasing
   "vars": { "bg": "#10131c", "hi": "=accent" },          // names for values, usable in any expression
   "components": { "chip": { ...an element... } },        // reusable elements ("use": "chip")
   "input": { "library": { "down": "next", "up": "prev" } },  // what the buttons do (below)
@@ -49,6 +50,8 @@ Each `shot` writes `<prefix><name>-top.png` and `-bot.png`. Theme errors are pri
 ```
 
 `//` and `/* */` comments and trailing commas are allowed.
+
+`crisp: true` draws axis-aligned boxes and their borders hard-edged -- integer pixels, no coverage anti-aliasing, the border as solid rows/columns -- for a retro (SNES/Genesis menu) look; the Pocket themes use it. Boxes with a gradient, shadow or rounded corner still take the smooth path, and text keeps the glyph rasterizer's edges.
 
 The Retroid Pocket Classic has **one** screen: the canvas is 640 units wide and as tall as the panel allows
 (about 557), and a theme draws every view on `top`. The engine keeps the two-screen `top`/`bottom` schema it was

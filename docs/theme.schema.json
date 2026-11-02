@@ -18,6 +18,10 @@
       "type": "boolean",
       "description": "true: theme errors are also drawn in red on the top screen, not only logged."
     },
+    "crisp": {
+      "type": "boolean",
+      "description": "true: boxes and borders are drawn hard-edged -- integer pixels, no coverage anti-aliasing, the border as solid rows/columns -- for a retro look. Only axis-aligned boxes with no gradient, shadow or rounding use it; text keeps the glyph rasterizer's edges. Defaults to false."
+    },
     "base": {
       "enum": ["dark", "light"],
       "description": "The palette the theme starts from (the Settings screen's look). Defaults to \"dark\"."

@@ -1,31 +1,29 @@
 {
-  // Terminal: the Pocket layout (the DS bottom screen) in the terminal palette, for its one 1240x1080 screen, drawn as the original Banana UI's
-  // *bottom* screen -- the interactive one on a DS: a raised bezel with a dot grid, a pixel font, a boxed system
-  // card, a carousel of square tiles whose selection is a raised gold tile with a label strip, the position along
-  // an outlined track ("03 / 12"), and the button pills spread along the bottom.
-  // The panel at the DS panels' scale is 640x557 layout px.
+  // Terminal: the Pocket layout (the DS bottom screen), retro -- flat surfaces, sharp corners, hard 1-2px borders,
+  // a high-contrast charcoal base and a bold accent. The panel at the DS panels scale is 640x557 layout px.
   "name": "Terminal",
   "author": "BananaOS",
   "base": "dark",
-  "accent": "#4ade80",
-  "colors": { "screenBg": "#06120b", "ink": "#dcffe8", "muted": "#7fae90" },
+  "accent": "#a6da95",
+  "colors": { "screenBg": "#1a1c23", "ink": "#cad3f5", "muted": "#8087a2" },
   "font": "pixel",
+  "crisp": true,
 
   "vars": {
-    "bg": "#06120b",
-    "dot": "#10281a",
-    "bezel": "#020805",
-    "ring": "#2a5a3c",
-    "panel": "#08180f",
-    "card": "#0a1a10",
-    "cardEdge": "#2a5a3c",
-    "ink": "#dcffe8",
-    "soft": "#7fae90",
-    "edge": "#b8f0cc",
-    "tile": "#10281a",
-    "gold": "#4ade80",
-    "goldHi": "#a7f3c0",
-    "goldLo": "#1a7a44",
+    "bg": "#1a1c23",
+    "dot": "#23263a",
+    "bezel": "#0b0c10",
+    "ring": "#363a4f",
+    "panel": "#1e2030",
+    "card": "#24273a",
+    "cardEdge": "#f5a97f",
+    "ink": "#cad3f5",
+    "soft": "#8087a2",
+    "edge": "#4a5169",
+    "tile": "#24273a",
+    "gold": "#a6da95",
+    "goldHi": "#c6e8b8",
+    "goldLo": "#6fa05e",
     "hi": "=gold"
   },
 
@@ -45,9 +43,9 @@
         { "type": "text", "x": 18, "y": 11, "text": "{clock}", "font": "pixel-medium", "size": 15, "color": "=ink" },
         { "type": "text", "right": 18, "y": 12, "w": 120, "align": "right", "text": "=battery < 0 ? '' : battery + '%'",
           "font": "pixel", "size": 13, "color": "=soft" },
-        { "type": "rect", "right": 134, "y": 13, "w": 26, "h": 12, "radius": 2, "border": 2, "borderColor": "=soft",
+        { "type": "rect", "right": 134, "y": 13, "w": 26, "h": 12, "border": 2, "borderColor": "=soft",
           "visible": "=battery >= 0" },
-        { "type": "rect", "right": 137, "y": 16, "w": "=20 * battery / 100", "h": 6, "radius": 1,
+        { "type": "rect", "right": 137, "y": 16, "w": "=20 * battery / 100", "h": 6, 
           "fill": "=battery < 20 ? '#ff5a5a' : gold", "visible": "=battery >= 0" },
         // the charger is in: a bolt over the battery (the same as the menu's own top bar)
         { "type": "image", "src": "bolt.png", "fit": "pixelContain", "right": 143, "y": 12, "w": 10, "h": 14,
@@ -58,9 +56,9 @@
     "bezel": {
       "type": "group",
       "children": [
-        { "type": "rect", "x": 8, "y": 44, "w": 624, "h": 505, "radius": 10, "fill": "=bezel" },
-        { "type": "rect", "x": 12, "y": 48, "w": 616, "h": 497, "radius": 8, "fill": "=ring" },
-        { "type": "rect", "x": 15, "y": 51, "w": 610, "h": 491, "radius": 6, "fill": "=panel" },
+        { "type": "rect", "x": 8, "y": 44, "w": 624, "h": 505, "fill": "=bezel" },
+        { "type": "rect", "x": 12, "y": 48, "w": 616, "h": 497, "fill": "=ring" },
+        { "type": "rect", "x": 15, "y": 51, "w": 610, "h": 491, "fill": "=panel" },
         // the dot grid, one baked texture (a per-dot list cost 11 ms a frame)
         { "type": "image", "src": "panel.png", "fit": "pixel", "tint": "=dot", "x": 18, "y": 54, "w": 604, "h": 485 }
       ]
@@ -70,7 +68,7 @@
       // a row group so the list can measure it (natural width) and spread the row with "justify between"
       "type": "group", "layout": "row", "gap": 9, "align": "center", "h": 30,
       "children": [
-        { "type": "group", "layout": "row", "padding": 6, "h": 30, "radius": 8, "align": "center",
+        { "type": "group", "layout": "row", "padding": 6, "h": 30, "align": "center",
           "fill": "=panel", "border": 2, "borderColor": "=edge",
           "children": [ { "type": "text", "text": "{item.key}", "font": "pixel-medium", "size": 13, "color": "=ink" } ] },
         { "type": "text", "text": "{item.label}", "font": "pixel", "size": 15, "color": "=soft" }
@@ -80,12 +78,12 @@
     "row": {
       "type": "group", "w": 600, "h": 60,
       "children": [
-        { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 60, "radius": 10, "fill": "=card", "border": 2, "borderColor": "=alpha(edge, 0.28)", "visible": "=sel ? 0 : 1" },
-        { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 60, "radius": 10, "border": 2, "borderColor": "=goldLo", "visible": "=sel",
-          "fill": "=gold", "gradient": { "angle": 180, "stops": [ "=goldHi", "=gold", "=goldLo" ] } },
-        { "type": "image", "src": "{item.art}", "fallback": "{item.icon}", "fit": "cover", "x": 8, "y": 8, "w": 44, "h": 44, "radius": 6, "placeholder": "#00000033" },
-        { "type": "text", "x": 62, "y": 12, "w": 466, "text": "{item.title}", "font": "pixel-medium", "size": 17, "color": "=sel ? '#241606' : ink" },
-        { "type": "text", "x": 62, "y": 36, "w": 466, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=sel ? '#5a3d0a' : soft" },
+        { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 60, "fill": "=card", "border": 2, "borderColor": "=alpha(edge, 0.28)", "visible": "=sel ? 0 : 1" },
+        { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 60, "border": 2, "borderColor": "=goldLo", "visible": "=sel",
+          "fill": "=gold" },
+        { "type": "image", "src": "{item.art}", "fallback": "{item.icon}", "fit": "cover", "x": 8, "y": 8, "w": 44, "h": 44, "placeholder": "#00000033" },
+        { "type": "text", "x": 62, "y": 12, "w": 466, "text": "{item.title}", "font": "pixel-medium", "size": 17, "color": "=sel ? '#1a1c23' : ink" },
+        { "type": "text", "x": 62, "y": 36, "w": 466, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=sel ? '#1a1c23' : soft" },
         { "type": "image", "src": "fav.png", "right": 16, "y": 22, "w": 16, "h": 16, "visible": "=item.fav" }
       ]
     }
@@ -105,30 +103,29 @@
         { "type": "text", "right": 30, "y": 70, "text": "{sys.name}", "font": "pixel", "size": 16, "color": "=soft" },
 
         // the selected system in a boxed card, its notch pointing down at the tile
-        { "type": "rect", "x": 130, "y": 102, "w": 380, "h": 84, "radius": 10, "fill": "=card", "border": 2, "borderColor": "=cardEdge" },
+        { "type": "rect", "x": 130, "y": 102, "w": 380, "h": 84, "fill": "=card", "border": 2, "borderColor": "=cardEdge" },
         { "type": "text", "x": 0, "w": "100%", "y": 118, "align": "center", "text": "{sys.name}", "font": "pixel-medium", "size": 28, "color": "=ink",
           "opacity": "=easeOut(progress(moved, 200))", "scale": "=0.94 + 0.06 * easeOutBack(progress(moved, 300))" },
         { "type": "text", "x": 0, "w": "100%", "y": 153, "align": "center", "text": "{upper(sys.maker)}", "font": "pixel", "size": 13, "spacing": 1, "color": "=soft" },
         { "type": "text", "x": 0, "w": "100%", "y": 170, "align": "center", "visible": "=sys.achB > 0",
           "text": "{sys.achLabel}", "font": "pixel", "size": 12, "spacing": 1, "color": "=soft" },
-        { "type": "rect", "x": 316, "y": 186, "w": 10, "h": 10, "radius": 2, "fill": "=card", "border": 2, "borderColor": "=cardEdge" },
-        { "type": "rect", "x": 316, "y": 184, "w": 10, "h": 9, "radius": 2, "fill": "=card" },
+        { "type": "rect", "x": 316, "y": 186, "w": 10, "h": 10, "fill": "=card", "border": 2, "borderColor": "=cardEdge" },
+        { "type": "rect", "x": 316, "y": 184, "w": 10, "h": 9, "fill": "=card" },
 
         // the carousel: square tiles, the selection a raised gold tile with its label strip, clipped inside the bezel
         { "type": "list", "source": "systems", "direction": "row", "x": 18, "y": 208, "w": 604, "h": 132, "clip": true,
           "itemW": 96, "itemH": 132, "gap": 16, "scrollMode": "center",
           "item": {
             "type": "group", "w": 96, "h": 132, "children": [
-              { "type": "rect", "x": 52, "y": 60, "w": 112, "h": 108, "anchor": "center", "radius": 8, "fill": "#010503", "visible": "=sel" },
-              { "type": "rect", "x": 48, "y": 56, "w": 112, "h": 108, "anchor": "center", "radius": 8, "visible": "=sel",
-                "fill": "=gold", "gradient": { "angle": 180, "stops": [ "=goldHi", "=gold", "=goldLo" ] },
+              { "type": "rect", "x": 48, "y": 56, "w": 112, "h": 108, "anchor": "center", "visible": "=sel",
+                "fill": "=gold",
                 "border": 2, "borderColor": "=goldLo" },
-              { "type": "rect", "x": 48, "y": 50, "w": 84, "h": 84, "anchor": "center", "radius": 8, "visible": "=sel ? 0 : 1",
+              { "type": "rect", "x": 48, "y": 50, "w": 84, "h": 84, "anchor": "center", "visible": "=sel ? 0 : 1",
                 "fill": "=tile", "border": 2, "borderColor": "=edge" },
               { "type": "image", "src": "{item.icon}", "fit": "pixelContain", "x": 48, "y": 46, "w": 52, "h": 52, "anchor": "center",
                 "opacity": "=sel ? 1 : 0.85" },
               { "type": "text", "x": -9, "w": 114, "y": 88, "align": "center", "text": "{item.name}", "font": "pixel-medium", "size": 11,
-                "color": "#04220f", "visible": "=sel" },
+                "color": "#1a1c23", "visible": "=sel" },
               { "type": "image", "src": "fav.png", "x": 74, "y": 6, "w": 16, "h": 16, "visible": "=item.fav" }
             ]
           } },
@@ -136,8 +133,8 @@
         // where the shelf is, like the DS bottom screen's "01 / 10": an outlined track with a gold fill
         { "type": "text", "x": 40, "y": 364, "text": "=sys.games == 1 ? '1 game' : sys.games + ' games'", "font": "pixel", "size": 13, "color": "=soft" },
         { "type": "text", "right": 40, "y": 364, "text": "{cursor + 1} / {systemCount}", "font": "pixel", "size": 14, "color": "=soft" },
-        { "type": "rect", "x": 40, "y": 388, "w": 560, "h": 14, "radius": 7, "fill": "#00000000", "border": 2, "borderColor": "=edge" },
-        { "type": "rect", "x": "=44 + (552 - 88) * cursor / max(1, systemCount - 1)", "y": 392, "w": 88, "h": 6, "radius": 3,
+        { "type": "rect", "x": 40, "y": 388, "w": 560, "h": 14, "fill": "#00000000", "border": 2, "borderColor": "=edge" },
+        { "type": "rect", "x": "=44 + (552 - 88) * cursor / max(1, systemCount - 1)", "y": 392, "w": 88, "h": 6, 
           "fill": "=gold", "smooth": { "x": 150 } },
 
         { "type": "text", "x": 0, "w": "100%", "y": 442, "align": "center", "visible": "=sys.hasResume",
@@ -153,7 +150,7 @@
         { "use": "bezel" },
         // the box art behind the list, very faint
         { "type": "image", "src": "{game.art}", "fit": "cover", "x": 0, "y": 0, "w": 640, "h": 557, "opacity": 0.10 },
-        { "type": "rect", "x": 15, "y": 51, "w": 610, "h": 491, "radius": 6, "fill": "=alpha(panel, 0.88)" },
+        { "type": "rect", "x": 15, "y": 51, "w": 610, "h": 491, "fill": "=alpha(panel, 0.88)" },
         { "type": "image", "src": "{sys.icon}", "fit": "pixelContain", "x": 40, "y": 62, "w": 30, "h": 30 },
         { "type": "text", "x": 80, "y": 64, "text": "{sys.name}", "font": "pixel-medium", "size": 22, "color": "=ink" },
         { "type": "text", "right": 40, "y": 68, "w": 180, "align": "right", "text": "{cursor + 1} / {count}", "font": "pixel", "size": 14, "color": "=soft" },
@@ -172,23 +169,23 @@
         { "type": "rect", "fill": "=bg" },
         { "use": "bezel" },
         // the console the cartridge goes into, and the slot
-        { "type": "rect", "x": 150, "y": 250, "w": 340, "h": 176, "radius": 16, "fill": "=card", "border": 3, "borderColor": "=edge" },
-        { "type": "rect", "x": 210, "y": 380, "w": 220, "h": 22, "radius": 11, "fill": "=panel" },
+        { "type": "rect", "x": 150, "y": 250, "w": 340, "h": 176, "fill": "=card", "border": 3, "borderColor": "=edge" },
+        { "type": "rect", "x": 210, "y": 380, "w": 220, "h": 22, "fill": "=panel" },
         // the cartridge drops into the slot: clipped at the slot line (y 250), so below it is hidden
         { "type": "group", "x": 250, "y": 100, "w": 140, "h": 150, "clip": true, "children": [
           { "type": "group", "x": 15, "y": "=-140 + 243 * easeOut(launch.progress)", "children": [
-            { "type": "rect", "x": 0, "y": 0, "w": 110, "h": 140, "radius": 7, "fill": "=ring", "border": 3, "borderColor": "=edge" },
-            { "type": "image", "src": "{game.art}", "fallback": "{sys.icon}", "fit": "cover", "x": 9, "y": 9, "w": 92, "h": 98, "radius": 4, "placeholder": "#00000055" },
-            { "type": "rect", "x": 9, "y": 112, "w": 92, "h": 18, "radius": 3, "fill": "=gold" }
+            { "type": "rect", "x": 0, "y": 0, "w": 110, "h": 140, "fill": "=ring", "border": 3, "borderColor": "=edge" },
+            { "type": "image", "src": "{game.art}", "fallback": "{sys.icon}", "fit": "cover", "x": 9, "y": 9, "w": 92, "h": 98, "placeholder": "#00000055" },
+            { "type": "rect", "x": 9, "y": 112, "w": 92, "h": 18, "fill": "=gold" }
           ]}
         ]},
         // the slot's front lip, drawn over the cartridge as it goes in
-        { "type": "rect", "x": 250, "y": 250, "w": 140, "h": 15, "radius": 4, "fill": "=panel", "border": 3, "borderColor": "=edge" },
+        { "type": "rect", "x": 250, "y": 250, "w": 140, "h": 15, "fill": "=panel", "border": 3, "borderColor": "=edge" },
         // the power light comes green once it is in
-        { "type": "rect", "x": 452, "y": 268, "w": 14, "h": 9, "radius": 2, "fill": "#3ce07a", "visible": "=launch.progress > 0.9" },
+        { "type": "rect", "x": 452, "y": 268, "w": 14, "h": 9, "fill": "#3ce07a", "visible": "=launch.progress > 0.9" },
         { "type": "text", "x": 0, "w": "100%", "y": 452, "align": "center", "text": "Starting {game.title}", "font": "pixel-medium", "size": 22, "color": "=ink" },
-        { "type": "rect", "x": 170, "y": 496, "w": 300, "h": 14, "radius": 7, "fill": "#00000000", "border": 2, "borderColor": "=edge" },
-        { "type": "rect", "x": 174, "y": 502, "w": "=292 * easeInOut(launch.progress)", "h": 2, "radius": 1, "fill": "=gold" }
+        { "type": "rect", "x": 170, "y": 496, "w": 300, "h": 14, "fill": "#00000000", "border": 2, "borderColor": "=edge" },
+        { "type": "rect", "x": 174, "y": 502, "w": "=292 * easeInOut(launch.progress)", "h": 2, "fill": "=gold" }
       ]
     }
   }
