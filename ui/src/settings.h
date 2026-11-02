@@ -23,11 +23,10 @@ namespace banana
 	{
 	public:
 		Settings(rnds::Backend* be, const std::string& assets, const std::string& dataDir, float scale, const std::string& variant);
-		void setVariant(const std::string& variant);	// "dark", "light", or "carts" (dark, in Inter: setFontDir first)
+		void setVariant(const std::string& variant);	// "dark" or "light"
 		// The pages' list is drawn on the one screen, and the selected setting's description and help go in the strip
 		// of panel below it. canvasH: the panel's height in the same CSS px (a 1240x1080 panel is 557)
 		void setPanelHeight(float canvasHeight) { canvasH = canvasHeight; }
-		void setFontDir(const std::string& dir) { fontDir = dir; }
 		void open();
 		void close()
 		{
@@ -204,12 +203,10 @@ namespace banana
 		std::string fit(const std::string& t, bool medium, float size, float width);
 
 		std::shared_ptr<rnds::Font> R, M;
-		std::string fontDir;		// Inter's TTFs (the Carts theme)
-		bool cleanFonts = false;
 		float canvasH = 480;		// the panel's height in CSS px (the strip under the list uses the part past 480)
 		// the one panel's strip under the list, where the second DS screen's lines would have been
 		void footer(const std::string& text, const rnds::Color& c);
-		std::string fontsLoaded;	// the fonts R and M are (setVariant): a user theme's, or "carts"
+		std::string fontsLoaded;	// the fonts R and M are (setVariant): a user theme's, or the built-in pair
 		struct Cached { rnds::TexPtr tex; int ox = 0, oy = 0; float w = 0; };
 		std::map<std::string, Cached> cache;
 

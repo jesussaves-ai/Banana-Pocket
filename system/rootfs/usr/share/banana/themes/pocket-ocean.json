@@ -1,29 +1,29 @@
 {
-  // Ocean: the Pocket layout (the DS bottom screen), retro -- flat surfaces, sharp corners, hard 1-2px borders,
-  // a high-contrast charcoal base and a bold accent. The panel at the DS panels scale is 640x557 layout px.
+  // Ocean: the Pocket layout under the sea -- deep navy water, foam-bright highlights, a sea-glass card edge and
+  // aqua inverse video where the menu's amber is.
   "name": "Ocean",
   "author": "BananaOS",
   "base": "dark",
-  "accent": "#8aadf4",
-  "colors": { "screenBg": "#1a1c23", "ink": "#cad3f5", "muted": "#8087a2" },
+  "accent": "#56c9f0",
+  "colors": { "screenBg": "#04121c", "ink": "#d8f2ff", "muted": "#82b6cf", "edge": "#2c6a8a", "line": "#14455c", "panelBody": "#0d2c3d", "bubbleBody": "#12394d", "kbdBg": "#12394d", "kbdInk": "#d8f2ff", "slotOn": "#a9e6ff", "pickEdge": "#a9e6ff" },
   "font": "pixel",
   "crisp": true,
 
   "vars": {
-    "bg": "#1a1c23",
-    "dot": "#23263a",
-    "bezel": "#0b0c10",
-    "ring": "#363a4f",
-    "panel": "#1e2030",
-    "card": "#24273a",
-    "cardEdge": "#f5c76a",
-    "ink": "#cad3f5",
-    "soft": "#8087a2",
-    "edge": "#4a5169",
-    "tile": "#24273a",
-    "gold": "#8aadf4",
-    "goldHi": "#aac7ff",
-    "goldLo": "#5b7fd4",
+    "bg": "#04121c",
+    "dot": "#0c2434",
+    "bezel": "#010a12",
+    "ring": "#0a2231",
+    "panel": "#0d2c3d",
+    "card": "#12394d",
+    "cardEdge": "#3fd8c7",
+    "ink": "#d8f2ff",
+    "soft": "#82b6cf",
+    "edge": "#2c6a8a",
+    "tile": "#12394d",
+    "gold": "#56c9f0",
+    "goldHi": "#a9e6ff",
+    "goldLo": "#1f7fb0",
     "hi": "=gold"
   },
 
@@ -82,8 +82,8 @@
         { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 60, "border": 2, "borderColor": "=goldLo", "visible": "=sel",
           "fill": "=gold" },
         { "type": "image", "src": "{item.art}", "fallback": "{item.icon}", "fit": "cover", "x": 8, "y": 8, "w": 44, "h": 44, "placeholder": "#00000033" },
-        { "type": "text", "x": 62, "y": 12, "w": 466, "text": "{item.title}", "font": "pixel-medium", "size": 17, "color": "=sel ? '#1a1c23' : ink" },
-        { "type": "text", "x": 62, "y": 36, "w": 466, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=sel ? '#1a1c23' : soft" },
+        { "type": "text", "x": 62, "y": 12, "w": 466, "text": "{item.title}", "font": "pixel-medium", "size": 17, "color": "=sel ? bg : ink" },
+        { "type": "text", "x": 62, "y": 36, "w": 466, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=sel ? bg : soft" },
         { "type": "image", "src": "fav.png", "right": 16, "y": 22, "w": 16, "h": 16, "visible": "=item.fav" }
       ]
     }
@@ -125,7 +125,7 @@
               { "type": "image", "src": "{item.icon}", "fit": "pixelContain", "x": 48, "y": 46, "w": 52, "h": 52, "anchor": "center",
                 "opacity": "=sel ? 1 : 0.85" },
               { "type": "text", "x": -9, "w": 114, "y": 88, "align": "center", "text": "{item.name}", "font": "pixel-medium", "size": 11,
-                "color": "#1a1c23", "visible": "=sel" },
+                "color": "=bg", "visible": "=sel" },
               { "type": "image", "src": "fav.png", "x": 74, "y": 6, "w": 16, "h": 16, "visible": "=item.fav" }
             ]
           } },

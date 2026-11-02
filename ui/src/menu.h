@@ -1,6 +1,6 @@
 #pragma once
 // banana-ui: the menu of the theme in use, as the main loop drives it. Dark and Light are ROCKNIXDS Pixel's engine
-// (rnds::UI, used as it is through RndsMenu); Carts is Banana's own (carts.cpp). The calls are rnds::UI's.
+// (rnds::UI, used as it is through RndsMenu); the layout themes are LayoutMenu. The calls are rnds::UI's.
 #include "../rnds/RndsUI.h"
 #include <functional>
 #include <string>

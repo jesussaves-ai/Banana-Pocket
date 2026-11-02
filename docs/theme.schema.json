@@ -53,7 +53,7 @@
     },
     "colors": {
       "type": "object",
-      "description": "The palette's colours by name (screenBg, ink, muted, edge, navy, panelBody, chipBand, slotOn, onPick, ...); the ones not named keep the base palette's. See system/rootfs/usr/share/banana/themes/README.txt.",
+      "description": "The palette's colours by name (screenBg, ink, muted, edge, navy, panelBody, chipBand, slotOn, onPick, pickEdge, ...); the ones not named keep the base palette's. See system/rootfs/usr/share/banana/themes/README.txt.",
       "additionalProperties": { "$ref": "#/$defs/color" }
     },
     "font": {
@@ -72,7 +72,7 @@
     },
     "input": {
       "type": "object",
-      "description": "What the buttons do, per view. The defaults are the Carts theme's.",
+      "description": "What the buttons do, per view.",
       "properties": {
         "home": { "$ref": "#/$defs/inputMap" },
         "library": { "$ref": "#/$defs/inputMap" }

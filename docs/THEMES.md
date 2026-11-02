@@ -51,7 +51,7 @@ Each `shot` writes `<prefix><name>-top.png` and `-bot.png`. Theme errors are pri
 
 `//` and `/* */` comments and trailing commas are allowed.
 
-`crisp: true` draws axis-aligned boxes and their borders hard-edged -- integer pixels, no coverage anti-aliasing, the border as solid rows/columns -- for a retro (SNES/Genesis menu) look; the Pocket themes use it. Boxes with a gradient, shadow or rounded corner still take the smooth path, and text keeps the glyph rasterizer's edges.
+`crisp: true` draws axis-aligned boxes and their borders hard-edged -- integer pixels, no coverage anti-aliasing, the border as solid rows/columns -- for a retro (SNES/Genesis menu) look; the Pocket themes use it. Boxes with a gradient, shadow or rounded corner still take the smooth path, and text keeps the glyph rasterizer's edges. Settings and the search keyboard follow the same flag: their panels lose the rounding, the bands and the dither and take a single 2px border, so a retro theme is hard-edged on every screen and not only in the menu.
 
 The Retroid Pocket Classic has **one** screen: the canvas is 640 units wide and as tall as the panel allows
 (about 557), and a theme draws every view on `top`. The engine keeps the two-screen `top`/`bottom` schema it was
@@ -177,7 +177,7 @@ selects it, and tapping the selected one again opens it.
 `input.<view>.<button>` (`home` and `library`; buttons `left right up down a b x y l r`) is one of: `prev`, `next`
 (`prev:5` moves 5: a grid's rows), `first`, `last`, `open` (home: the system, or starts an app; library: the game),
 `back`, `fav`, `resume` (home: the system's last game), `prevSystem`, `nextSystem`, `none`. START (Settings) and
-SELECT (search) stay Banana's. The defaults are the Carts theme's: home left/right/up/down/L/R move, A opens, X
+SELECT (search) stay Banana's. The defaults: home left/right/up/down/L/R move, A opens, X
 resumes, Y stars; library left/right move, up/down move 10, L/R change system, A plays, B goes back, Y stars.
 
 A starts the `launch` view, which lasts `behavior.launchMs`. Its `cues` play the theme's sounds at those ms (`insert`).
@@ -197,4 +197,3 @@ text and fitted pictures are made once and kept, and the screens' unchanged part
 - Dragging a list with a finger (a tap selects).
 - Lists of other things than systems, games and hints (achievements, the settings).
 - Settings and the keyboard keep their own look (the theme's `colors`, `accent` and `fonts` still apply to them).
-- 3D: the Carts theme's rendered cartridges aren't available as an element.

@@ -183,17 +183,22 @@ namespace banana
 		return p;
 	}
 
+	static bool sCrisp = false;
+	bool themeCrisp() { return sCrisp; }
+
 	std::string applyTheme(const std::string& value, const std::string& accentName, std::string* why)
 	{
 		rnds::themeColors.clear();
 		rnds::themeFiles = rnds::ThemeFiles();
+		sCrisp = false;	// (a plain Dark/Light, or a theme that can't be read, keeps the rounded boxes)
 		rnds::setAccent(accentName);
 		std::string path = themePath(value);
-		if (path.empty()) return value == "light" ? "light" : value == "carts" ? "carts" : "dark";
+		if (path.empty()) return value == "light" ? "light" : "dark";
 		std::map<std::string, std::string> kv;
 		if (!readTheme(path, kv, why)) return "dark";
 		std::string dir = path.substr(0, path.rfind('/'));
 		std::string base = kv["base"] == "light" ? "light" : "dark";
+		sCrisp = kv["crisp"] == "true";	// the retro geometry the layout menus also draw with (layout.cpp)
 		// the accent: one colour (its lighter and darker shades worked out) or each of the five named
 		uint32_t c;
 		if (parseColor(kv["accent"], c))

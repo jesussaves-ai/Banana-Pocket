@@ -178,7 +178,7 @@ namespace banana
 			{ "panelBody", &SPal::panelBody }, { "panelLow", &SPal::panelLow }, { "bubbleBand", &SPal::bubbleBand },
 			{ "bubbleBody", &SPal::bubbleBody }, { "bubbleLow", &SPal::bubbleLow }, { "slotOn", &SPal::slotOn },
 			{ "kbdBg", &SPal::kbdBg }, { "kbdInk", &SPal::kbdInk }, { "blackish", &SPal::blackish }, { "shade45", &SPal::shade45 },
-			{ "onPick", &SPal::onPick }, { "onPickAccent", &SPal::onPickAccent },
+			{ "onPick", &SPal::onPick }, { "onPickAccent", &SPal::onPickAccent }, { "pickEdge", &SPal::pickEdge },
 		};
 		for (auto& e : names) rnds::themeColor(e.n, p.*e.m);
 		return p;
@@ -202,22 +202,18 @@ namespace banana
 		std::string v = applyTheme(value, getConfValue(data + "/settings.conf", "accent", "yellow"));
 		bool l = v == "light";
 		light = l; cache.clear();	// (also for a new accent: the boxes are drawn again)
-		// the Carts theme writes in Inter (a clean typeface), the others in the theme's Pixelify Sans
-		bool clean = v == "carts" && !fontDir.empty();
-		std::string fonts = clean ? "carts" : rnds::themeFiles.fontRegular + "|" + rnds::themeFiles.fontMedium;
-		if (clean != cleanFonts || !R || fonts != fontsLoaded)
+		std::string fonts = rnds::themeFiles.fontRegular + "|" + rnds::themeFiles.fontMedium;
+		if (!R || fonts != fontsLoaded)
 		{
-			cleanFonts = clean;
 			fontsLoaded = fonts;
 			// a user theme's fonts (rnds::themeFiles) on its Pixel palettes; one that doesn't load: the theme's
 			const std::string& ownR = rnds::themeFiles.fontRegular, &ownM = rnds::themeFiles.fontMedium;
-			R = rnds::Font::load(clean ? fontDir + "/Inter-Regular.ttf" : !ownR.empty() ? ownR : assets + "/fonts/PixelifySans-Regular.ttf");
-			M = rnds::Font::load(clean ? fontDir + "/Inter-Medium.ttf" : !ownM.empty() ? ownM : assets + "/fonts/PixelifySans-Medium.ttf");
+			R = rnds::Font::load(!ownR.empty() ? ownR : assets + "/fonts/PixelifySans-Regular.ttf");
+			M = rnds::Font::load(!ownM.empty() ? ownM : assets + "/fonts/PixelifySans-Medium.ttf");
 			if (!R || !M)
 			{
 				R = rnds::Font::load(assets + "/fonts/PixelifySans-Regular.ttf");
 				M = rnds::Font::load(assets + "/fonts/PixelifySans-Medium.ttf");
-				cleanFonts = false;
 			}
 		}
 	}
@@ -272,9 +268,9 @@ namespace banana
 		const char* D = "Display & sound";
 		{
 			// Banana's three, then the themes in banana/themes on the card and the image's examples (theme.h)
-			std::vector<std::string> names = { "Dark", "Light", "Carts" }, values = { "dark", "light", "carts" };
+			std::vector<std::string> names = { "Dark", "Light" }, values = { "dark", "light" };
 			for (auto& t : userThemes()) { names.push_back(t.name); values.push_back(t.value); }
-			add(D, "picture", "Theme", "ROCKNIXDS Pixel's two palettes, dark or light for daylight; Carts (experimental): your games as cartridges on a shelf, in a clean typeface; or a theme of your own: a .json in banana/themes on the card (banana/themes/README.txt says how).",
+			add(D, "picture", "Theme", "ROCKNIXDS Pixel's two palettes, dark or light for daylight; or a theme of your own: a .json in banana/themes on the card (banana/themes/README.txt says how).",
 				menu, "theme", names, values);
 		}
 		add(D, "picture", "Brightness", "The panel's backlight. F + volume changes it anywhere, in games too.", "", "",
@@ -351,15 +347,14 @@ namespace banana
 		if (it.key == "theme")
 		{
 			// One panel: a colour theme (Dark/Light) is forced to the Pocket layout (main.cpp, menuTheme), so those
-			// would be rows that change nothing -- the list is the layout themes and Carts. A stored Dark/Light reads
-			// as the Pocket layout. A theme copied over file sharing while the menu runs is listed the next time
+			// would be rows that change nothing -- the list is the layout themes. A stored Dark/Light (or the removed
+			// Carts) reads as the Pocket layout. A theme copied over file sharing while the menu runs is listed the next time
 			// Settings opens (the list was made once, when banana-ui started).
-			it.names = { "Carts" };
-			it.values = { "carts" };
+			it.names.clear(); it.values.clear();
 			for (auto& t : userThemes()) { it.names.push_back(t.name); it.values.push_back(t.value); }
-			it.help = "The look of the menu, drawn from a theme's .json: the Pocket layout and its colour variations, or Carts (experimental). Your own go in banana/themes on the card (banana/themes/README.txt says how).";
+			it.help = "The look of the menu, drawn from a theme's .json: the Pocket layout and its colour variations. Your own go in banana/themes on the card (banana/themes/README.txt says how).";
 			std::string v = getConfValue(it.file, it.key, "dark");
-			if (v == "dark" || v == "light")
+			if (v == "dark" || v == "light" || v == "carts")
 			{
 				it.at = 0;
 				for (size_t i = 0; i < it.values.size(); i++) if (it.values[i] == "user:pocket") it.at = (int)i;
@@ -922,8 +917,9 @@ namespace banana
 	void Settings::box(const std::string& kind, bool on, float x, float y, float w, float h)
 	{
 		SPal p = pal(light);
+		bool crisp = themeCrisp();	// a retro theme: hard corners and one flat border, as the layout menus draw
 		int dw = (int)std::lround(X(w)), dh = (int)std::lround(X(h));
-		std::string key = "box:" + kind + (on ? "1" : "0") + ":" + std::to_string(dw) + "x" + std::to_string(dh);
+		std::string key = "box:" + kind + (on ? "1" : "0") + (crisp ? "c" : "") + ":" + std::to_string(dw) + "x" + std::to_string(dh);
 		auto it = cache.find(key);
 		if (it == cache.end())
 		{
@@ -931,6 +927,7 @@ namespace banana
 			auto inset = [](float dx, float dy, float sp, Color c) { return rnds::Shadow{ dx, dy, sp, c, true }; };
 			auto outer = [](float dx, float dy, Color c) { return rnds::Shadow{ dx, dy, 0, c, false }; };
 			float b3 = s == 1 ? 3 : std::max(1.0f, std::floor(3 * s));
+			float b2 = std::max(1.0f, std::round(2 * s));	// a crisp theme's border: 2 px at the menu's scale
 			if (kind == "screen")
 			{
 				st.radius = X(2); st.bg = p.screenBg; st.dither = true;
@@ -984,22 +981,16 @@ namespace banana
 			}
 			else if (kind == "kbd") { st.radius = X(4); st.bg = p.kbdBg; }
 			st.ditherScale = s; st.ditherA = p.ditherA; st.ditherB = p.ditherB;
-			if (cleanFonts)
+			if (crisp)
 			{
-				// the Carts theme: flat panels, a hairline edge, no dither, bands or hard shadows
-				rnds::BoxStyle c;
-				float hair = std::max(1.0f, std::round(s));
-				if (kind == "screen") { c.bg = Color::hex(0x111215); }
-				else if (kind == "pick") { c.radius = X(12); c.bg = p.pick; }
-				else if (kind == "kbd") { c.radius = X(6); c.bg = Color::hex(0xe6e7ea); }	// (a key: light, its letter dark)
-				else
-				{
-					c.radius = X(kind == "hero" ? 16 : kind == "face" ? 10 : 12);
-					c.bg = Color::hex(kind == "hero" ? 0x191a1f : 0x1f2126);
-					c.border = hair;
-					c.borderColor = on ? p.pick : Color(1, 1, 1, kind == "osd" ? 0.5f : 0.08f);
-				}
-				st = c;
+				// the pixel look, the same rule the layout engine uses for a "crisp" theme (layout.cpp): sharp corners,
+				// a solid border of even pixels, no bands, shadows or dithering. Settings, the search keyboard and the
+				// value plates all take their geometry from here, so a theme's shape language is its own everywhere.
+				st.radius = 0; st.bands.clear(); st.shadows.clear(); st.dither = false;
+				if (kind == "screen") { st.border = b2; st.borderColor = p.edge; }
+				else if (kind == "kbd") { st.border = b2; st.borderColor = p.line; }
+				else if (kind == "osd") { st.border = b2; st.borderColor = p.edge; st.bg = p.panelBody; }
+				else if (st.border > 0) st.border = b2;
 			}
 			rnds::PaintedBox pb = rnds::paintBox(st, dw, dh);
 			Cached c;
@@ -1354,7 +1345,7 @@ namespace banana
 			Color vc = on ? (armed == i ? p.onPickAccent : p.onPick) : p.muted;
 			// the value's own plate (not on the pick: the raised yellow plate is framing enough there)
 			if (!on) box("chip", false, 566 - vw - 8, y + 13, vw + 16, 30);
-			if (it.kind == Item::ACTION || it.kind == Item::PAGE) { text(v, true, 19, 586 - vw, y + 17, vc); continue; }
+			if (it.kind == Item::ACTION || it.kind == Item::PAGE) { text(v, true, 19, 566 - vw, y + 17, vc); continue; }
 			if (it.kind == Item::BRIGHTNESS || it.kind == Item::VOLUME)
 			{
 				// the in-menu bar (the hero panel's, on one screen too): [····] 50%, no arrows (the bar is the affordance)

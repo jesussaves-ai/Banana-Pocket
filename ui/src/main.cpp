@@ -25,7 +25,6 @@
 #include "sound.h"
 #include "idle.h"
 #include "menu.h"
-#include "carts.h"
 #include "layout.h"
 
 #include <algorithm>
@@ -96,7 +95,7 @@ static rnds::Bitmap stbLoad(const std::string& path)
 }
 
 // The last pictures decoded, kept a little: one box art makes several pictures, each its own job (Pixel's cartridge
-// and cover, Carts' cartridge in the row, lifted and on the top screen), and decoding the PNG was most of each job's
+// and cover, the cartridge in the row, lifted and on the top screen), and decoding the PNG was most of each job's
 // time. A file is known by its path, size and time (art scraped again is read again); a picture another worker is
 // decoding is waited for, not decoded twice
 typedef std::shared_ptr<const rnds::Bitmap> DecodedPic;
@@ -532,8 +531,7 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 	float sc = o.single ? o.w / 640.0f : o.h / 480.0f;
 	float canvasW = o.w / sc, canvasH = o.h / sc;
 	double tMenu = nowMs();	// the menu's start-up: its constructor (the theme's build) below, then the first settle
-	std::unique_ptr<Menu> uiPtr(theme == "carts" ? (Menu*)new CartMenu(&lib, &be, o.banana + "/fonts", sc)
-		: isLayoutTheme(layout) ? (Menu*)new LayoutMenu(&lib, &be, layout, sc, o.assets + "/fonts", o.banana + "/fonts", canvasW, canvasH)
+	std::unique_ptr<Menu> uiPtr(isLayoutTheme(layout) ? (Menu*)new LayoutMenu(&lib, &be, layout, sc, o.assets + "/fonts", o.banana + "/fonts", canvasW, canvasH)
 		: new RndsMenu(&lib, &be, o.assets, sc, variant));
 	Menu& ui = *uiPtr;
 	double now = 100000;
@@ -1112,7 +1110,6 @@ int main(int argc, char** argv)
 	// splash and the menu in it
 	std::string themeWhy, variant = applyTheme(settings["theme"], settings["accent"], &themeWhy);
 	if (!themeWhy.empty()) logf("theme: %s (dark instead)", themeWhy.c_str());
-	if (variant == "carts") variant = "dark";
 	// beside the logo: the release stage and the version ("0.3.0-dev" -> "Alpha 0.3.0"; /etc/banana/stage names
 	// another stage)
 	{
@@ -1176,26 +1173,25 @@ int main(int argc, char** argv)
 	// a single panel (the RPC's 1240x1080): the DS's 640-wide layout, and the extra height of the panel below it
 	const float sc = single ? disp.width() / 640.0f : disp.height() / 480.0f;
 	const float canvasW = disp.width() / sc, canvasH = disp.height() / sc;
-	// the theme's menu: Carts (Banana's own), else ROCKNIXDS Pixel's engine in the dark or light palette
+	// the theme's menu: a layout theme's, else ROCKNIXDS Pixel's engine in the dark or light palette
 	auto makeMenu = [&](const std::string& themeIn, float scv) -> Menu*
 	{
 		std::string theme = themeIn, layout = themePath(themeIn);
-		if (single && theme != "carts" && !isLayoutTheme(layout))
+		if (single && !isLayoutTheme(layout))
 		{
 			theme = "file:/usr/share/banana/themes/pocket.json";	// (the single-screen layout the panel is made for)
 			layout = "/usr/share/banana/themes/pocket.json";
 		}
-		if (theme == "carts") return new CartMenu(&lib, &be, o.banana + "/fonts", scv);
 		if (isLayoutTheme(layout)) { applyTheme(theme, settings["accent"]); return new LayoutMenu(&lib, &be, layout, scv, o.assets + "/fonts", o.banana + "/fonts", canvasW, canvasH); }
 		return new RndsMenu(&lib, &be, o.assets, scv, applyTheme(theme, settings["accent"]) == "light" ? "light" : "dark");
 	};
-	// The theme the menu actually draws with. On the one panel a colour theme (not a layout, not Carts) is forced to
+	// The theme the menu actually draws with. On the one panel a colour theme (not a layout) is forced to
 	// the Pocket layout, so Settings has to follow *that* value, not the raw setting: otherwise the menu shows Pocket
 	// and Settings shows the colour theme's palette, and the two disagree.
 	auto menuTheme = [&]() -> std::string
 	{
 		std::string t = settings["theme"], l = themePath(t);
-		if (single && t != "carts" && !isLayoutTheme(l)) return "file:/usr/share/banana/themes/pocket.json";
+		if (single && !isLayoutTheme(l)) return "file:/usr/share/banana/themes/pocket.json";
 		return t;
 	};
 	std::atomic<bool> ready{ false };
@@ -1249,10 +1245,9 @@ int main(int argc, char** argv)
 	int lastMinute = -1;
 	float scale = single ? disp.width() / 640.0f : disp.height() / 480.0f;
 	Settings settingsView(&be, o.assets, o.data, scale, variant);
-	settingsView.setFontDir(o.banana + "/fonts");
 	settingsView.setPanelHeight(canvasH);
 	settingsView.searchCount = [&](const std::string& q) { return lib.countMatches(q); };
-	settingsView.setVariant(menuTheme());	// (Carts: Inter)
+	settingsView.setVariant(menuTheme());
 	settingsView.setOverride = [&](const std::string& s, const std::string& r, const std::string& c, const std::string& sh)
 		{ lib.setOverride(s, r, c, sh); };
 	LowBattery low;
@@ -1327,7 +1322,6 @@ int main(int argc, char** argv)
 			// the menu again in the other palette, on the system it was showing
 			settings = readSettings(o.data);
 			variant = applyTheme(settings["theme"], settings["accent"]);
-			if (variant == "carts") variant = "dark";
 			int sys = ui->systemIndex();
 			uiPtr.reset(makeMenu(settings["theme"], scale));
 			ui = uiPtr.get();

@@ -1,29 +1,30 @@
 {
-  // Pocket: the Pocket layout (the DS bottom screen), retro -- flat surfaces, sharp corners, hard 1-2px borders,
-  // a high-contrast charcoal base and a bold accent. The panel at the DS panels scale is 640x557 layout px.
+  // Pocket: BananaOS's own look (the DS bottom screen layout), retro -- flat surfaces, sharp corners, hard 1-2px
+  // borders and a banana palette: warm brown-black glass, butter text, ripe-yellow highlights and a golden-amber
+  // card edge. The bunch by the clock is the OS's own icon. The panel at the DS panels scale is 640x557 layout px.
   "name": "Pocket",
   "author": "BananaOS",
   "base": "dark",
-  "accent": "#f5c76a",
-  "colors": { "screenBg": "#1a1c23", "ink": "#cad3f5", "muted": "#8087a2" },
+  "accent": "#ffd21e",
+  "colors": { "screenBg": "#17140d", "ink": "#ffefb2", "muted": "#bfa963", "edge": "#8c7328", "line": "#4a3d18", "panelBody": "#201b11", "bubbleBody": "#2a2315", "kbdBg": "#2a2315", "kbdInk": "#ffefb2", "slotOn": "#ffe873", "pickEdge": "#ffe873" },
   "font": "pixel",
   "crisp": true,
 
   "vars": {
-    "bg": "#1a1c23",
-    "dot": "#23263a",
-    "bezel": "#0b0c10",
-    "ring": "#363a4f",
-    "panel": "#1e2030",
-    "card": "#24273a",
-    "cardEdge": "#8aadf4",
-    "ink": "#cad3f5",
-    "soft": "#8087a2",
-    "edge": "#4a5169",
-    "tile": "#24273a",
-    "gold": "#f5c76a",
-    "goldHi": "#ffe08a",
-    "goldLo": "#c98f2e",
+    "bg": "#17140d",
+    "dot": "#241f14",
+    "bezel": "#0b0906",
+    "ring": "#342c19",
+    "panel": "#201b11",
+    "card": "#2a2315",
+    "cardEdge": "#f2a91b",
+    "ink": "#ffefb2",
+    "soft": "#bfa963",
+    "edge": "#8c7328",
+    "tile": "#2a2315",
+    "gold": "#ffd21e",
+    "goldHi": "#ffe873",
+    "goldLo": "#b98d00",
     "hi": "=gold"
   },
 
@@ -40,7 +41,8 @@
         { "type": "rect", "x": 0, "y": 0, "w": "100%", "h": 36, "fill": "=bezel" },
         { "type": "rect", "x": 0, "y": 0, "w": "100%", "h": 2, "fill": "=panel" },
         { "type": "rect", "x": 0, "y": 32, "w": "100%", "h": 3, "fill": "=ring" },
-        { "type": "text", "x": 18, "y": 11, "text": "{clock}", "font": "pixel-medium", "size": 15, "color": "=ink" },
+        { "type": "image", "src": "banana.png", "fit": "pixelContain", "x": 14, "y": 8, "w": 22, "h": 22 },
+        { "type": "text", "x": 44, "y": 11, "text": "{clock}", "font": "pixel-medium", "size": 15, "color": "=ink" },
         { "type": "text", "right": 18, "y": 12, "w": 120, "align": "right", "text": "=battery < 0 ? '' : battery + '%'",
           "font": "pixel", "size": 13, "color": "=soft" },
         { "type": "rect", "right": 134, "y": 13, "w": 26, "h": 12, "border": 2, "borderColor": "=soft",
@@ -82,8 +84,8 @@
         { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 60, "border": 2, "borderColor": "=goldLo", "visible": "=sel",
           "fill": "=gold" },
         { "type": "image", "src": "{item.art}", "fallback": "{item.icon}", "fit": "cover", "x": 8, "y": 8, "w": 44, "h": 44, "placeholder": "#00000033" },
-        { "type": "text", "x": 62, "y": 12, "w": 466, "text": "{item.title}", "font": "pixel-medium", "size": 17, "color": "=sel ? '#1a1c23' : ink" },
-        { "type": "text", "x": 62, "y": 36, "w": 466, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=sel ? '#1a1c23' : soft" },
+        { "type": "text", "x": 62, "y": 12, "w": 466, "text": "{item.title}", "font": "pixel-medium", "size": 17, "color": "=sel ? bg : ink" },
+        { "type": "text", "x": 62, "y": 36, "w": 466, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=sel ? bg : soft" },
         { "type": "image", "src": "fav.png", "right": 16, "y": 22, "w": 16, "h": 16, "visible": "=item.fav" }
       ]
     }
@@ -125,7 +127,7 @@
               { "type": "image", "src": "{item.icon}", "fit": "pixelContain", "x": 48, "y": 46, "w": 52, "h": 52, "anchor": "center",
                 "opacity": "=sel ? 1 : 0.85" },
               { "type": "text", "x": -9, "w": 114, "y": 88, "align": "center", "text": "{item.name}", "font": "pixel-medium", "size": 11,
-                "color": "#1a1c23", "visible": "=sel" },
+                "color": "=bg", "visible": "=sel" },
               { "type": "image", "src": "fav.png", "x": 74, "y": 6, "w": 16, "h": 16, "visible": "=item.fav" }
             ]
           } },

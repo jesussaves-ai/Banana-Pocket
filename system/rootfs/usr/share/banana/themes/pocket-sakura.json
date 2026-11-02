@@ -1,29 +1,29 @@
 {
-  // Sakura: the Pocket layout (the DS bottom screen), retro -- flat surfaces, sharp corners, hard 1-2px borders,
-  // a high-contrast charcoal base and a bold accent. The panel at the DS panels scale is 640x557 layout px.
+  // Sakura: the Pocket layout in cherry blossom -- petal pink on deep plum, a branch-red card edge and blossom
+  // for the highlights, with the petals in the dot grid.
   "name": "Sakura",
   "author": "BananaOS",
   "base": "dark",
-  "accent": "#f5b1c4",
-  "colors": { "screenBg": "#1a1c23", "ink": "#cad3f5", "muted": "#8087a2" },
+  "accent": "#ffb7cd",
+  "colors": { "screenBg": "#1d0f16", "ink": "#ffe3ee", "muted": "#d79ab0", "edge": "#7d4a5f", "line": "#4a2a37", "panelBody": "#331c28", "bubbleBody": "#40232f", "kbdBg": "#40232f", "kbdInk": "#ffe3ee", "slotOn": "#ffd9e6", "pickEdge": "#ffd9e6" },
   "font": "pixel",
   "crisp": true,
 
   "vars": {
-    "bg": "#1a1c23",
-    "dot": "#23263a",
-    "bezel": "#0b0c10",
-    "ring": "#363a4f",
-    "panel": "#1e2030",
-    "card": "#24273a",
-    "cardEdge": "#8aadf4",
-    "ink": "#cad3f5",
-    "soft": "#8087a2",
-    "edge": "#4a5169",
-    "tile": "#24273a",
-    "gold": "#f5b1c4",
-    "goldHi": "#ffd0dd",
-    "goldLo": "#c96a8a",
+    "bg": "#1d0f16",
+    "dot": "#3a1f2c",
+    "bezel": "#0d0509",
+    "ring": "#2a1622",
+    "panel": "#331c28",
+    "card": "#40232f",
+    "cardEdge": "#ff8fb0",
+    "ink": "#ffe3ee",
+    "soft": "#d79ab0",
+    "edge": "#7d4a5f",
+    "tile": "#40232f",
+    "gold": "#ffb7cd",
+    "goldHi": "#ffd9e6",
+    "goldLo": "#d3708f",
     "hi": "=gold"
   },
 
@@ -82,8 +82,8 @@
         { "type": "rect", "x": 0, "y": 0, "w": 600, "h": 60, "border": 2, "borderColor": "=goldLo", "visible": "=sel",
           "fill": "=gold" },
         { "type": "image", "src": "{item.art}", "fallback": "{item.icon}", "fit": "cover", "x": 8, "y": 8, "w": 44, "h": 44, "placeholder": "#00000033" },
-        { "type": "text", "x": 62, "y": 12, "w": 466, "text": "{item.title}", "font": "pixel-medium", "size": 17, "color": "=sel ? '#1a1c23' : ink" },
-        { "type": "text", "x": 62, "y": 36, "w": 466, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=sel ? '#1a1c23' : soft" },
+        { "type": "text", "x": 62, "y": 12, "w": 466, "text": "{item.title}", "font": "pixel-medium", "size": 17, "color": "=sel ? bg : ink" },
+        { "type": "text", "x": 62, "y": 36, "w": 466, "text": "{item.sub}", "font": "pixel", "size": 12, "color": "=sel ? bg : soft" },
         { "type": "image", "src": "fav.png", "right": 16, "y": 22, "w": 16, "h": 16, "visible": "=item.fav" }
       ]
     }
@@ -125,7 +125,7 @@
               { "type": "image", "src": "{item.icon}", "fit": "pixelContain", "x": 48, "y": 46, "w": 52, "h": 52, "anchor": "center",
                 "opacity": "=sel ? 1 : 0.85" },
               { "type": "text", "x": -9, "w": 114, "y": 88, "align": "center", "text": "{item.name}", "font": "pixel-medium", "size": 11,
-                "color": "#1a1c23", "visible": "=sel" },
+                "color": "=bg", "visible": "=sel" },
               { "type": "image", "src": "fav.png", "x": 74, "y": 6, "w": 16, "h": 16, "visible": "=item.fav" }
             ]
           } },

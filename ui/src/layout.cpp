@@ -300,7 +300,7 @@ namespace banana
 				for (const char* side : { "top", "bottom" })
 					screens[e.first + "." + side] = compileScreen(e.second->get(side), "screens." + e.first + "." + side);
 			}
-			// the buttons: Carts' by default
+			// the buttons: the defaults
 			input["home"] = { { "left", "prev" }, { "up", "prev" }, { "l", "prev" }, { "right", "next" }, { "down", "next" }, { "r", "next" },
 				{ "a", "open" }, { "x", "resume" }, { "y", "fav" } };
 			input["library"] = { { "left", "prev" }, { "right", "next" }, { "up", "prev:10" }, { "down", "next:10" }, { "l", "prevSystem" },

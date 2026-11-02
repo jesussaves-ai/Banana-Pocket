@@ -64,8 +64,11 @@ Box art         frameBorder, frameBg (the frame around the art), slotDark, slotL
 Favourites      favBorder, favBand, favBody, favInk
 Other           meterBg (the battery and progress meters), brandBg (behind the logo), kbdBg, kbdInk (the
                 on-screen keyboard's keys and letters), blackish, shade35, shade40, shade45 (shadows)
-Settings        onPick (text on the selected row), onPickAccent (accented text on it), and the ones above that
-                Settings uses too: ink, muted, line, edge, screen*, ditherA/B, panel*, bubble*, slotOn, kbd*
+Settings        onPick (text on the selected row), onPickAccent (accented text on it), pickEdge (the outline of
+                the selected row and key), and the ones above that Settings uses too: ink, muted, line, edge,
+                screen*, ditherA/B, panel*, bubble*, slotOn, kbd*
+                "crisp": true also squares Settings' panels and the on-screen keyboard's keys: no rounding, bands,
+                shadows or dither, and one 2px border, so the retro look holds on every screen
 
 Layout themes
 -------------
@@ -74,6 +77,5 @@ looks and how it moves, from the menu's data (the systems, the games, the select
 pocket.json (the handheld's own) is one. In Banana's source (github.com/jesussaves-ai/Banana-Pocket): docs/MAKE-A-THEME.md starts from the
 beginning, with the theme editor, and docs/THEMES.md describes the format exactly.
 
-Themes apply to the Dark/Light style (ROCKNIXDS Pixel) and to Settings (its colours and fonts); the Carts theme
-keeps its own look for now. theme-builder.html, next to this file, makes a theme in a web browser with a live
+Themes apply to the Dark/Light style (ROCKNIXDS Pixel) and to Settings (its colours and fonts). theme-builder.html, next to this file, makes a theme in a web browser with a live
 preview.
