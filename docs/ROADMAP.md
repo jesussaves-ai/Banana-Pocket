@@ -32,6 +32,9 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
 ## Maintenance
 - **Agent DX:** `make agent-check` (quiet syntax + host compile + the fast suite, 4 lines on success) and `make agent-map` (regenerates the source map) were added 0.5.x; keep the `AGENTS.md` Source Map fresh when core files move.
 
+## Known issues
+- **USB-C reverse-orientation hotplug (kernel).** Plugging the cable the other way can (a) leave the gadget unenumerated with the UDC stuck `not attached` -- the typec roles never change (`data_role=host`, `power_role=source`, `usb_role_switch=device`), so the TCPM never re-detects, and only a reboot clears it -- or (b) hang the whole OS (intermittent; the same path, a race). A forced power-off loses `pstore`, so there is no post-mortem. Userspace is exhausted: writing `data_role`/`usb_role_switch` and rebinding the HS PHY or `dwc3-qcom` all do nothing. `bananad` logs `usb: typec data_role=... power_role=... controller=...` for diagnosis (a per-second `dmesg`+sysfs capture during the test showed the sequence). Fix is kernel-side: the UCSI/pmic-glink <-> dwc3 role/session path (boot logs `qcom_pmic_glink ... Failed to create device link (0x180) with supplier a600000.usb`), pending approval.
+
 *(Dropped: a quick-settings/performance overlay. Performance is fine and RetroArch's own OSD -- `fps_show` /
 `statistics_show`, already rotated by its patches -- covers FPS/CPU if wanted, so there is nothing to build.)*
 
