@@ -1633,13 +1633,12 @@ static void slate_sleep_default(void)
 	cfg.autosleep_min = 0;
 }
 
-/* The Type-C port can come up wrong on a reverse-orientation plug: the handheld is charging (power_role sink) but
- * the port still calls itself the data host, so the controller stays a host and the gadget never binds -- charging
- * works, enumeration does not (the pmic-glink/UCSI data-lane quirk from ARCHITECTURE §8). When no controller is
- * configured and the port says host while sinking power, ask the typec class for the device role again. An OTG
- * adapter (a gamepad) is power_role source, so it is left alone. Logs the role once per change, so the trace script
- * tells the story. */
-static void usb_role_fix(double now)
+/* Log the Type-C port's roles when they change, so a reverse-orientation plug can be told from a role problem in
+ * the message log (syslogd -> /run/banana/messages; tools/rpc-usb-trace.sh dumps it). This is diagnostic only: on
+ * the RPC a reverse-orientation hotplug leaves the UDC `not attached` even though the controller is already in
+ * `device` mode, and neither writing /sys/class/typec/port0/data_role nor the usb_role switch under /sys/class/usb_role
+ * changes it -- the fix for that is in the pmic-glink/UCSI CC handling, not here (see ARCHITECTURE section 8). */
+static void usb_role_log(double now)
 {
 	static double next;
 	static char said[48];
@@ -1669,13 +1668,6 @@ static void usb_role_fix(double now)
 		snprintf(said, sizeof said, "%s", state);
 		say("usb: typec data_role=%s power_role=%s controller=%s", cur[0] ? cur : "?",
 		    pcur[0] ? pcur : "?", configured ? "configured" : "not configured");
-	}
-	if (configured) return;
-	if (!strcmp(cur, "host") && !strcmp(pcur, "sink")) {
-		if (write_file("/sys/class/typec/port0/data_role", "device") == 0)
-			say("usb: the port was host while charging; asked for the device role again");
-		else
-			say("usb: the port is host while charging and would not switch");
 	}
 }
 
@@ -1804,7 +1796,7 @@ int main(int argc, char **argv)
 		    !pid_of("/run/banana/awake.pid"))
 			suspend_now("idle");
 
-		usb_role_fix(now);	/* a reverse-orientation plug can leave the port a host while charging */
+		usb_role_log(now);	/* diagnose a reverse-orientation plug (the roles, and whether the UDC is up) */
 		if (now >= next_battery) {
 			next_battery = now + 60;
 			power_update();	/* a capacity change has no uevent on every gauge */

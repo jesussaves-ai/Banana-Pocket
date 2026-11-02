@@ -81,8 +81,8 @@ into a computer gives that computer a network interface **and an address** with 
       bound at boot whether or not one is there. Run `sh tools/rpc-usb-trace.sh 40` (pushed to the card) across a
       re-plug: a single `configured` and no `adbd exited` lines is a good plug
 - [ ] If it charges but shows no interface, the Type-C plug is the wrong way round (the `pmic-glink` mux quirk):
-      flipping it works, and `bananad` tries to self-heal a port that says `host` while charging (its log says
-      `usb: typec data_role=... power_role=...`) -- if that line reads `host/sink`, the user-space fix did not take
+      flip it and, if the UDC stays `not attached`, reboot -- userspace cannot switch it back. `bananad` logs
+      `usb: typec data_role=... power_role=... controller=...` to `/run/banana/messages` for the record
 - [ ] Settings > System > **Mass storage**: Off shows no disk; Read-only gives the computer a read-only exFAT volume
       (`roms/`, `saves/`) while the menu keeps running; Read-write stops the menu and hands the card over (copy a file
       on from the computer), and ejecting -- or `usb-msc off`, or a short press of the power button (the menu is
