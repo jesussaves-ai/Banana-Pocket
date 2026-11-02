@@ -20,6 +20,7 @@ namespace banana
 		virtual int systemIndex() const = 0;
 		virtual int gameIndex() const = 0;
 		virtual bool press(Button b) = 0;
+		virtual void jumpTo(int game) = 0;	// the library's cursor straight to a game (the shoulder-button letter jump)
 		virtual bool touch(int screen, float x, float y, bool down) = 0;
 		virtual bool touchMove(int screen, float x, float y) = 0;
 		virtual void touchCancel() = 0;
@@ -48,6 +49,7 @@ namespace banana
 		int systemIndex() const override { return ui.systemIndex(); }
 		int gameIndex() const override { return ui.gameIndex(); }
 		bool press(Button b) override { return ui.press(b); }
+		void jumpTo(int game) override { ui.jumpTo(game); }
 		bool touch(int screen, float x, float y, bool down) override { return ui.touch(screen, x, y, down); }
 		bool touchMove(int screen, float x, float y) override { return ui.touchMove(screen, x, y); }
 		void touchCancel() override { ui.touchCancel(); }

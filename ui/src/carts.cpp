@@ -343,6 +343,19 @@ namespace banana
 		launchAt = -1;
 	}
 
+	// The shoulder-button letter jump: the cursor straight to a game, the scroll snapped (not eased)
+	void CartMenu::jumpTo(int game)
+	{
+		if (mView != rnds::UI::LIBRARY) return;
+		int n = src->gameCount();
+		if (n <= 0) return;
+		game = std::min(std::max(0, game), n - 1);
+		if (game == mGame) return;
+		mGame = game;
+		src->selectGame(game);
+		pos = (float)mGame;
+	}
+
 	void CartMenu::dataChanged()
 	{
 		rebuild();

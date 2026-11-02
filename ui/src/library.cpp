@@ -616,6 +616,34 @@ namespace banana
 		closedir(d);
 	}
 
+	// The disc files a .m3u playlist lists, as rel paths under the system folder (lower case): a multi-disc game is
+	// shown as the playlist alone, not the playlist plus every disc inside it. A line is relative to the .m3u's own
+	// folder; blank lines and #comments are skipped, and a path we can't see as a game (absolute, or with "..") is
+	// ignored. exFAT is case-insensitive, so the comparison is too.
+	static std::vector<std::string> m3uDiscs(const std::string& dir, const std::string& rel)
+	{
+		std::vector<std::string> out;
+		std::ifstream f(dir + "/" + rel);
+		if (!f) return out;
+		size_t slash = rel.rfind('/');
+		std::string base = slash == std::string::npos ? std::string() : rel.substr(0, slash + 1);
+		std::string line;
+		while (std::getline(f, line))
+		{
+			size_t a = line.find_first_not_of(" \t\r\n");
+			if (a == std::string::npos) continue;
+			size_t b = line.find_last_not_of(" \t\r\n");
+			std::string s = line.substr(a, b - a + 1);
+			if (s[0] == '#') continue;
+			for (char& c : s) if (c == '\\') c = '/';
+			if (s[0] == '/') continue;
+			if (s.compare(0, 2, "./") == 0) s = s.substr(2);
+			if (s.empty() || s.find("..") != std::string::npos) continue;
+			out.push_back(lower(base + s));
+		}
+		return out;
+	}
+
 	// media/<kind>/<rom name>.png or .jpg. Each folder is listed once a scan and looked up in memory: a name that
 	// isn't there walks the whole folder on exFAT, and every game missed in box/, cart/ and label/ and as .png before
 	// .jpg (a thousand games: thousands of walks of a thousand names). Matched without case, as exFAT opens them
@@ -713,8 +741,17 @@ namespace banana
 				std::vector<std::string> rels;
 				listRoms(dir, "", def.exts, rels, 0, def.flat ? 0 : 2);
 				auto gl = readGamelist(dir);
+				// a multi-disc .m3u: the discs it lists are its tracks, not games of their own beside it
+				std::set<std::string> m3uHidden;
 				for (auto& rel : rels)
 				{
+					std::string ln = lower(rel);
+					if (ln.size() > 4 && ln.compare(ln.size() - 4, 4, ".m3u") == 0)
+						for (auto& d : m3uDiscs(dir, rel)) m3uHidden.insert(d);
+				}
+				for (auto& rel : rels)
+				{
+					if (m3uHidden.count(lower(rel))) continue;
 					Game g;
 					g.rel = (ri > 0 ? "@sd2/" : "") + rel; g.path = dir + "/" + rel;
 					std::string base = rel.substr(rel.rfind('/') == std::string::npos ? 0 : rel.rfind('/') + 1);
@@ -914,6 +951,29 @@ namespace banana
 	}
 
 	// ---- Source -----------------------------------------------------------------------------------------------------
+	int Library::letterStep(int game, int dir) const
+	{
+		const Shelf& s = shelves[lib];
+		int n = (int)s.games.size();
+		if (n <= 1 || game < 0 || game >= n) return -1;
+		auto key = [&](int i) -> char { const std::string& t = s.games[i].title; return t.empty() ? '\0' : (char)tolower((unsigned char)t[0]); };
+		char cur = key(game);
+		if (dir > 0)
+		{
+			int j = game + 1;
+			while (j < n && key(j) == cur) j++;
+			return j < n ? j : 0;					// past the last letter: back to the first
+		}
+		int j = game;
+		while (j > 0 && key(j - 1) == cur) j--;		// the start of this letter's run
+		if (j != game) return j;
+		if (j == 0) return 0;
+		char prev = key(j - 1);
+		int k = j - 1;
+		while (k > 0 && key(k - 1) == prev) k--;
+		return k;
+	}
+
 	int Library::resumeIndex(const Shelf& s) const
 	{
 		int best = -1;

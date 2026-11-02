@@ -27,6 +27,7 @@ namespace banana
 		int systemIndex() const override { return mSys; }
 		int gameIndex() const override { return mGame; }
 		bool press(Button b) override;
+		void jumpTo(int game) override;
 		bool touch(int screen, float x, float y, bool down) override;
 		bool touchMove(int screen, float x, float y) override;
 		void touchCancel() override { mDown = false; }

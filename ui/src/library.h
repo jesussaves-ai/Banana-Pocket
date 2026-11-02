@@ -69,6 +69,10 @@ namespace banana
 		void clearLaunch() { launchGame = -1; }
 		const Shelf& shelf(int i) const { return shelves[i]; }
 		int currentShelf() const { return lib; }
+		// The shoulder-button letter jump: the game index `dir` (+1/-1) jumps to from `game` in the shelf now shown.
+		// +1 is the next title's first letter (the list is sorted by title, case aside); -1 is the start of this
+		// letter's run, or the previous letter's run when already at its start. -1 when the list is too short.
+		int letterStep(int game, int dir) const;
 		// the game's own system and entry, for a game of the current shelf (favourites point into their system)
 		const SystemDef& systemOf(int game) const;
 		const Game& gameAt(int game) const { return shelves[lib].games[game]; }

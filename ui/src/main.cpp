@@ -327,6 +327,19 @@ static const char* soundOf(Key k, rnds::UI::View before, rnds::UI::View after)
 	}
 }
 
+// The shoulder buttons jump by letter in a game list; the D-pad still steps one game at a time. R: the next title
+// letter's first game; L: this letter's first game, or the previous letter's. The list is sorted by title, so a
+// letter's games are one run (Library::letterStep). In a library only -- on the home shelf L/R still walk the
+// systems -- and true only when it consumed the key (so the caller does not then nudge by one).
+static bool letterJump(Menu& ui, Library& lib, rnds::UI::Button b)
+{
+	if ((b != rnds::UI::L && b != rnds::UI::R) || ui.view() != rnds::UI::LIBRARY || lib.gameCount() <= 1) return false;
+	int at = ui.gameIndex();
+	int to = lib.letterStep(at, b == rnds::UI::R ? 1 : -1);
+	if (to >= 0 && to != at) ui.jumpTo(to);
+	return true;
+}
+
 // a favourite starred or unstarred: once the shelf shows, the Favorites collection and the favourite systems are put
 // right, and the cursor stays on the system it was on
 template <class U> static bool rearrange(Host& lib, U& ui)
@@ -683,7 +696,7 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 				continue;
 			}
 			if (!uiButton(it->second, btn)) { logf("unknown button %s", b.c_str()); return 2; }
-			bool used = ui.press(btn);
+			bool used = letterJump(ui, lib, btn) || ui.press(btn);
 			logf("press %s: %s, view %d sys %d game %d", b.c_str(), used ? "used" : "unused", (int)ui.view(), ui.systemIndex(), ui.gameIndex());
 		}
 		else if (op == "setup") { settings.setup(); logf("setup open"); }
@@ -1430,7 +1443,7 @@ int main(int argc, char** argv)
 		std::lock_guard<std::mutex> l(worker.uiLock);
 		ui->update(now);
 		auto before = ui->view();
-		if (ui->press(b))
+		if (letterJump(*ui, lib, b) || ui->press(b))
 		{
 			dirty = true;
 			if (const char* s = soundOf(ev.key, before, ui->view())) sound.play(s);
@@ -1633,7 +1646,7 @@ int main(int argc, char** argv)
 			rnds::UI::Button b;
 			std::lock_guard<std::mutex> l(worker.uiLock);
 			if (settingsView.isOpen()) applySettings(settingsView.press(rep.key));
-			else if (uiButton(rep.key, b) && ui->press(b)) { dirty = true; sound.play("scroll"); }
+			else if (uiButton(rep.key, b) && (letterJump(*ui, lib, b) || ui->press(b))) { dirty = true; sound.play("scroll"); }
 		}
 		// the clock on the top screen
 		time_t wall = time(nullptr);
