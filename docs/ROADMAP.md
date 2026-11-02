@@ -9,16 +9,18 @@ followed, and the docs describe the server. Next:
    `pcm0p` -- so the jack switch is WirePlumber/ACP's either way; `sound.cpp`'s `routeCheck` also only reopens on
    bananad's now-identical `asound.conf` rewrite. Delete all three, safely blind (the csets never took), and confirm
    the jack the next time headphones are to hand.
-2. **Quick-settings overlay** and a **performance overlay** (FPS / temperature).
-3. **Controller remapping UI** (on top of `pad-profile`), and **per-game core options** beyond core + shader.
-4. **Library UX** -- collections/tags, a recent-played shelf, a screenshot gallery, multi-disc `.m3u`, jump-to-letter.
-5. **OTA updates over Wi-Fi** (updates are card-only today; BananaLinux installs over the air).
-6. **Local media / music player**, and porting BananaTube's newer settings screen.
-7. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
-8. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
-9. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-10. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-11. **Store / app catalog** (the Apps shelf only scans local folders).
+2. **Controller remapping UI** (on top of `pad-profile`), and **per-game core options** beyond core + shader.
+3. **Library UX** -- collections/tags, a recent-played shelf, a screenshot gallery, multi-disc `.m3u`, jump-to-letter.
+4. **OTA updates over Wi-Fi** (updates are card-only today; BananaLinux installs over the air).
+5. **Local media / music player**, and porting BananaTube's newer settings screen.
+6. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
+7. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+8. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+9. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+10. **Store / app catalog** (the Apps shelf only scans local folders).
+
+*(Dropped: a quick-settings/performance overlay. Performance is fine and RetroArch's own OSD -- `fps_show` /
+`statistics_show`, already rotated by its patches -- covers FPS/CPU if wanted, so there is nothing to build.)*
 
 ## Completed Baseline (0.4.9+)
 - **Core & CI:** End-to-end QEMU `virt` boot/update/test (`tools/qemu-boot.sh`), A/B OTA updates, first-time setup, `ksmbd`, `dropbear`, `ath10k_snoc`.
