@@ -37,8 +37,27 @@ status)
     exit 0
     ;;
 up) ;;
+recover)
+    # The session manager can wedge after a game: the menu's snd_pcm_open("default") then fails EBUSY on every
+    # retry, though the card, the sinks and the default are all fine (measured on the unit -- restarting
+    # wireplumber alone clears it). Restart wireplumber only (pipewire and the card are left up) and wait for the
+    # Speaker sink to come back.
+    pkill -x wireplumber 2>/dev/null
+    sleep 0.5
+    if [ -x /usr/bin/wireplumber ]; then setsid wireplumber >/dev/null 2>&1 & fi
+    i=0
+    while [ $i -lt 60 ]; do
+        if wpctl status 2>/dev/null | sed -n '/^Audio/,/^Video/p' | grep -q 'Speaker playback'; then
+            say "recovered (Speaker sink back after ${i} tries)"
+            exit 0
+        fi
+        i=$((i+1)); sleep 0.5
+    done
+    say "recover: no Speaker sink after 30 s"
+    exit 1
+    ;;
 *)
-    echo "usage: sound-server up|down|status" >&2
+    echo "usage: sound-server up|down|recover|status" >&2
     exit 1
     ;;
 esac
@@ -68,27 +87,31 @@ fi
 
 # ACP (PipeWire's ALSA monitor, run by WirePlumber) has to actually find the card. At boot its probe can still run
 # before the card is ready, and libudev-zero -- which supplies udev here -- delivers no later "add" event, so a probe
-# that misses leaves the card, and every sink, gone until the monitor is restarted. Wait for the **Speaker** sink and
-# restart wireplumber when it is not there: a fresh wireplumber re-probes. It is the Speaker sink, not just any
-# "playback" one -- ACP makes the Headphones sink first, and stopping at that leaves no Speaker (silent) and the menu
-# spinning on failed opens (laggy). Until then the menu has no device to open (the "open failed" loop in its sound
-# log).
+# that misses leaves the card, and every sink, gone until the monitor is restarted. Wait for the **Speaker** sink
+# (the one that plays): the Headphones sink is made first, and stopping at that leaves no Speaker (silent) and the
+# menu spinning on failed opens (laggy). Be patient, though: WirePlumber needs a few seconds to probe, and restarting
+# it mid-probe means the sinks never appear at all (measured: a 3 s restart cadence left the card with no sinks). So
+# restart only when there is NO sink at all, at most once every 10 s; if a (Headphones) sink is there, leave it alone
+# and give the Speaker time to follow.
 i=0
-while [ $i -lt 60 ]; do
-    if wpctl status 2>/dev/null | sed -n '/^Audio/,/^Video/p' | grep -q 'Speaker playback'; then
-        say "the card is in PipeWire (after ${i} tries)"
+tries=0
+while [ $i -lt 120 ]; do
+    st=$(wpctl status 2>/dev/null | sed -n '/^Audio/,/^Video/p')
+    if printf '%s\n' "$st" | grep -q 'Speaker playback'; then
+        say "the card is in PipeWire (Speaker; ${i} tries)"
         break
     fi
-    i=$((i+1))
-    if [ $((i % 6)) -eq 0 ] && [ -x /usr/bin/wireplumber ]; then
+    i=$((i + 1))
+    if [ $((i % 20)) -eq 0 ] && [ $tries -lt 4 ] && ! printf '%s\n' "$st" | grep -q 'playback' && [ -x /usr/bin/wireplumber ]; then
+        tries=$((tries + 1))
         pkill -x wireplumber 2>/dev/null
         sleep 0.5
         setsid wireplumber >/dev/null 2>&1 &
-        say "no speaker sink yet; restarted wireplumber (try $((i / 6)))"
+        say "no sink after 10 s; restarted wireplumber (try $tries)"
     fi
     sleep 0.5
 done
-[ $i -ge 60 ] && say "no Speaker sink in PipeWire after 30 s"
+[ $i -ge 120 ] && say "no Speaker sink in PipeWire after 60 s"
 
 # The card's DSP routing and levels are ACP's: it loads the UCM2 profile in /usr/share/alsa/ucm2, and PipeWire
 # re-applies the verb immediately before each open (buildroot/patches/pipewire/0002), which is when the DSP latches
