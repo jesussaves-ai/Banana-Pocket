@@ -4,10 +4,14 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Confirm the audio cleanup on hardware** (small; the code is gone, the check is not). The FE/BE csets,
-   `/run/banana/audio-route` and `sound.cpp`'s `routeCheck` are deleted, and `rcS`/`sound-server` no longer route by
-   hand when PipeWire is present -- play a cue on the speaker and on headphones after a cold boot, after a game, and
-   after a resume, and confirm the jack still lands where the server sends it.
+1. **Confirm the audio on hardware** (small). Boot, game exit and sleep/wake now reach a working Speaker sink and a
+   reopened menu stream (see *Done*). Still to check by ear: a cue on the speaker after a cold boot, after a game, and
+   after a resume. Also listen after the 0.5.0 image is rebuilt, since the sound changes are not committed yet.
+   (The headphone-jack check is dropped: the test unit has no headphones.)
+1a. **Audio follow-ups** (small). `banana-ui`'s open-failure path still calls `sound-server recover` after about 10 s
+   of "device busy" (`openFail` in `ui/src/sound.cpp`); with the config re-read that should be rare, so check whether it
+   ever fires in normal use before removing it. `VERSION` is now 0.5.1, so the next build is distinguishable from the
+   alpha 0.5.0.
 2. **Back up & restore `/data/banana`** (small). Settings > System gains "Back up settings" (a tar of `settings.conf`,
    `bananad.conf`, `wifi.conf`, accounts and the saves/states trees into `/data/banana/backups`) and "Restore". Pairs
    with the OTA path, and makes a bad sleep-test unit recoverable without a card reader.
@@ -29,6 +33,36 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
 12. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
 13. **Store / app catalog** (the Apps shelf only scans local folders).
 
+## Ideas (unscheduled)
+Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.
+- **Session recap card.** After a game, a short card on the menu: time played, achievements won this session, and the
+  new state slot. The data is already written (`playstats.tsv`, `/run/banana/cheevos`), so this is a menu view, not a new
+  recorder.
+- **Haptic cues.** `bananad` already drives the vibrator. Use short pulses for achievements, a low-battery warning and
+  a sleep refusal, each switchable in Settings, so the slate can tell you something without a sound.
+- **Quick-resume shelf.** The last three games with their saved state, one button away from the home screen, so a
+  pick-up-where-you-left-off session needs no library browsing.
+- **Per-system ambience.** The menu's background loop (`bgm`) varies by system, from a WAV on the card, so each shelf
+  sounds different. Falls back to the current single loop.
+- **Burn-in-aware home screen.** Rotate the home shelf's static chrome by a pixel or two every few minutes (the guard
+  already knows idle time), so a long session on the AMOLED never leaves a ghost of the menu bar.
+- **Battery session planner.** From the battery curve (`bananad`'s battery reads) and the play history, show "about 3 h
+  left at this pace" beside the percentage. Pairs with item 6's time-remaining estimate.
+- **Saves you can read.** A "last session" log view per game (start, end, states written, cheevos), built on the
+  in-menu log viewer in item 6. Makes a lost save easy to trace.
+- **BananaTube subscriptions without an account.** Search results carry each channel's `browseId`; keep a local list of
+  those ids and fetch each channel's uploads from InnerTube's browse endpoint, so a Subscriptions tab works with no
+  Google sign-in. The Channels tab already gathers the names; this adds the id and the feed.
+- **BananaTube offline shelf.** A download queue over yt-dlp (picture + sound to `/data/banana/downloads`) with a fifth
+  tab showing progress and a local mpv playback path, so a flight or a bad Wi-Fi spot does not end the session.
+- **Play next queue.** Queue a few results with a long A press or SELECT, show "up next" in the player OSD, and start
+  the next one when the current video ends; a single toggle keeps autoplay from draining the battery unasked.
+- **Field diagnostics bundle.** One Settings button that packs the logs, the sound-server log, `dmesg` tail and
+  `settings.conf` (with secrets stripped) into `/data/banana/backups` for a bug report. Complements the on-device
+  self-test in item 8.
+- **Offline update cache.** Keep the last good update package on the card until the new slot boots once, so a failed
+  update can be reapplied without Wi-Fi.
+
 ## Maintenance
 - **Agent DX:** `make agent-check` (quiet syntax + host compile + the fast suite, 4 lines on success) and `make agent-map` (regenerates the source map) were added 0.5.x; keep the `AGENTS.md` Source Map fresh when core files move.
 
@@ -43,6 +77,20 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **BananaTube: the three-tab shelf, recent list and quality cap (0.5.x, uncommitted).** The results screen now has a
+  tab strip under a taller search field: **Search** (the keyboard and its hits), **Recent** (the last 30 videos that
+  actually started, newest first) and **Channels** (the unique uploaders either list mentions, with a video count; A
+  opens one channel's videos, B walks back out, X opens the focused video's channel). Tabs switch with L/R on the
+  keyboard, SELECT (Recent), or a tap; the search field is drawn with the larger face and lights its accent border while
+  typing. Recent persists as `/data/banana/bananatube-recent.tsv` (with the resume point, written every 10 s and on
+  stop; a finished video clears it) and the playback cap (720/480/360p, applied by `yt-dlp -g`) as
+  `/data/banana/bananatube.conf`. SELECT on a list cycles the cap, and in the player it prints
+  position/length/quality. mpv's dead `stats` script (no Lua in this mpv) is gone; the start card and every pause/seek
+  OSD now come from `show-text` over IPC, and the position/duration poll runs even when a video has no SponsorBlock
+  segments (the IPC socket is also connected on the first playback frame, not the first button press, so SponsorBlock
+  and the resume seek work from the start). Verified with the host suite (21 checks); the panel look is not yet checked
+  on the unit.
+- [x] **Menu audio after updates, sleep and games (0.5.x, uncommitted).** Four separate causes, all fixed on the unit: (1) `sound-server` waited only for "no sinks at all" before restarting WirePlumber, so an update's reboot that came up Headphones-only never got its Speaker sink; it now restarts WirePlumber up to four times while the Speaker is missing. (2) `banana-ui` read ALSA's config once, before `bananad` had written the PipeWire default, so it kept the hardware card and fought the server for the Speaker after every game; each device open now re-reads the config (`snd_config_update_free_global`). (3) The menu held the device open with nothing to play, and a boot-time warm-up hold could expire immediately after a game; the device now closes after 20 s of quiet with the loop off, and the warm-up deadline counts from the warm-up itself. (4) Game exit to menu reopen is about 100 ms with no busy retries. Verified on the unit: two clean reboots with the Speaker present, two game quit cycles, and a sleep/wake cycle with a game launch after it.
 - [x] **USB mass storage + gadget reliability (0.5.x).** Settings > System > *Mass storage* adds a USB disk (the card's data partition) over the same cable as NCM and adb: `usb-gadget` creates `functions/mass_storage.0` and `usb-msc` owns the `/data` side -- `ro` exposes a read-only volume with `/data` still mounted, `rw` is transfer mode (`banana-ui-session` waits on `/run/banana/usb-msc.mode`, `/data` is unmounted and handed over, `bananad` refuses suspend), `off` remounts and restarts the menu. It has no udev, so the LUN path is `${DISK}p4` from `/run/banana/disk` (there is no `/dev/disk/by-*`). Both modes were verified on the unit (host mounted the card, wrote into `roms/`, eject remounted `/data` and restarted the menu); the kernel only accepts `lun.0/ro` **before** `lun.0/file` (otherwise `EBUSY`, which silently left the disk read-write), so both the boot and `msc` paths set the attributes first. A reverse-orientation hotplug used to leave the gadget unenumerated: the controller clears the gadget's UDC binding and nothing re-binds it (there is no UDC "add" event), even though the port reports `orientation=reverse`, the PHY and the mux are all fine. `bananad` now re-binds the complete tree within ~3 s (the typec roles never change, so writing `data_role`/`usb_role_switch` does nothing -- the re-bind is the fix); verified on the unit, the host enumerates in either orientation. The intermittent disconnect was a role switch dropping the UDC: a complete gadget is now re-bound in place instead of rebuilt (which used to kill adbd and re-enumerate everything), `usb-adb` backs off and re-binds after an adbd restart, and `bananad` debounces UDC events. `tools/rpc-usb-trace.sh` records a plug for diagnosis; `docs/RPC-TEST.md` and `ARCHITECTURE` §8 carry the checklist and the design.
 - [x] **The last audio leftovers retired (0.5.x).** `audio_route_ar()` and its FE/BE csets, the `/run/banana/audio-route` file and `sound.cpp`'s `routeCheck`/`routeId` reopen are deleted; `rcS`'s manual routing now runs only when `/usr/bin/pipewire` is absent, and `sound-server` no longer forces the HiFi verb or writes the speaker switch (ACP + the `0002` UCM-reopen patch own them). The same audit pass set `sleep_check_hours = 0` (no RTC wakealarm on the RPC), removed the dead `leds-qcom-lpg` patches + `CONFIG_LEDS_QCOM_LPG` + the stale `AnbernicRG55G1` topology, made `update` reject `../`/absolute tar members, made `volume` reject non-numeric levels, and bounds-checked the `/run/banana` inotify walk. Only the hardware jack confirmation is left (see *Recommended next*).
 - [x] **OTA updates over Wi-Fi (0.5.x).** Settings > System > Update gains a **"Check for updates"** row: A runs `/usr/libexec/banana/update-check` (a sh wrapper around python3 `urllib` -- busybox wget has no TLS here, CA bundle in `/etc/ssl`), which reads the GitHub releases list (`releases/latest` skips the alpha prereleases), takes the newest `banana-<board>-*.update.tar` by numeric version and streams it into `banana/updates`, writing progress to `/run/banana/update-status`; the page polls that and re-lists when it lands, and the existing apply/verify/Restart path takes over. Verified on the unit (`up to date: 0.5.0`; the asset URL resolves at 238 MB). A first cut stuck the page (`compare(0,9,"up to date")` never matched the 10-char literal, so `checking` never cleared and the page ignored every key); fixed to 10 with a 90 s bound.
