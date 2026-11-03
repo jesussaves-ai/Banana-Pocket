@@ -18,7 +18,11 @@ LIBRETRO_FLYCAST_SITE_METHOD = git
 LIBRETRO_FLYCAST_GIT_SUBMODULES = YES
 LIBRETRO_FLYCAST_LICENSE = GPL-2.0+
 LIBRETRO_FLYCAST_LICENSE_FILES = LICENSE
-LIBRETRO_FLYCAST_DEPENDENCIES = zlib libzip
+# mesa3d is here for its headers: USE_GLES=ON includes <GLES3/gl3.h> (nothing links -lGLESv2 -- the entry points come
+# from the frontend). The image builds Mesa anyway for the Adreno driver, so its absence only shows where the core is
+# built on its own (CI builds the changed core packages without the image's other packages), where the build failed
+# with "GLES3/gl3.h: No such file or directory".
+LIBRETRO_FLYCAST_DEPENDENCIES = zlib libzip mesa3d
 # GLES3 *and* Vulkan: with Vulkan compiled in, Flycast asks the frontend for a Vulkan context (SET_HW_RENDER,
 # VK_API_VERSION_1_0 -- what Turnip reports) and runs on it, which is the driver RetroArch runs on this handheld, so
 # its shaders stay Slang. Without it Flycast instead asks the frontend what it has (GET_PREFERRED_HW_RENDER), gets
