@@ -10,8 +10,8 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
    (The headphone-jack check is dropped: the test unit has no headphones.)
 1a. **Audio follow-ups** (small). `banana-ui`'s open-failure path still calls `sound-server recover` after about 10 s
    of "device busy" (`openFail` in `ui/src/sound.cpp`); with the config re-read that should be rare, so check whether it
-   ever fires in normal use before removing it. `VERSION` is now 0.5.1, so the next build is distinguishable from the
-   alpha 0.5.0.
+   ever fires in normal use before removing it. `VERSION` is now 0.5.2, so the next build is distinguishable from the
+   alpha 0.5.1.
 2. **Back up & restore `/data/banana`** (small). Settings > System gains "Back up settings" (a tar of `settings.conf`,
    `bananad.conf`, `wifi.conf`, accounts and the saves/states trees into `/data/banana/backups`) and "Restore". Pairs
    with the OTA path, and makes a bad sleep-test unit recoverable without a card reader.
@@ -77,6 +77,21 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **The 03:40 overnight hang: instrumented, and the handover it was seen mid-way through is closed (0.5.2).** An
+  overnight hang on the 0.5.1 image (asleep at 03:40, no wake line, pstore empty, 100 % -> 74 % by morning) left
+  nothing to read, and the sleep log's `wake mmc0 (irq ?)` was fiction: `mmc0` is only the table's `last_change` --
+  measured on the unit, a real power-key wake leaves `pm_wakeup_irq` absent and **every** `wakeup_sources` counter at 0,
+  so the kernel cannot name a waker on this board (and `wake_only_power` cannot disarm `mmc0` at all: it is a virtual
+  source with no `power/wakeup`). Now: `sleep.log` reports what `bananad` itself saw (`wake: power key|cable (kernel
+  wakeup_count +n)`), `logs/sleep-state` is written just before `mem` with the mode, the armed-source count and the
+  menu's sound state, and the kernel's PM lines are appended on the way out -- the only survivor of a resume that never
+  comes back. That note immediately showed the suspect: `sound device: releasing (handover)` at the write of `mem`, a
+  PCM close in flight (the same boot had reopened the device 16 s before sleeping). `bananad` now sends its `SIGHUP` and
+  **waits for the ack** in `/run/banana/sound-state` (bounded by the menu's own 2 s) instead of a fixed 200 ms, and
+  `Sound::release()` latches `handedOver` so the loop cannot reopen the PCM for the warm-up hold (it did, 10 ms after
+  closing, which is how the `mem` still happened with the device open). Verified on the unit: `menu: released the sound
+  device in 20 ms`, `sound device: closed (release)` at the `mem`, 1.08 s round trip, and the UI reopens on the wake.
+  Whether this was the whole hang is open -- the next one will say so in two files.
 - [x] **BananaTube: the three-tab shelf, recent list and quality cap (0.5.x, uncommitted).** The results screen now has a
   tab strip under a taller search field: **Search** (the keyboard and its hits), **Recent** (the last 30 videos that
   actually started, newest first) and **Channels** (the unique uploaders either list mentions, with a video count; A
