@@ -123,6 +123,17 @@ R=$W/data/retroarch/remaps/Flycast/Flycast.rmp
 { has "$R" '^input_player1_btn_l = "12"' && has "$R" '^input_player1_btn_r2 = "11"'; } && ok "the triggers are on the shoulders" || bad "the shoulder remap"
 has "$W/retroarch.args" flycast_libretro.so && ok "the flycast core was launched" || bad "the core was not launched"
 
+echo "5b. a controller remap made in RetroArch's menu survives a launch"
+fresh
+mkdir -p "$W/data/retroarch/remaps/Flycast"
+printf 'input_player1_btn_l = "4"\ninput_player1_btn_r = "5"\n' > "$W/data/retroarch/remaps/Flycast/Flycast.rmp"
+run dreamcast flycast
+has "$W/data/retroarch/remaps/Flycast/Flycast.rmp" 'input_player1_btn_l = "4"' && ok "the user's core remap was kept" || bad "the launcher overwrote the user's remap"
+has "$W/data/retroarch/remaps/Flycast/Flycast.rmp" 'input_player1_btn_r = "5"' && ok "the user's right button too" || bad "the launcher rewrote the right button"
+fresh
+run dreamcast flycast
+has "$W/data/retroarch/remaps/Flycast/Flycast.rmp" 'input_player1_btn_l = "12"' && ok "a fresh card gets Banana's Dreamcast remap" || bad "no Dreamcast remap on a fresh card"
+
 echo "6. the RetroAchievements account reaches the game, and not retroarch.cfg"
 fresh
 printf 'ra_user=someone\nra_password=secret\nra_retroarch_token=tok\n' > "$W/data/banana/accounts.conf"

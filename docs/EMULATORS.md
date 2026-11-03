@@ -56,6 +56,22 @@ The launcher runs in its own session (`setsid`), with signals at their defaults 
 | Logs | `/data/banana/logs/retroarch.log` (the one thing worth having after a game that would not start) |
 | Screenshots | `/data/screenshots` |
 
+### Controller remaps and per-game options
+
+Banana has no remap screen of its own: RetroArch's are the UI, and they persist on the card.
+
+- **Per core:** in a game, RetroArch's menu > *Settings > Input > RetroPad Binds*, then *Save Remap File*. It writes
+  `/data/retroarch/remaps/<Core>/<Core>.rmp` and RetroArch loads it for that core from then on. Banana's own Dreamcast
+  shoulder swap is one of these (see *The Dreamcast*); `run-retroarch` writes it only when the core has **no** remap
+  yet, so a remap saved from that menu -- including one that moves the shoulders elsewhere -- survives every launch.
+- **Per game:** the same menu's *Save Game Remap File* writes `/data/retroarch/remaps/<Core>/<Game>.rmp`, which
+  overrides the core's remap for that game only. Delete the `.rmp` to go back to the core's.
+- **Per-game core options:** RetroArch's *Quick Menu > Core Options > Manage Core Options > Save Game Override* writes
+  `config/<Core>/<Game>.opt` beside Banana's per-core `.opt`. Both are under `/data/retroarch`, so neither is lost on
+  an update.
+- `Settings > System > Back up settings` includes `retroarch/remaps`, so a controller layout survives a restore.
+  Per-game/core `.opt` files are not in it (they are easy to recreate, and can be large).
+
 Everything under `/usr` is read-only. `run-retroarch` forces the keys a picture and a sound depend on at every
 start (`video_driver`, `video_context_driver`, `input_driver`, `audio_driver`, `audio_device`, `video_monitor_index`
 on a one-panel handheld, `midi_driver = null`, `config_save_on_exit`, `quick_menu_show_core_options_flush`), because

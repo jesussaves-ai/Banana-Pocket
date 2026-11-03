@@ -324,7 +324,7 @@ namespace banana
 				menu, "timezone", names, tzs);
 		}
 		add(S, "gear", "Update", "A new version of Banana, written to the other slot and run from the next restart; this one stays as it is until then. Over Wi-Fi, \"Check for updates\" downloads the newest release from GitHub; a package on the card in banana/updates (File sharing can copy one) works too.", "", "update", {}, {}, Item::PAGE);
-		add(S, "gear", "Back up settings", "Settings, accounts and the saves/states trees in one file in banana/backups on the card (File sharing can copy it off). Games and box art stay out of it. Press A twice.", "", "backup", { "" }, { "" }, Item::ACTION);
+		add(S, "gear", "Back up settings", "Settings, accounts, the saves/states trees and RetroArch's controller remaps in one file in banana/backups on the card (File sharing can copy it off). Games and box art stay out of it. Press A twice.", "", "backup", { "" }, { "" }, Item::ACTION);
 		add(S, "gear", "Restore settings", "Unpacks the newest backup over the card's settings, saves and states, then restarts the menu so they are read. Press A twice.", "", "restore", { "" }, { "" }, Item::ACTION);
 		add(S, "picture", "Box art", "Covers, title screens, genres and years for your games, from libretro's free collections (no account, Wi-Fi needed). It keeps going in the background; games that already have art are skipped, so running it again only fetches what is new.",
 			"", "scrape", {}, {}, Item::PAGE);

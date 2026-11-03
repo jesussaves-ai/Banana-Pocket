@@ -4,23 +4,22 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Controller remapping UI** (the pad map the launchers export), and **per-game core options** beyond core + shader.
-2. **Library UX, the rest** -- collections/tags and a screenshot gallery; plus **"scrape missing art"** and a scraper
+1. **Library UX, the rest** -- collections/tags and a screenshot gallery; plus **"scrape missing art"** and a scraper
    that only runs while charging or on the cable, so a long scrape cannot flatten a battery (the recent-played shelf,
    multi-disc `.m3u` grouping and shoulder jump-to-letter are done, 0.5.x).
-3. **Local media / music player**, and porting BananaTube's newer settings screen.
-4. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
-5. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
-6. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
+2. **Local media / music player**, and porting BananaTube's newer settings screen.
+3. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
+4. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+5. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-7. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
+6. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
    and measure overnight drain; residual spurious wakes and panel/SD resume latency are still untracked.
-8. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
-9. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-10. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-11. **Store / app catalog** (the Apps shelf only scans local folders).
+7. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
+8. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+9. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+10. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## Ideas (unscheduled)
 Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.
@@ -66,6 +65,16 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **Controller remaps per core and per game -- RetroArch's own, not a Banana screen (0.5.4+).** No remap UI was
+  built: RetroArch's *Settings > Input > RetroPad Binds > Save Remap File / Save Game Remap File* is the UI, and it
+  already writes to the card (`input_remapping_directory = /data/retroarch/remaps`, `HOME`/`XDG_CONFIG_HOME` there) as
+  `remaps/<Core>/<Core>.rmp` and `remaps/<Core>/<Game>.rmp`; per-game core options are its *Save Game Override*
+  (`config/<Core>/<Game>.opt`). Two real gaps closed: `run-retroarch` rewrote the Dreamcast core remap whenever its L
+  line was not Banana's `"12"`, so a remap saved from RetroArch's menu was undone on the next launch -- it now writes
+  only when the core has **no** remap at all (37-check launcher test covers both a player's remap surviving and a fresh
+  card getting Banana's swap); and `Settings > System > Back up settings` now carries `retroarch/remaps` (the backup
+  test's 22 checks include a remap restored), so a controller layout survives a restore. `docs/EMULATORS.md` gains
+  *Controller remaps and per-game options* with the exact menu path and file names.
 - [x] **Back up & restore `/data/banana` (0.5.4+).** Settings > System's **Back up settings** (A twice) writes
   `banana/backups/banana-<date>.tar.gz` with `settings.conf`, `bananad.conf`, `wifi.conf`, `accounts.conf` (when
   present), `saves/` and `states/` -- logs, updates, box art and the backups themselves stay out. **Restore settings**

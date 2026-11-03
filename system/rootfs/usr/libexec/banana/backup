@@ -3,7 +3,7 @@
 # it; from a computer, `ssh root@<handheld> /usr/libexec/banana/backup create` works too.
 #
 #   backup create            banana/backups/banana-<date>.tar.gz: settings.conf, bananad.conf, wifi.conf,
-#                            accounts.conf (when present), saves/ and states/
+#                            accounts.conf (when present), saves/, states/ and RetroArch's controller remaps
 #   backup list              newest first: <name><TAB><bytes>
 #   backup restore [<file>]  unpack that one (or the newest) over /data, after refusing unsafe members
 #
@@ -21,7 +21,7 @@ create)
     # the list is fixed: no logs, no updates, and never the backups themselves. A fresh card has no accounts.conf
     # (and may have no saves/), so a member is only added when it is there.
     members=
-    for f in banana/settings.conf banana/bananad.conf banana/wifi.conf banana/accounts.conf saves states; do
+    for f in banana/settings.conf banana/bananad.conf banana/wifi.conf banana/accounts.conf saves states retroarch/remaps; do
         [ -e "$DATA/$f" ] && members="$members $f"
     done
     [ -n "$members" ] || { echo "error: nothing to back up"; exit 1; }
