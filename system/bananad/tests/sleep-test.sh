@@ -88,7 +88,7 @@ start
 # the table as the kernel has it, snapshotted before "mem": the waker is the source whose event_count moves. The
 # table's last_change column (what the log used to read) names only mmc0, the SD host, for every wake.
 if [ -n "$WAKESRC" ]; then
-    printf 'name\tactive_count\tevent_count\twakeup_count\texpire_count\ntest-waker\t0\t0\t0\t0\nmmc0\t0\t0\t0\t0\n' > "$WAKESRC"
+    printf 'name\tactive_count\tevent_count\twakeup_count\texpire_count\ntest-waker\t0\t0\t0\t0\nmmc0\t0\t0\t0\t0\n' > "$WAKESRC" 2>/dev/null || true
 fi
 power
 if asleep; then ok "suspended on the power button"; else bad "no suspend on the power button"; fi
@@ -98,7 +98,7 @@ grep -q "\[deep\]" /sys/power/mem_sleep && ok "deep sleep chosen" || bad "mem_sl
 grep -q 'going to sleep (power button)' /data/banana/logs/sleep-state && ok "the pre-sleep note was written" || bad "no sleep-state note"
 WAKER=0     # the kernel's own table is in its place (a runner with debugfs, or a read-only /sys): nothing to fake
 if [ -n "$WAKESRC" ] && grep -q test-waker "$WAKESRC" 2>/dev/null; then
-    printf 'name\tactive_count\tevent_count\twakeup_count\texpire_count\ntest-waker\t0\t1\t1\t0\nmmc0\t0\t0\t0\t0\n' > "$WAKESRC"
+    printf 'name\tactive_count\tevent_count\twakeup_count\texpire_count\ntest-waker\t0\t1\t1\t0\nmmc0\t0\t0\t0\t0\n' > "$WAKESRC" 2>/dev/null || true
     WAKER=1
 fi
 wake
