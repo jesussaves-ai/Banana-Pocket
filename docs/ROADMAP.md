@@ -10,8 +10,8 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
    (The headphone-jack check is dropped: the test unit has no headphones.)
 1a. **Audio follow-ups** (small). `banana-ui`'s open-failure path still calls `sound-server recover` after about 10 s
    of "device busy" (`openFail` in `ui/src/sound.cpp`); with the config re-read that should be rare, so check whether it
-   ever fires in normal use before removing it. `VERSION` is now 0.5.2, so the next build is distinguishable from the
-   alpha 0.5.1.
+   ever fires in normal use before removing it. `VERSION` is now 0.5.4, so the next build is distinguishable from the
+   alpha 0.5.3.
 2. **Back up & restore `/data/banana`** (small). Settings > System gains "Back up settings" (a tar of `settings.conf`,
    `bananad.conf`, `wifi.conf`, accounts and the saves/states trees into `/data/banana/backups`) and "Restore". Pairs
    with the OTA path, and makes a bad sleep-test unit recoverable without a card reader.
@@ -77,6 +77,24 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **The audit's findings, fixed and pruned (0.5.4).** Two independent passes over `system/`, `ui/src`, `app/`,
+  `buildroot/` and `tools/` (bloat, then correctness), every finding re-verified in the source. Fixed: BananaTube died
+  on SIGPIPE whenever mpv exited with a key still in flight (one `signal(SIGPIPE, SIG_IGN)`); the ambient loop read
+  past a truncated `bgm.wav` and divided by zero on an empty one (guard `total >= nframes`, `% total`); `Display::
+  restore()` reported success without `drmSetMaster`/`SetCrtc`, so the 400-try panel-handover retry after a game could
+  never fire (it returns false now); a wedged session manager (EBUSY) spun the sound thread at 100 % CPU and wrote a
+  log line per try (every failed open backs off 250 ms); the BananaTube recent list was rewritten in place and a full
+  card truncated the history (temp + fsync + rename); a pad rescan dropped the evdev fds without the release, so a held
+  direction repeated forever (clear `rep.key`); `run-retroarch` left `cage.pid` behind and `pid_of()` trusted any live
+  pid, so a reused pid got SIGSTOP/SIGTERM/SIGUSR1 (removed at exit; `pid_of()` rejects a pid whose process began
+  after the file was written); the state backup said "Copied" before the data reached the card (`fflush`/`fsync`).
+  Pruned: `pad-profile` (44 lines, no caller), rcS's non-PipeWire routing block (45 lines, could not run), the three
+  launchers' no-cage arms (~70 lines, dead on this image), BananaTube's byte-identical copy of the JSON reader (239
+  lines, now `JSON_SRC`), `sset()`, the inline `retroarch.cmd` write, the duplicate `acct()` (now `ra-secrets get`),
+  the SDL pad map (one `/etc/banana/sdl-pad.map`), six `/sys/class/backlight` walkers (one `backlights()` + `bl_file()`,
+  policy unchanged) and settings' ad-hoc `jsonField()` (the linked `JVal` reader). Net −289 lines. `run-retroarch-test`
+  now stubs cage and checks the Wayland context; all gates green (`make test`, the 37-check sleep test, `make
+  sound-test` on the unit).
 - [x] **A sound test, because the chain fails silently (0.5.3).** Five links (server, ALSA's `default`, the Speaker
   sink, the AW88166 gain, the AudioReach graph) each fail into the same symptom -- silence -- and the only way to tell
   them apart was a reboot and guesswork. Now `make sound-test` runs `/usr/libexec/banana/sound-test` on the handheld
