@@ -544,12 +544,19 @@ struct App
 	}
 	void recentSave()
 	{
-		FILE* f = fopen(RECENT_FILE, "w");
+		/* temp + rename: the file is rewritten on every play and every progress save, and a card that fills up (or a
+		 * power cut) in the middle used to leave it short, losing the history it held (library.cpp's writeAtomic) */
+		const char* tmp = RECENT_FILE ".new";
+		FILE* f = fopen(tmp, "w");
 		if (!f) return;
 		for (const Item& it : recent)
 			fprintf(f, "%s\t%s\t%s\t%s\t%.1f\n", cleanField(it.id).c_str(), cleanField(it.title).c_str(),
 				cleanField(it.uploader).c_str(), cleanField(it.duration).c_str(), it.resume);
-		fclose(f);
+		fflush(f);
+		fsync(fileno(f));
+		bool ok = !ferror(f) && fclose(f) == 0;
+		if (ok) rename(tmp, RECENT_FILE);
+		else unlink(tmp);
 	}
 	// the newest first, one entry per video, a bounded list
 	void recentAdd(const Item& it)
@@ -1383,6 +1390,7 @@ struct App
 		signal(SIGTERM, onStopSignal);
 		signal(SIGINT, onStopSignal);
 		signal(SIGHUP, onStopSignal);
+		signal(SIGPIPE, SIG_IGN);	// mpv exits at the end of a video: a write to its closed IPC socket must not kill us
 
 		thumbThread = std::thread([this] { thumbWorkerLoop(); });
 		openTouch();

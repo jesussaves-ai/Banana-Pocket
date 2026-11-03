@@ -2129,7 +2129,10 @@ namespace banana
 			size_t r = 0;
 			while ((r = fread(buf, 1, sizeof buf, in)) > 0 && fwrite(buf, 1, r, out) == r) {}
 			bool ok = r == 0 && !ferror(in);
-			fclose(in); fclose(out);
+			// a backup that a power cut leaves empty is worse than none: flush it to the card before saying it is there
+			if (ok) ok = fflush(out) == 0 && fsync(fileno(out)) == 0 && !ferror(out);
+			fclose(in);
+			if (fclose(out) != 0) ok = false;
 			if (!ok) unlink(to.c_str());
 			message = ok ? "Copied to a backup" : "Couldn't copy that state";
 			scanStates();

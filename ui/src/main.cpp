@@ -1584,7 +1584,7 @@ int main(int argc, char** argv)
 			std::lock_guard<std::mutex> l(worker.uiLock);
 			if (rearrange(lib, *ui)) dirty = true;
 		}
-		if (input.rescanDue()) input.open(disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight());	// a pad came or went
+		if (input.rescanDue()) { rep.key = Key::NONE; input.open(disp.width(), disp.height(), disp.rotation(), disp.panelWidth(), disp.panelHeight()); }	// a pad came or went: its release will never arrive
 		if (settingsView.isOpen())
 		{
 			std::lock_guard<std::mutex> l(worker.uiLock);

@@ -452,6 +452,6 @@ while :; do
     sleep 0.5
 done
 /usr/libexec/banana/ra-secrets scrub; rm -f $RA
-exec 3>&-; rm -f $FIFO
+exec 3>&-; rm -f $FIFO /run/banana/cage.pid	# a pid file left behind names whoever gets the pid next
 set_cfg stdin_cmd_enable false
 exit $S

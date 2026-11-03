@@ -441,7 +441,9 @@ namespace banana
 				if (pcm && !wantOpen && now - lastSound >= quiet) { closeDev("quiet"); continue; }
 				if (!pcm && wantOpen && !openDev(warmUp.load() ? warmClip : bgm))
 				{
-					if (warmUp.load()) std::this_thread::sleep_for(std::chrono::milliseconds(250));	// the card isn't up yet
+					// the card isn't up yet, or the session manager is wedged (EBUSY): back off either way, or the
+					// loop hammers snd_pcm_open at 100% CPU and writes a log line per try on the card
+					std::this_thread::sleep_for(std::chrono::milliseconds(250));
 					continue;
 				}
 			}
@@ -471,17 +473,22 @@ namespace banana
 				{
 					size_t total = bgm.pcm.size() / openCh;
 					int g = bgmGain.load();
-					for (size_t i = 0; i < nframes; i++)
+					// a truncated bgm.wav can be shorter than one 5 ms chunk: skip it rather than read past its end
+					// (and never % 0 -- a data chunk of a byte or two is total 0 and would raise SIGFPE)
+					if (total >= nframes)
 					{
-						size_t j = bgmAt + i; if (j >= total) j -= total;	// (bgmAt < total, nframes short)
-						for (int c = 0; c < openCh; c++)
+						for (size_t i = 0; i < nframes; i++)
 						{
-							int v = mix[i * openCh + c] + (int)bgm.pcm[j * openCh + c] * g / 1000;
-							if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
-							mix[i * openCh + c] = (int16_t)v;
+							size_t j = (bgmAt + i) % total;
+							for (int c = 0; c < openCh; c++)
+							{
+								int v = mix[i * openCh + c] + (int)bgm.pcm[j * openCh + c] * g / 1000;
+								if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
+								mix[i * openCh + c] = (int16_t)v;
+							}
 						}
+						bgmAt = (bgmAt + nframes) % total;
 					}
-					bgmAt = (bgmAt + nframes) % total;
 				}
 				if (!writeFrames(mix.data(), nframes)) { closeDev("write err (mix)"); cur = nullptr; continue; }
 			}

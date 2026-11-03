@@ -44,8 +44,9 @@ namespace banana
 		// the composed screens (rows of width() words) and what changed on each since the last present
 		bool present(const uint32_t* const screens[2], const Damage dmg[2]);
 		void handleEvents();	// the flip events from pollFd()
-		// after a resume or a lost master: show the current buffers again
-		void restore();
+		// after a resume or a lost master: show the current buffers again. False when another master still holds the
+		// panel (a game's compositor letting go): the caller retries
+		bool restore();
 
 	private:
 		struct Buf { uint32_t handle = 0, fb = 0, pitch = 0; uint64_t size = 0; uint8_t* map = nullptr; };

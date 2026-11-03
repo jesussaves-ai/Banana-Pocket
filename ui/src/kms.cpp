@@ -185,19 +185,23 @@ namespace banana
 			p[0].conn = found[0].conn; p[0].crtc = found[0].crtc;
 			memcpy(p[0].mode, &found[0].mode, sizeof p[0].mode);
 			if (!makeBuf(p[0].buf[0]) || !makeBuf(p[0].buf[1])) { err = "can't make scanout buffers"; close(); return false; }
-			restore();
+			if (!restore()) { err = "can't take the panel (another master?)"; close(); return false; }
 			return true;
 		}
 		return false;
 	}
 
-	void Display::restore()
+	/* false when the panel did not really come back: another DRM master (a game's compositor still letting go) makes
+	 * SetMaster and SetCrtc fail, and the caller's retry loop is what waits it out */
+	bool Display::restore()
 	{
-		if (fd < 0) return;
-		drmSetMaster(fd);
+		if (fd < 0) return false;
+		bool ok = drmSetMaster(fd) == 0;
 		for (int s = 0; s < count; s++)
-			drmModeSetCrtc(fd, p[s].crtc, p[s].buf[p[s].front].fb, 0, 0, &p[s].conn, 1, (drmModeModeInfo*)p[s].mode);
-		pending = 0;
+			if (drmModeSetCrtc(fd, p[s].crtc, p[s].buf[p[s].front].fb, 0, 0, &p[s].conn, 1, (drmModeModeInfo*)p[s].mode) != 0)
+				ok = false;
+		if (ok) pending = 0;
+		return ok;
 	}
 
 	void Display::close()

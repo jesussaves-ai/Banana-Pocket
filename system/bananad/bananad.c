@@ -246,10 +246,46 @@ static void hooks_run(const char *when)
 	free(list);
 }
 
+/* The pid file names a process, but a pid is reused: after a launcher is killed (or a game SIGKILLed) its file stays
+ * with a pid that, later in the same boot, can belong to someone else -- and suspend SIGSTOPs that process's whole
+ * group, shutdown SIGTERMs it and a wake SIGUSR1s it. So the file only counts when the process did not start *after*
+ * the file was written: a reused pid always did. Ages come from /proc/uptime and the file's mtime, both relative, so
+ * no clock conversion is needed; the 3 s slack covers the write/exec gap and the file's coarse timestamp. */
+static unsigned long long proc_start_ticks(int pid)
+{
+	char path[64], buf[512];
+	snprintf(path, sizeof path, "/proc/%d/stat", pid);
+	FILE *f = fopen(path, "r");
+	if (!f) return 0;
+	unsigned long long start = 0;
+	if (fgets(buf, sizeof buf, f)) {
+		char *rp = strrchr(buf, ')');	/* the command name can hold spaces and parentheses */
+		/* after ") ": state ppid pgrp session tty tpgid flags minflt cminflt majflt cmajflt utime stime cutime cstime
+		 * priority nice threads itrealvalue starttime (field 22) */
+		if (rp && sscanf(rp + 2, "%*s %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %*u %*u %*d %*d %*d %*d %*d %*d %llu", &start) != 1)
+			start = 0;
+	}
+	fclose(f);
+	return start;
+}
+
 static pid_t pid_of(const char *pidfile)
 {
 	int p = read_int(pidfile, 0);
-	return p > 0 && kill(p, 0) == 0 ? p : 0;
+	if (p <= 0 || kill(p, 0) != 0) return 0;
+	struct stat st;
+	unsigned long long start = proc_start_ticks(p);
+	long hz = sysconf(_SC_CLK_TCK);
+	if (start && hz > 0 && !stat(pidfile, &st)) {
+		double up = 0;
+		char b[32];
+		read_str("/proc/uptime", b, sizeof b);
+		if (sscanf(b, "%lf", &up) != 1) up = 0;
+		double age = up - (double)start / (double)hz;	/* how long the process has run, seconds */
+		double file = (double)time(NULL) - (double)st.st_mtime;	/* how long ago the file was written */
+		if (up > 0 && age < file - 3.0) return 0;	/* it began after the file named it: a reused pid */
+	}
+	return p;
 }
 
 /* banana-ui's pid, by its name in /proc. Cached: the scan ran on every wake and on every volume/brightness key's
