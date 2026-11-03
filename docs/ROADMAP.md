@@ -51,6 +51,24 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 - **Offline update cache.** Keep the last good update package on the card until the new slot boots once, so a failed
   update can be reapplied without Wi-Fi.
 
+## Field notes (open questions, from working on the unit)
+
+- **The settings.conf reset on 2026-11-03 was a device test, not an update.** During the back-up/restore work the
+  busybox `tar` on the unit failed to create an archive (`-z` is not built in); the test had already moved
+  `settings.conf` aside and the script's own cleanup removed that copy, so the file was restored from the image's
+  template (`/etc/banana/settings.conf`). That template has `ssh = off`, `adb = off` and every other default, which is
+  what reset the unit's SSH/ADB (and theme) settings. The OTA does not touch `/data`. Current values were set back to
+  `ssh = on`, `adb = on` at 23:21; the 23:04 archive still holds the defaulted copy. **Rule for future device tests:
+  never modify `/data/banana/settings.conf` while testing; keep any safety copy on the card, outside the tree under
+  test, and verify the archive exists before deleting anything.**
+- **Unexplained, 2026-11-03 23:21:59 on 0.5.5:** `banana-ui-session` exited and init respawned the menu, and
+  `settings.conf` was rewritten at 23:21. The user did not press Restore, and the file is not the 23:04 archive's copy
+  (`ssh`/`adb` differ), so it was not a restore of that archive. A dropbear restart at 23:21:55 (an SSH/ADB toggle from
+  the menu) is the only nearby event. Watch for a repeat: `banana-ui.log.1` tail + `/run/banana/messages`.
+- **Update packages pile up:** `/data/banana/updates` held 31 packages, 6.9 GB on 2026-11-03 -- nothing prunes them.
+  Proposed: after a successful boot into the new slot, keep the two newest and delete the rest (the one just applied is
+  no longer needed once its slot booted).
+
 ## Maintenance
 - **Agent DX:** `make agent-check` (quiet syntax + host compile + the fast suite, 4 lines on success) and `make agent-map` (regenerates the source map) were added 0.5.x; keep the `AGENTS.md` Source Map fresh when core files move.
 
