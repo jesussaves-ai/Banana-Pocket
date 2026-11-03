@@ -178,6 +178,7 @@ namespace banana
 	{
 		if (!enabled) return;
 		warmAt = std::chrono::steady_clock::now();	// the hold's deadline starts now, not at the last cue
+		handedOver = false;	// a wake (bananad's SIGUSR1, the guard's press) hands the device back to the menu
 		warmUp = true;
 #ifdef BANANA_ALSA
 		slog("warm(): the first cue will find the device open");
@@ -200,6 +201,7 @@ namespace banana
 	}
 
 	void Sound::setBgm(bool on)	{
+		if (on) handedOver = false;	// the menu is back (a game ended, or bananad woke the panel)
 		bgmOn = on && bgmLoaded;
 		/* The amp's PLL and the DSP graph need a moment after the card comes up (dmesg: start failure (-1)
 		 * every few seconds until the amp locks), and the first few seconds of a boot are when the splash
@@ -229,6 +231,8 @@ namespace banana
 			publishState("releasing (handover)");	// bananad's sleep note: a close still in flight here
 #endif
 			closeNow = true;
+			handedOver = true;	// and stay closed: the loop must not reopen for the warm-up hold while it sleeps
+			warmUp = false;
 			queued.clear();
 			bgmOn = false;	// the game takes the device; main.cpp calls setBgm(true) again when it comes back
 		}
@@ -290,7 +294,7 @@ namespace banana
 		 * the device for it. */
 		auto openDev = [&](const Clip& c) -> bool
 		{
-			if (closeNow) return false;	// release() won the race: do not open a device the game is about to claim
+			if (closeNow || handedOver.load()) return false;	// released: the game or the sleep holds the device
 			slog("opening the device");
 			if (closeNow) return false;
 			/* alsa-lib reads /etc/asound.conf once per process. The menu starts before bananad has written the
