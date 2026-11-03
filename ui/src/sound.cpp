@@ -163,6 +163,7 @@ namespace banana
 	void Sound::warm()
 	{
 		if (!enabled) return;
+		warmAt = std::chrono::steady_clock::now();	// the hold's deadline starts now, not at the last cue
 		warmUp = true;
 #ifdef BANANA_ALSA
 		slog("warm(): the first cue will find the device open");
@@ -277,6 +278,11 @@ namespace banana
 			if (closeNow) return false;	// release() won the race: do not open a device the game is about to claim
 			slog("opening the device");
 			if (closeNow) return false;
+			/* alsa-lib reads /etc/asound.conf once per process. The menu starts before bananad has written the
+			 * PipeWire default, so without this it kept ALSA's hardware default (card 0) for good: it held the Speaker
+			 * frontend itself, and after every game the sound server and the menu fought over it. Re-read the config
+			 * for each open so "default" is always the server. */
+			snd_config_update_free_global();
 			int e = snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
 			if (e < 0) { slog("open failed: %s", snd_strerror(e)); pcm = nullptr; openFail(); return false; }
 			if (closeNow) { snd_pcm_close(pcm); pcm = nullptr; return false; }	// release() arrived during the open
@@ -399,7 +405,11 @@ namespace banana
 				// Nothing to play: the device stays open (a cue is then instant). Only the warm-up has a deadline,
 				// so a splash with no cue cannot hold it forever, and the guard's blank and a game's release are
 				// what else let it go.
-				if (warmUp.load() && now - lastSound >= quiet) warmUp = false;	// the cue never came: stop holding the device
+				const auto since = std::max(lastSound, warmAt);
+				if (warmUp.load() && now - since >= quiet) warmUp = false;	// the cue never came: stop holding the device
+				// the loop is off and the menu has been quiet: let the device go too. A stream held open for nothing
+				// keeps the Speaker front end busy, and the sound server then drops the Speaker sink (the RPC's games)
+				if (pcm && !wantOpen && now - lastSound >= quiet) { closeDev("quiet"); continue; }
 				if (!pcm && wantOpen && !openDev(warmUp.load() ? warmClip : bgm))
 				{
 					if (warmUp.load()) std::this_thread::sleep_for(std::chrono::milliseconds(250));	// the card isn't up yet

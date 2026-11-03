@@ -91,27 +91,28 @@ fi
 # (the one that plays): the Headphones sink is made first, and stopping at that leaves no Speaker (silent) and the
 # menu spinning on failed opens (laggy). Be patient, though: WirePlumber needs a few seconds to probe, and restarting
 # it mid-probe means the sinks never appear at all (measured: a 3 s restart cadence left the card with no sinks). So
-# restart only when there is NO sink at all, at most once every 10 s; if a (Headphones) sink is there, leave it alone
-# and give the Speaker time to follow.
+# restart at most once every 20 s, and only while the Speaker is missing. A Headphones-only card is the same stall
+# as no card at all (measured: the Headphones sink is made first and then the Speaker never follows, so waiting
+# for it forever left the menu silent after an update's reboot), so both get the restart.
 i=0
 tries=0
-while [ $i -lt 120 ]; do
+while [ $i -lt 200 ]; do
     st=$(wpctl status 2>/dev/null | sed -n '/^Audio/,/^Video/p')
     if printf '%s\n' "$st" | grep -q 'Speaker playback'; then
         say "the card is in PipeWire (Speaker; ${i} tries)"
         break
     fi
     i=$((i + 1))
-    if [ $((i % 20)) -eq 0 ] && [ $tries -lt 4 ] && ! printf '%s\n' "$st" | grep -q 'playback' && [ -x /usr/bin/wireplumber ]; then
+    if [ $((i % 40)) -eq 0 ] && [ $tries -lt 4 ] && [ -x /usr/bin/wireplumber ]; then
         tries=$((tries + 1))
         pkill -x wireplumber 2>/dev/null
         sleep 0.5
         setsid wireplumber >/dev/null 2>&1 &
-        say "no sink after 10 s; restarted wireplumber (try $tries)"
+        say "no Speaker sink after 20 s; restarted wireplumber (try $tries)"
     fi
     sleep 0.5
 done
-[ $i -ge 120 ] && say "no Speaker sink in PipeWire after 60 s"
+[ $i -ge 200 ] && say "no Speaker sink in PipeWire after 100 s"
 
 # The card's DSP routing and levels are ACP's: it loads the UCM2 profile in /usr/share/alsa/ucm2, and PipeWire
 # re-applies the verb immediately before each open (buildroot/patches/pipewire/0002), which is when the DSP latches
