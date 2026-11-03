@@ -2,8 +2,11 @@
 #
 #   make retroid-pocket-classic   the SD card image   -> output/retroid-pocket-classic/images/banana-retroid-pocket-classic.img.gz
 #   make ui                       banana-ui for this computer (headless renders, no panel needed)
-#   make test                     checks systems.conf/launchers/cores and runs the launcher and thermals tests, then
-#                                 renders the menu headless from a test library and checks it (needs ImageMagick)
+#   make test                     checks systems.conf/launchers/cores and runs the launcher, thermals, sound-config
+#                                 and BananaTube tests, then renders the menu headless from a test library and checks
+#                                 it (needs ImageMagick)
+#   make sound-test               the sound chain on the handheld (server, sinks, amp, DSP graph, a client, the menu's
+#                                 handover); ARGS=--listen also plays the cue. BANANA_HOST says where it is
 #   make bench                    a host measurement baseline (scan/start-up/frame cost) at both canvas sizes
 #   make local-rebuild            rebuild the in-tree packages (banana-ui, bananad) before a board build
 #   make menuconfig-retroid-pocket-classic / linux-menuconfig-retroid-pocket-classic ...   any Buildroot target
@@ -83,7 +86,17 @@ test: ui
 	system/tests/run-retroarch-test.sh
 	system/tests/rpc-thermals-test.sh
 	system/tests/run-banana-tube-test.sh
+	system/tests/sound-config-test.sh
 	ui/tests/run.sh
+
+# The sound chain on the handheld, end to end: the server, ALSA's default, the sink, the amp's gain, the AudioReach
+# graph, a real client, and the menu's sleep handover. The script is streamed (like tools/rpc-push-update.sh), so it
+# also checks an image from before it. BANANA_HOST (a make variable, so the environment works) is the handheld;
+# ARGS=--listen plays the cue too.
+BANANA_HOST ?= root@169.254.170.2
+sound-test:
+	cat system/rootfs/usr/libexec/banana/sound-test | \
+	    ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 $(BANANA_HOST) "sh -s -- $(ARGS)"
 
 # a host-only measurement baseline (the library scan, the menu's start-up and the frame cost) at both canvas
 # sizes; the numbers tell a regression from a change. See ui/tests/bench.sh.
@@ -133,4 +146,4 @@ clean:
 	rm -rf $(OUT)
 	$(MAKE) -C ui clean
 
-.PHONY: $(BOARDS) ui test bench local-rebuild check-local-build agent-check agent-map clean
+.PHONY: $(BOARDS) ui test sound-test bench local-rebuild check-local-build agent-check agent-map clean

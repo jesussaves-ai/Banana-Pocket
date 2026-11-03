@@ -77,6 +77,21 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **A sound test, because the chain fails silently (0.5.3).** Five links (server, ALSA's `default`, the Speaker
+  sink, the AW88166 gain, the AudioReach graph) each fail into the same symptom -- silence -- and the only way to tell
+  them apart was a reboot and guesswork. Now `make sound-test` runs `/usr/libexec/banana/sound-test` on the handheld
+  over ssh (streamed, so it also checks an older image; `ARGS=--listen` plays the cue): server + socket, both asound
+  configs, the Speaker sink *and* that it is the default (a Headphones default is the after-update stall), both amp
+  controls, the frontend `RUNNING` and owned by pipewire, a real client (`aplay -D default`, else mpv) with a stream
+  arriving at the Speaker, and the menu's own `/run/banana/sound-state` handover (`SIGHUP` -> closed, `SIGUSR1` ->
+  open, 2 s each). `make test` runs the half that needs no hardware: `system/tests/sound-config-test.sh`, 33 checks
+  of the laws that have been broken before (config re-read per open, the handover latch, no client on `hw:0`/`amixer`,
+  FE<->BE switches only in `SectionVerb`, `session.suspend-timeout-seconds = 0`, per-node buffering in
+  `monitor.alsa.rules`, sound-server's Speaker wait + `recover`, the runtime dir, and the image's pieces). It found two
+  real defects while being written: the menu's note stayed on `releasing (handover)` for good when the device was
+  already closed (bananad then waited out its 2 s bound on every sleep), and `/etc/asound.conf` existed only in a
+  hand-modified build tree, not in the repo -- a clean build would have had no default device. Both fixed. See
+  `docs/SOUND-TEST.md`.
 - [x] **The 03:40 overnight hang: instrumented, and the handover it was seen mid-way through is closed (0.5.2).** An
   overnight hang on the 0.5.1 image (asleep at 03:40, no wake line, pstore empty, 100 % -> 74 % by morning) left
   nothing to read, and the sleep log's `wake mmc0 (irq ?)` was fiction: `mmc0` is only the table's `last_change` --

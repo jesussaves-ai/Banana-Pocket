@@ -1,0 +1,215 @@
+#!/bin/sh
+# sound-test: is the sound chain working, end to end? Run it after an update (or any sound change), because the chain
+# has several independent pieces that fail silently -- an update that leaves the Speaker sink out of PipeWire, or the
+# menu without its PCM, sounds exactly like a broken speaker, and costs a boot to find.
+#
+#   sound-test            all the checks below; exit 0 only if every hard one passed
+#   sound-test --listen    also play the menu's cue three times, to check with your ears
+#
+# On the handheld: /usr/libexec/banana/sound-test. From a computer: `make sound-test` (the script is streamed over ssh,
+# so it also works on an image from before it), `make sound-test ARGS=--listen` to hear it.
+#
+#   1. server    pipewire and wireplumber, and the socket the clients use
+#   2. default   ALSA's "default" is the server -- the same path the menu, the games and RetroArch take
+#   3. sink      the Speaker sink is there, is the default, and is not muted; Headphones being the default with no
+#                jack in it is the update stall, so it fails
+#   4. amp       the AW88166's hardware gain (bananad's volume, Left/Right PCM) is present and not at 0
+#   5. dsp       the AudioReach frontend is instantiated and owned by pipewire (the keep-alive that keeps the DSP
+#                graph routed -- a node that idles out comes back unrouted and silent)
+#   6. client    a real ALSA client opens "default" and plays a cue: a stream reaches the Speaker sink and the write
+#                does not fail
+#   7. menu      the menu's own PCM is open, and the sleep handover still works (SIGHUP -> closed, SIGUSR1 -> open):
+#                the 0.5.2 bug reopened the device behind the handover
+#
+# Every failure names the file to look at; the run is also appended to /data/banana/logs/sound-test.log.
+set -u
+
+RUNDIR=/run/banana/wayland
+export XDG_RUNTIME_DIR=$RUNDIR	# the menu's, the games' and the server's: without it the ALSA plugin cannot find pipewire
+CUE=/usr/share/banana/rnds/sounds/select.wav
+LOG=/data/banana/logs/sound-test.log
+STATE=/run/banana/sound-state
+PASS=0 FAIL=0 WARN=0
+
+ok() { PASS=$((PASS + 1)); printf '  ok:   %s\n' "$*"; }
+bad() { FAIL=$((FAIL + 1)); printf '  FAIL: %s\n' "$*"; }
+warn() { WARN=$((WARN + 1)); printf '  warn: %s\n' "$*"; }
+say() {
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$LOG" 2>/dev/null
+    [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 65536 ] && : >"$LOG"
+}
+
+sinks() { wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p'; }
+streams() { wpctl status 2>/dev/null | sed -n '/Streams:/,/^$/p'; }
+vol() { wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null; }
+
+# wait for a word in the menu's note; prints how long it took (ms) and returns 0, or 1 on the deadline
+wait_state() {
+    n=0
+    while [ "$n" -lt "$(( $2 * 10 ))" ]; do
+        case "$(cat "$STATE" 2>/dev/null)" in
+        *"$1"*) echo $((n * 100)); return 0 ;;
+        esac
+        sleep 0.1
+        n=$((n + 1))
+    done
+    return 1
+}
+
+say "== sound-test $(cat /etc/banana/version 2>/dev/null || echo '?') slot $(cat /run/banana/slot 2>/dev/null || echo '?')"
+printf 'sound-test: %s %s (uptime %s)\n' \
+    "$(cat /etc/banana/version 2>/dev/null || echo '?')" \
+    "slot $(cat /run/banana/slot 2>/dev/null || echo '?')" \
+    "$(cut -d. -f1 /proc/uptime)s"
+
+echo "1. the sound server"
+pod=$(pidof pipewire)
+if [ -n "$pod" ] && [ -S "$RUNDIR/pipewire-0" ]; then
+    ok "pipewire ($pod) with $RUNDIR/pipewire-0"
+else
+    bad "pipewire: ${pod:-not running}${pod:+ }$( [ -S "$RUNDIR/pipewire-0" ] || echo "no socket in $RUNDIR" ) -- see /data/banana/logs/sound-server.log"
+fi
+wpd=$(pidof wireplumber)
+if [ -n "$wpd" ]; then
+    ok "wireplumber ($wpd)"
+else
+    bad "wireplumber is not running (nothing creates the sinks) -- /usr/libexec/banana/sound-server status"
+fi
+
+echo "2. ALSA's default device"
+for f in /etc/asound.conf /run/banana/asound.conf; do
+    if grep -q 'type pipewire' "$f" 2>/dev/null; then
+        ok "$f: default is the server"
+    else
+        bad "$f does not point default at pipewire (the menu and the games would hold the hardware card)"
+    fi
+done
+
+echo "3. the sink"
+if sinks | grep -q 'Speaker playback'; then
+    ok "the Speaker sink is in PipeWire"
+    def=$(wpctl inspect @DEFAULT_AUDIO_SINK@ 2>/dev/null | sed -n 's/.*node.description = "\(.*\)"/\1/p')
+    case "$def" in
+    *Speaker*) ok "the default sink is the Speaker ($def)" ;;
+    *Headphones*) bad "the default sink is Headphones with no jack in it -- the update stall; /usr/libexec/banana/sound-server recover" ;;
+    *) bad "no default sink selected (${def:-none}): the card is there but nothing plays" ;;
+    esac
+else
+    bad "no Speaker sink in PipeWire (the Headphones-only or no-card stall) -- /usr/libexec/banana/sound-server recover"
+fi
+v=$(vol)
+case "$v" in
+*[0-9]*) ok "default sink volume: ${v#Volume: }" ;;
+*) warn "cannot read the default sink volume (${v:-no answer})" ;;
+esac
+case "$v" in
+*MUTED*) bad "the default sink is muted" ;;
+esac
+
+echo "4. the amplifier"
+amp=0
+for c in 'Left PCM' 'Right PCM'; do
+    line=$(amixer -c 0 sget "$c" 2>/dev/null | sed -n 's/.*Playback \([0-9]*\) \[\([0-9]*\)%\].*/\2/p' | head -n 1)
+    if [ -z "$line" ]; then
+        bad "amixer control '$c' is missing from card 0 (the AW88166 is not in the UCM profile)"
+    elif [ "$line" -eq 0 ]; then
+        amp=1
+        warn "'$c' is at 0% (bananad's saved volume is 0 -- press volume-up if this is not what you set)"
+    else
+        ok "'$c' at ${line}%"
+    fi
+done
+[ "$amp" -eq 0 ] || true
+
+echo "5. the DSP graph"
+pcm=/proc/asound/card0/pcm0p/sub0/status
+if [ -r "$pcm" ]; then
+    st=$(sed -n 's/^state: //p' "$pcm")
+    own=$(sed -n 's/^owner_pid *: //p' "$pcm")
+    if [ "$st" = RUNNING ] && [ "$own" = "$pod" ]; then
+        ok "the AudioReach frontend is $st, owned by pipewire"
+    elif [ "$st" = RUNNING ]; then
+        warn "the frontend is RUNNING but owned by ${own:-nobody}, not pipewire (a stale handle?)"
+    else
+        bad "the frontend is ${st:-unknown}: the DSP graph is not up (the sink idled out, so routing is gone)"
+    fi
+else
+    bad "$pcm is not there: no AudioReach frontend (the card or the UCM profile did not load)"
+fi
+
+echo "6. a client through ALSA's default"
+if [ ! -f "$CUE" ]; then
+    bad "$CUE is missing (the image's own cue: themes cannot break this check)"
+elif command -v aplay >/dev/null 2>&1; then
+    aplay -q -D default "$CUE" 2>/tmp/sound-test-err && ok "aplay played the cue through default" || bad "aplay -D default failed: $(tail -n 1 /tmp/sound-test-err)"
+elif command -v mpv >/dev/null 2>&1; then
+    # no aplay in this image: mpv's ALSA output is the same alsa-lib "default" -> the pipewire plugin the menu uses
+    seen=
+    ( for i in 1 2 3 4 5 6; do mpv --no-video --no-config --really-quiet --ao=alsa --audio-device=alsa/default "$CUE" >/dev/null 2>&1 || exit 1; done ) &
+    bg=$!
+    n=0
+    while [ "$n" -lt 40 ]; do
+        if streams | grep -q 'Speaker playback'; then seen=1; break; fi
+        sleep 0.1
+        n=$((n + 1))
+    done
+    wait "$bg" && rc=0 || rc=1
+    if [ "$rc" -eq 0 ]; then ok "the client played the cue through default"; else bad "playing through default failed (rc $rc)"; fi
+    if [ -n "$seen" ]; then ok "the stream reached the Speaker sink"; else bad "no stream arrived at the Speaker sink (the DSP got no graph)"; fi
+else
+    bad "neither aplay nor mpv is in this image: no client to play with"
+fi
+
+echo "7. the menu's own PCM and the sleep handover"
+if ! pidof banana-ui >/dev/null 2>&1; then
+    bad "banana-ui is not running (no menu sound, and the handover cannot be checked)"
+elif [ ! -e "$STATE" ]; then
+    bad "$STATE is missing: the menu is not publishing its sound state (a menu from before 0.5.2, or it failed to start)"
+else
+    cur=$(cat "$STATE" 2>/dev/null)
+    case "$cur" in
+    open*) ok "the menu publishes its state: $cur" ;;
+    *releasing*) bad "the menu is stuck mid-handover: $cur" ;;
+    *) ok "the menu publishes its state: $cur (it closes after 20 s of quiet by design)" ;;
+    esac
+    if [ -n "$(cat /run/banana/game.pid 2>/dev/null)" ]; then
+        warn "the handover cycle is skipped while a game is running (SIGUSR1 would reopen the menu's device under it)"
+    else
+        ui=$(pidof banana-ui)
+        kill -HUP "$ui" 2>/dev/null
+        if ms=$(wait_state closed 2); then ok "SIGHUP: the menu released the device in ${ms} ms"; else bad "SIGHUP: the device did not close within 2 s ($(cat "$STATE" 2>/dev/null)) -- the sleep handover is broken"; fi
+        kill -USR1 "$ui" 2>/dev/null
+        if ms=$(wait_state open 2); then ok "SIGUSR1: the menu reopened it in ${ms} ms"; else bad "SIGUSR1: the menu did not reopen the device within 2 s ($(cat "$STATE" 2>/dev/null))"; fi
+    fi
+fi
+
+if [ "${1:-}" = --listen ]; then
+    echo "8. by ear"
+    if [ -f "$CUE" ]; then
+        i=0
+        while [ "$i" -lt 3 ]; do
+            if command -v aplay >/dev/null 2>&1; then aplay -q -D default "$CUE" 2>/dev/null
+            else mpv --no-video --no-config --really-quiet --ao=alsa --audio-device=alsa/default "$CUE" >/dev/null 2>&1; fi
+            i=$((i + 1))
+            sleep 0.4
+        done
+        if [ -t 0 ]; then
+            printf '  did you hear three beeps from the speaker? [y/N] '
+            read -r a
+            case "$a" in y|Y|yes) ok "heard it" ;; *) bad "nothing heard, though the chain above reports ready (speaker, amp or a mute)" ;; esac
+        else
+            printf '  3 beeps played through the menu device (no terminal to answer: judge by ear)\n'
+        fi
+    fi
+fi
+
+echo
+if [ "$FAIL" -eq 0 ]; then
+    printf 'sound-test: all %d checks passed%s\n' "$PASS" "$( [ "$WARN" -gt 0 ] && echo ", $WARN warning(s)" )"
+    say "pass ($PASS checks, $WARN warnings)"
+    exit 0
+fi
+printf 'sound-test: %d failed, %d passed%s\n' "$FAIL" "$PASS" "$( [ "$WARN" -gt 0 ] && echo ", $WARN warning(s)" )"
+say "FAIL ($FAIL failed, $PASS passed, $WARN warnings)"
+echo "sound-test: the run is in $LOG"
+exit 1

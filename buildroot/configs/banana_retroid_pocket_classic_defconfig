@@ -82,6 +82,8 @@ BR2_PACKAGE_ALSA_UTILS=y
 BR2_PACKAGE_ALSA_UTILS_ALSAUCM=y
 BR2_PACKAGE_ALSA_UTILS_AMIXER=y
 BR2_PACKAGE_ALSA_UTILS_ALSACTL=y
+# aplay is the sound-test's client: it proves ALSA's "default" (the PipeWire plugin) still opens and plays
+BR2_PACKAGE_ALSA_UTILS_APLAY=y
 # PipeWire: a sound server, so streams mix instead of the DSP's frontends being handed over one at a time. It needs
 # a session manager -- WirePlumber (GLib + Lua) -- and it discovers cards through the udev API, which libudev-zero
 # supplies: two local patches are needed for this card (libudev-zero must walk /sys/class for the card, which has no

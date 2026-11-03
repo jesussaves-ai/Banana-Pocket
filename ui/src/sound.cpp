@@ -247,6 +247,11 @@ namespace banana
 			slog("release(): the device did not close in 2 s");
 #endif
 		}
+#ifdef BANANA_ALSA
+		/* the ack bananad waits for before it sleeps. A device that was already closed publishes nothing else (the
+		 * loop's closeDev only runs when it has a handle), which left the note on "releasing" for good. */
+		if (!devOpen.load()) publishState("closed (release)");
+#endif
 	}
 
 	void Sound::run()

@@ -41,6 +41,7 @@
   1. *Closed-Graph Routing:* FE<->BE switches only accept writes while that FE's graph is closed; DSP clears them on teardown. PipeWire re-applies the active UCM verb in the node open path immediately before `snd_pcm_open` (`buildroot/patches/pipewire/0002`). Shared FE/BE switches MUST reside only in `SectionVerb` `EnableSequence` (never `SectionDevice`).
   2. *No Idle-Suspend:* Sink sets `session.suspend-timeout-seconds = 0` (stays `RUNNING` permanently across UI cues and games). q6apm buffering (`api.alsa.period-num`/`headroom`) is applied via `monitor.alsa.rules` node match (`monitor.alsa.properties` does not reach ACP nodes).
   3. *Jack Routing:* UCM `Headphones` device `JackControl "Headphone Jack"` (+ `JackHWMute "Speaker"`) drives switching via WirePlumber. Zero manual `hw:0` route writes.
+- **Tests:** the chain fails silently, so it has two: `make test` → `system/tests/sound-config-test.sh` (the rules above, plus the menu's client laws, no hardware), and `make sound-test` → `/usr/libexec/banana/sound-test` on the handheld (server, `default`, Speaker sink *and* default, AW88166 gain, frontend `RUNNING`/owned by pipewire, a real client stream, and the menu's `SIGHUP`→`closed`/`SIGUSR1`→`open` sleep handover). See `docs/SOUND-TEST.md`.
 - **Volume:** AW88166 HW gain (`Left PCM`/`Right PCM`, `0..511`, cached in `/run/banana/mixer`, persisted in `/data/banana/asound.state`), driven by `bananad` via ALSA C mixer API (`snd_mixer_*`; NEVER fork `amixer`). RetroArch SW gain = unity (`1.0`).
 
 ## 6. Network & Services
