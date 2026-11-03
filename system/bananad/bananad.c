@@ -410,39 +410,115 @@ static int sleep_too_low(void)
 	return pct >= 0 && pct <= cfg.sleep_floor_pct;
 }
 
-/* Why the kernel resumed. /sys/power/pm_wakeup_irq is often 0 or absent here, so read the debug wakeup_sources table
- * and name the source that moved last -- the waker (pwrkey, mmc0, ...). debugfs is mounted at start for this (main()).
- * Also carries the device/step that failed, when a suspend failed. */
-static void wake_reason(char *out, size_t n)
+/* The kernel's wakeup_sources table taken before a sleep: each source's name and event_count. Comparing it with the
+ * table after the wake names the source that really fired. The table's last_change column is what the log used to
+ * go by, and that is whoever moved first on the way back -- mmc0 (the SD host) always does, so every wake read
+ * "wake mmc0" whether the card had anything to do with it or not (its event_count stays 0). */
+#define WAKESRC_MAX 32
+struct wakesrc { char name[64]; unsigned events; };
+
+static int wake_snapshot(struct wakesrc *out, int max)
+{
+	FILE *f = fopen("/sys/kernel/debug/wakeup_sources", "r");
+	if (!f) return 0;
+	char line[256];
+	int n = 0;
+	if (!fgets(line, sizeof line, f)) { fclose(f); return 0; }	/* the header row */
+	while (n < max && fgets(line, sizeof line, f)) {
+		char name[64];
+		unsigned events;
+		if (sscanf(line, "%63s %*u %u", name, &events) != 2) continue;
+		snprintf(out[n].name, sizeof out[n].name, "%s", name);
+		out[n].events = events;
+		n++;
+	}
+	fclose(f);
+	return n;
+}
+
+/* the sources whose event_count went up since the snapshot: "name +n, name +n" (empty: nothing moved) */
+static void wake_moved(const struct wakesrc *before, int nb, char *out, size_t n)
+{
+	struct wakesrc now[WAKESRC_MAX];
+	int nn = wake_snapshot(now, WAKESRC_MAX);
+	size_t used = 0;
+	out[0] = 0;
+	for (int i = 0; i < nn && used + 1 < n; i++) {
+		unsigned was = 0;
+		for (int j = 0; j < nb; j++)
+			if (!strcmp(before[j].name, now[i].name)) { was = before[j].events; break; }
+		if (now[i].events <= was) continue;
+		used += snprintf(out + used, n - used, "%s%s +%u", used ? ", " : "", now[i].name, now[i].events - was);
+	}
+}
+
+/* Why the kernel resumed. /sys/power/pm_wakeup_irq is often 0 or absent here, so the waker is the source whose
+ * event_count moved across the sleep (wake_snapshot(), taken just before the write of "mem"). debugfs is mounted at
+ * start for this (main()). Also carries the device/step that failed, when a suspend failed. */
+static void wake_reason(char *out, size_t n, const struct wakesrc *before, int nb)
 {
 	int irq = read_int("/sys/power/pm_wakeup_irq", -1);
-	char irqbuf[16], dev[64] = "", step[32] = "";
+	char irqbuf[16], dev[64] = "", step[32] = "", fired[192];
 	if (irq >= 0) snprintf(irqbuf, sizeof irqbuf, "%d", irq);
 	else snprintf(irqbuf, sizeof irqbuf, "?");
 	read_str("/sys/power/suspend_stats/last_failed_dev", dev, sizeof dev);
 	read_str("/sys/power/suspend_stats/last_failed_step", step, sizeof step);
-	char src[64] = "";
-	FILE *f = fopen("/sys/kernel/debug/wakeup_sources", "r");
-	if (f) {
-		char line[256], name[64];
-		long last, best = -1;
-		if (fgets(line, sizeof line, f)) {	/* the header row */
-			while (fgets(line, sizeof line, f))
-				if (sscanf(line, "%63s %*u %*u %*u %*u %*u %*u %*u %ld", name, &last) == 2 && last > best) { best = last; snprintf(src, sizeof src, "%s", name); }
-		}
-		fclose(f);
-	}
-	if (src[0] && src[0] != 'd') snprintf(out, n, "wake %s (irq %s)%s%s", src, irqbuf, dev[0] ? ", failed " : "", dev);
+	wake_moved(before, nb, fired, sizeof fired);
+	if (fired[0]) snprintf(out, n, "wake %s (irq %s)%s%s", fired, irqbuf, dev[0] ? ", failed " : "", dev);
 	else if (dev[0]) snprintf(out, n, "wake irq %s, failed %s at %s", irqbuf, dev, step[0] ? step : "?");
-	else snprintf(out, n, "wake irq %s", irqbuf);
+	else snprintf(out, n, "wake irq %s, no source's count moved", irqbuf);
 }
 
-/* Only the power button may wake the handheld. The kernel arms every device that says it can wake -- the rsinput
- * MCU's serial (988000.serial), the Wi-Fi/ADSP remoteprocs (8a00000/3000000), the charger and USB power supplies
- * (pmic_glink), gpio-keys (the volume keys), the thermal sensors, mmc0 -- and any of them raising an interrupt during
- * a sleep is a resume the owner did not ask for (the serial MCU and the Wi-Fi link were the ones seen waking it). So
- * just before suspending, leave only the PMIC pwrkey armed and disable the rest. The drivers re-arm their own wakeup
- * on resume, which is why this runs before every sleep rather than once at boot. */
+/* What the handheld looked like as the kernel went under, on the data partition. A sleep whose resume never returns
+ * leaves no "awake" line and no post hook, so this note (overwritten every sleep) is the only thing the next boot can
+ * read: the mode, and whether the menu still had its PCM open -- a close in flight when the DSP was told to sleep is
+ * the one thing the hang at 03:40 on the handheld could have been doing (logs/banana-ui.log.1: the device was
+ * reopened 16 s before that sleep and handed over 200 ms before the write of "mem"). */
+static void sleep_note(const char *why, const char *mode, int sources)
+{
+	char path[] = "/data/banana/logs/sleep-state";
+	struct stat st;
+	if (!stat(path, &st) && st.st_size > 32 * 1024) rename(path, "/data/banana/logs/sleep-state.1");
+	FILE *f = fopen(path, "w");
+	if (!f) return;
+	time_t now = time(NULL);
+	char when[32], sound[128] = "";
+	strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", localtime(&now));
+	read_str("/run/banana/sound-state", sound, sizeof sound);
+	fprintf(f, "%s going to sleep (%s)\n", when, why);
+	fprintf(f, "mode: %s, wakeup sources in the table: %d\n", mode, sources);
+	fprintf(f, "menu: %d, sound device: %s\n", (int)ui_pid(), sound[0] ? sound : "(no note)");
+	fprintf(f, "game: %d\n", (int)pid_of("/run/banana/game.pid"));
+	fclose(f);
+}
+
+/* and the kernel's own record of the trip, on the way out (the note above is the only survivor of one that did not) */
+static void sleep_note_resume(const char *what)
+{
+	FILE *f = fopen("/data/banana/logs/sleep-state", "a");
+	if (!f) return;
+	time_t now = time(NULL);
+	char when[32];
+	strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", localtime(&now));
+	fprintf(f, "%s awake: %s\n", when, what);
+	FILE *p = popen("dmesg 2>/dev/null | grep -E 'PM: (suspend|resume)' | tail -n 6", "r");
+	if (p) {
+		char ln[160];
+		while (fgets(ln, sizeof ln, p)) fputs(ln, f);
+		pclose(p);
+	}
+	fclose(f);
+}
+
+/* Only the owner may wake the handheld. The kernel arms every device that says it can wake -- the rsinput MCU's
+ * serial (988000.serial), the Wi-Fi/ADSP remoteprocs (8a00000/3000000), gpio-keys (the volume keys), the thermal
+ * sensors, mmc0 -- and any of them raising an interrupt during a sleep is a resume nobody asked for (the serial MCU
+ * and the Wi-Fi link were the ones seen waking it). So just before suspending, leave the PMIC pwrkey armed, keep the
+ * charger/USB supplies armed (the cable is a wake the owner did ask for -- it is the one press that has to work when
+ * the pwrkey line glitches, which is exactly what it does: see the sleep.log's "wake with no key or cable"), and
+ * disable the rest. The drivers re-arm their own wakeup on resume, which is why this runs before every sleep rather
+ * than once at boot. mmc0 is a virtual source with no power/wakeup file to write, so it cannot be disarmed here;
+ * logs/sleep-state records how many sources there are, and a wake now names the source whose count actually moved. */
 static void wake_only_power(void)
 {
 	DIR *d = opendir("/sys/class/wakeup");
@@ -456,7 +532,8 @@ static void wake_only_power(void)
 		snprintf(p, sizeof p, "/sys/class/wakeup/%s/device", e->d_name);
 		if (!realpath(p, dev)) continue;	/* a virtual source (mmc0) has no power/wakeup to write */
 		snprintf(p, sizeof p, "%s/power/wakeup", dev);
-		write_file(p, strstr(name, "pwrkey") ? "enabled" : "disabled");
+		int keep = strstr(name, "pwrkey") || strstr(name, "battmgr") || strstr(name, "ucsi");
+		write_file(p, keep ? "enabled" : "disabled");
 	}
 	closedir(d);
 }
@@ -525,20 +602,26 @@ static void suspend_now(const char *why)
 	if (!skip("hooks")) hooks("pre", 0);
 	if (!skip("sync")) sync();
 	sleep_mode();
-	wake_only_power();	/* the power key alone may bring it back (see its comment) */
+	wake_only_power();	/* the power key (and the cable) may bring it back (see its comment) */
 	double t_prep = mono();
 	if (cfg.sleep_skip[0]) sleep_log("sleep %s: skipping '%s' (debug)", why, cfg.sleep_skip);
 	int cycles = 0, rtc_wakes = 0, failures = 0, spurious = 0;
 	int plugged0 = charger_online();
 	double asleep = 0;
 	const char *woke = "?";
+	struct wakesrc before[WAKESRC_MAX];
+	int nb = 0;
 	for (;;) {
 		time_t alarm = rtc_alarm((int)(cfg.sleep_check_hours * 3600));
 		double t_in = mono();
 		struct timespec b0, b1;
 		clock_gettime(CLOCK_BOOTTIME, &b0);	/* BOOTTIME counts the time asleep, MONOTONIC doesn't */
-		if (cycles == 0) sleep_log("sleep (%s): prep %.0f ms, %.0f ms to suspend%s, power key only", why,
+		if (cycles == 0) sleep_log("sleep (%s): prep %.0f ms, %.0f ms to suspend%s", why,
 		    (t_prep - t0) * 1000, (t_in - t0) * 1000, game ? ", game paused" : "");
+		char mode[32] = "";
+		read_str("/sys/power/mem_sleep", mode, sizeof mode);
+		nb = wake_snapshot(before, WAKESRC_MAX);	/* the waker is the source this count moves for */
+		sleep_note(why, mode[0] ? mode : cfg.mem_sleep, nb);
 		int r = write_file("/sys/power/state", "mem");
 		int err = errno;
 		/* a signal (SIGHUP from the menu, SIGCHLD) interrupted the write: nothing slept, so retry rather than
@@ -623,10 +706,11 @@ static void suspend_now(const char *why)
 	ignore_power_until = mono() + 1.0;
 	power_down = 0;
 	last_input = mono();
-	char wr[128];
-	wake_reason(wr, sizeof wr);
+	char wr[256];
+	wake_reason(wr, sizeof wr, before, nb);
 	sleep_log("awake (%s) after %.0f s asleep%s%s, %s, game and menu back %.1f ms after the kernel", woke, asleep,
 		rtc_wakes ? ", battery checked" : "", asleep < 5.0 ? " (it did not take)" : "", wr, (t_back - t_wake) * 1000);
+	sleep_note_resume(wr);
 }
 
 static void shutdown_now(const char *why)

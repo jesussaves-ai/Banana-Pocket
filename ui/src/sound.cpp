@@ -68,6 +68,19 @@ namespace banana
 		fprintf(stderr, "banana-ui: sound: %6.2f s: %s\n", up, msg);
 	}
 
+	// What the sound device is doing, for bananad's sleep note (logs/sleep-state): a sleep whose resume never comes
+	// back leaves no log line of its own, so the one thing the next boot can still read is whether a PCM was open --
+	// or was closing -- at the moment the kernel went under. Overwritten on every transition; never read here.
+	static void publishState(const char* what)
+	{
+		FILE* f = fopen("/run/banana/sound-state", "w");
+		if (!f) return;
+		double up = 0; FILE* u = fopen("/proc/uptime", "r");
+		if (u) { if (fscanf(u, "%lf", &up) != 1) up = 0; fclose(u); }
+		fprintf(f, "%s at %6.2f s\n", what, up);
+		fclose(f);
+	}
+
 	// The menu plays on the same device as the games, and the card's output is a 48 kHz part: anything else
 	// is resampled there by alsa-lib's linear converter (the image has no speexrate). Convert each clip once, here,
 	// so the stream is always 48 kHz stereo and no plug resampler is involved. Mono (and >2-channel) clips are made
@@ -132,6 +145,7 @@ namespace banana
 #ifdef BANANA_ALSA
 		if (bgmLoaded) { toStereo(bgm.pcm, bgm.channels); to48k(bgm.pcm, bgm.rate, bgm.channels); }
 		bgmStartAt = std::chrono::steady_clock::now();	// setBgm(true) starts the loop from here
+		publishState("closed (startup)");
 #endif
 		th = std::thread([this] { run(); });
 	}
@@ -212,6 +226,7 @@ namespace banana
 			std::lock_guard<std::mutex> l(m);
 #ifdef BANANA_ALSA
 			slog("release(): the device is handed over");
+			publishState("releasing (handover)");	// bananad's sleep note: a close still in flight here
 #endif
 			closeNow = true;
 			queued.clear();
@@ -242,7 +257,7 @@ namespace banana
 		snd_pcm_t* pcm = nullptr;
 		int openRate = 0, openCh = 0;
 		std::vector<int16_t> silence, mix;
-		auto closeDev = [&](const char* why) { if (pcm) { slog("closing (%s)", why); snd_pcm_drop(pcm); snd_pcm_close(pcm); pcm = nullptr; devOpen = false; } };
+		auto closeDev = [&](const char* why) { if (pcm) { slog("closing (%s)", why); snd_pcm_drop(pcm); snd_pcm_close(pcm); pcm = nullptr; devOpen = false; char s[64]; snprintf(s, sizeof s, "closed (%s)", why); publishState(s); } };
 		// Where sound plays (speakers or headphones) is the sound server's now: ACP/WirePlumber follow the jack,
 		// and bananad only keeps ALSA's "default" pointed at PipeWire in /run/banana/asound.conf (read via
 		// /etc/asound.conf), so there is nothing here to reopen when the jack moves.
@@ -301,6 +316,11 @@ namespace banana
 			devOpen = true;
 			openFails = 0;
 			slog("device open, %d Hz, %d ch, %d ms buffer", openRate, openCh, us / 1000);
+			{
+				char s[64];
+				snprintf(s, sizeof s, "open, %d Hz, %d ch, %d ms buffer", openRate, openCh, us / 1000);
+				publishState(s);
+			}
 			silence.assign((size_t)(openRate / 200) * openCh, 0);
 			return true;
 		};

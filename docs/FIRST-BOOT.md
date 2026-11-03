@@ -59,7 +59,8 @@ Everything Banana knows about a boot is in `banana/logs/` on the card (put it in
 | `boot.txt` | the milestones, in seconds since the kernel started: init, rcS, the data partition, the panel, the menu |
 | `dmesg.txt` | the kernel's log (`dmesg.1.txt`: the boot before) |
 | `banana-ui.log` | the menu's log (`.1`: the run before) |
-| `sleep.log` | one line per sleep: how long it took to fall asleep, how long it slept, why it woke, how long the way back took |
+| `sleep.log` | one line per sleep: how long it took to fall asleep, how long it slept, why it woke (the source whose interrupt count moved), how long the way back took |
+| `sleep-state` | what the handheld looked like as it went under (mode, whether the menu still had its sound device open) and the kernel's PM lines on the way out: read this first if it hung overnight and came back on a long press |
 | `sleep-devices.log` | with `sleep_debug = yes` in `banana/bananad.conf`: every device's suspend and resume time, slowest first |
 | `retroarch.log` | the last game's RetroArch log (a game that would not show anything) |
 

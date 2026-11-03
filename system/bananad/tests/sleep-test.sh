@@ -29,6 +29,8 @@ POWEROFF=0
 trap 'POWEROFF=1' USR2
 mount -t tmpfs none /sys/power
 mount -t tmpfs none /sys/class
+# the wakeup table bananad reads to name a wake: an empty debugfs unless one is mounted, and the test puts one there
+mount -t tmpfs none /sys/kernel/debug 2>/dev/null && mkdir -p /sys/kernel/debug
 mount -t tmpfs none /dev/input 2>/dev/null || { mkdir -p /dev/input; mount -t tmpfs none /dev/input; }
 mount -t tmpfs none /run
 mount -t tmpfs none /data
@@ -79,15 +81,22 @@ echo $GAME > /run/banana/game.pid
 
 echo "1. the power button sleeps and wakes it"
 start
+# the wakeup_sources table as the kernel has it: what bananad snapshots before "mem". The waker is the source whose
+# event_count moves -- the table's last_change column (what the log used to read) only names mmc0, the SD host, for
+# every wake, because it is the first device back.
+printf 'name\tactive_count\tevent_count\twakeup_count\texpire_count\npwrkey\t0\t0\t0\t0\nmmc0\t0\t0\t0\t0\n' > /sys/kernel/debug/wakeup_sources
 power
 if asleep; then ok "suspended on the power button"; else bad "no suspend on the power button"; fi
 [ "$(gstate)" = T ] && ok "game stopped while asleep" || bad "game not stopped ($(gstate))"
 [ "$(cat /sys/power/pm_async)" = 1 ] && ok "devices resume in parallel (pm_async 1)" || bad "pm_async $(cat /sys/power/pm_async)"
 grep -q "\[deep\]" /sys/power/mem_sleep && ok "deep sleep chosen" || bad "mem_sleep $(cat /sys/power/mem_sleep)"
+grep -q 'going to sleep (power button)' /data/banana/logs/sleep-state && ok "the pre-sleep note was written" || bad "no sleep-state note"
+printf 'name\tactive_count\tevent_count\twakeup_count\texpire_count\npwrkey\t0\t1\t1\t0\nmmc0\t0\t0\t0\t0\n' > /sys/kernel/debug/wakeup_sources
 wake
 [ "$(gstate)" != T ] && ok "game running again after the wake" || bad "game still stopped"
 rm -f /run/banana/game.pid; sleep 0.1
 grep -q 'awake (power button)' /data/banana/logs/sleep.log && ok "sleep.log: $(tail -n1 /data/banana/logs/sleep.log | cut -c21-)" || bad "no wake in sleep.log"
+grep -q 'wake pwrkey +1' /data/banana/logs/sleep.log && ok "the wake names the source whose count moved" || bad "the wake did not name pwrkey"
 stop
 
 echo "2. the battery guard: an RTC wake with the battery nearly empty shuts down cleanly"
