@@ -193,6 +193,8 @@ namespace banana
 		M = rnds::Font::load(assets + "/fonts/PixelifySans-Medium.ttf");
 		const char* tool = getenv("BANANA_WIFI");	// the test's stand-in
 		wifiTool = tool ? tool : "/usr/libexec/banana/wifi";
+		const char* bt = getenv("BANANA_BACKUP");	// the same for the backup tool
+		backupTool = bt ? bt : "/usr/libexec/banana/backup";
 		wifiConf = data + "/wifi.conf";
 		build();
 	}
@@ -322,6 +324,8 @@ namespace banana
 				menu, "timezone", names, tzs);
 		}
 		add(S, "gear", "Update", "A new version of Banana, written to the other slot and run from the next restart; this one stays as it is until then. Over Wi-Fi, \"Check for updates\" downloads the newest release from GitHub; a package on the card in banana/updates (File sharing can copy one) works too.", "", "update", {}, {}, Item::PAGE);
+		add(S, "gear", "Back up settings", "Settings, accounts and the saves/states trees in one file in banana/backups on the card (File sharing can copy it off). Games and box art stay out of it. Press A twice.", "", "backup", { "" }, { "" }, Item::ACTION);
+		add(S, "gear", "Restore settings", "Unpacks the newest backup over the card's settings, saves and states, then restarts the menu so they are read. Press A twice.", "", "restore", { "" }, { "" }, Item::ACTION);
 		add(S, "picture", "Box art", "Covers, title screens, genres and years for your games, from libretro's free collections (no account, Wi-Fi needed). It keeps going in the background; games that already have art are skipped, so running it again only fetches what is new.",
 			"", "scrape", {}, {}, Item::PAGE);
 		add(S, "picture", "Box art from", "libretro: libretro's collections. libretro + Twilight: TwilightBoxart (boxart.kirovair.com) for the covers libretro has none of. Twilight first: TwilightBoxart's covers where it has them. TwilightBoxart is asked one game a second.",
@@ -664,6 +668,15 @@ namespace banana
 				std::string out;
 				if (p) { char ln[256]; while (fgets(ln, sizeof ln, p)) out += ln; if (pclose(p) == 0) return REBOOT; }
 				message = out.empty() ? "The other slot holds no system." : out;
+				return MOVED;
+			}
+			if (it.key == "backup" || it.key == "restore")
+			{
+				// run it off the loop (the card holds tens of MB of saves): the result is toasted in update()
+				armed = -1;
+				backupWhat = it.key == "backup" ? 1 : 2;
+				message = backupWhat == 1 ? "Backing up..." : "Restoring...";
+				backupJob.start(backupTool + (backupWhat == 1 ? " create" : " restore"), sync);
 				return MOVED;
 			}
 			if (it.key == "reset_system" || it.key == "reset_emulator")
@@ -1459,6 +1472,31 @@ namespace banana
 					kind == 1 ? 0x6ad07a : 0xff7a4a, kind == 1 ? 1 : 2, kind == 1 ? 5000 : 7000);
 				message = kind == 1 ? "" : raCheck->l2;
 				raCheck.reset();
+				return true;
+			}
+		}
+		if (backupWhat)
+		{
+			std::string out;
+			if (backupJob.take(out))
+			{
+				const int what = backupWhat;
+				backupWhat = 0;
+				message.clear();
+				std::string line = out.substr(0, out.find('\n'));
+				const bool good = line.compare(0, 3, "ok ") == 0;
+				const std::string detail = line.compare(0, 3, "ok ") == 0 ? line.substr(3)
+					: line.compare(0, 7, "error: ") == 0 ? line.substr(7) : (line.empty() ? "the backup tool said nothing" : line);
+				if (good && what == 2)
+				{
+					// settings.conf (and the rest) just changed under this process: let init respawn the menu, which
+					// reads the restored files. Wi-Fi and sleep settings are read by the next boot / bananad's SIGHUP.
+					// A headless run has no init behind it (and no signal handlers), so it just carries on.
+					if (!sync) raise(SIGTERM);
+					return false;
+				}
+				toast(good ? (what == 1 ? "Backup saved" : "Settings restored") : "Backup failed", detail,
+					good ? 0x6ad07a : 0xff7a4a, good ? 1 : 2, 6000);
 				return true;
 			}
 		}

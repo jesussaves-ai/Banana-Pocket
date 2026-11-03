@@ -86,6 +86,7 @@ test: ui
 	system/tests/run-retroarch-test.sh
 	system/tests/rpc-thermals-test.sh
 	system/tests/run-banana-tube-test.sh
+	system/tests/run-backup-test.sh
 	system/tests/sound-config-test.sh
 	ui/tests/run.sh
 

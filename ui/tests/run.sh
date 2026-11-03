@@ -191,21 +191,34 @@ for size in 640x480 1024x768; do
         grep -q "^$k = " "$FX/data/settings.conf" && sed -i "s/^$k = .*/$kv/" "$FX/data/settings.conf" || printf '%s\n' "$kv" >> "$FX/data/settings.conf"
     done
     # groups: Display & sound, Sleep & power, Nintendo DS, RetroArch, Network, System (five R's); System's rows
-    # from Time zone: down nine to Reset system settings (SSH, ADB debugging and Mass storage are before it), A twice
+    # from Time zone: down eleven to Reset system settings (Back up/Restore, Previous version, SSH, ADB debugging and
+    # Mass storage are before it), A twice
     run_reset() { "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
         --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" --script "$1" 2>> "$rlog" ||
         { echo "FAIL $size: banana-ui (reset) exited $?"; fail=1; }; }
-    run_reset "home 0; press start; press r; press r; press r; press r; press a; press down; press down; press down; press down; press down; press down; press down; press down; press down; press a; press a; wait 300; shot reset-system"
+    run_reset "home 0; press start; press r; press r; press r; press r; press a; press down; press down; press down; press down; press down; press down; press down; press down; press down; press down; press down; press a; press a; wait 300; shot reset-system"
     grep -q '^theme = dark' "$FX/data/settings.conf" || { echo "FAIL $size: system reset didn't restore theme: $(grep '^theme' "$FX/data/settings.conf")"; fail=1; }
     grep -q '^sounds = on' "$FX/data/settings.conf" || { echo "FAIL $size: system reset didn't restore sounds"; fail=1; }
     grep -q '^core.gba = mgba' "$FX/data/settings.conf" || { echo "FAIL $size: system reset wiped an emulator core: $(grep '^core.gba' "$FX/data/settings.conf")"; fail=1; }
-    # down ten from Time zone to Reset emulator settings, A twice (theme and sounds are already back)
-    run_reset "home 0; press start; press r; press r; press r; press r; press a; press down; press down; press down; press down; press down; press down; press down; press down; press down; press down; press a; press a; wait 300; shot reset-emulator"
+    # down twelve from Time zone to Reset emulator settings, A twice (theme and sounds are already back)
+    run_reset "home 0; press start; press r; press r; press r; press r; press a; press down; press down; press down; press down; press down; press down; press down; press down; press down; press down; press down; press down; press a; press a; wait 300; shot reset-emulator"
     grep -q '^core.gba = gpsp' "$FX/data/settings.conf" || { echo "FAIL $size: emulator reset didn't restore core.gba: $(grep '^core.gba' "$FX/data/settings.conf")"; fail=1; }
     grep -q '^theme = dark' "$FX/data/settings.conf" || { echo "FAIL $size: emulator reset wiped a system key"; fail=1; }
     for s in reset-system reset-emulator; do
         [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }
     done
+    # Settings > System's backup rows run the tool off the loop: Back up takes one A, Restore two (and then restarts
+    # the menu, which ends the headless run). The tool is a stand-in that records how it was called.
+    bmark=$FX/backup-called; rm -f "$bmark"
+    printf '#!/bin/sh\necho "$*" >> %s\necho "ok test.tar.gz"\n' "$bmark" > "$FX/backup-tool"
+    chmod +x "$FX/backup-tool"
+    BANANA_BACKUP="$FX/backup-tool" "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
+        --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
+        --script "home 0; press start; press r; press r; press r; press r; press a; press down; press down; press a; press a; wait 600; \
+            press down; press a; press a; wait 600" 2>> "$rlog" ||
+        { echo "FAIL $size: banana-ui (backup rows) exited $?"; fail=1; }
+    grep -qx create "$bmark" 2>/dev/null || { echo "FAIL $size: Back up did not run the tool"; fail=1; }
+    grep -qx restore "$bmark" 2>/dev/null || { echo "FAIL $size: Restore did not run the tool"; fail=1; }
     # a layout theme (the image's pocket.json, the handheld's own): every screen drawn from its JSON, home ->
     # library -> a launch, and a tap on a system. It is the single-panel layout, so it runs at its own 640x557.
     # The menu reads the theme from the card's settings.conf (--theme is the real launcher's), so point it at the

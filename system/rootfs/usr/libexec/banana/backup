@@ -1,0 +1,75 @@
+#!/bin/sh
+# backup: the handheld's settings and saves in one file on the card, and back. The menu's Settings > System rows run
+# it; from a computer, `ssh root@<handheld> /usr/libexec/banana/backup create` works too.
+#
+#   backup create            banana/backups/banana-<date>.tar.gz: settings.conf, bananad.conf, wifi.conf,
+#                            accounts.conf (when present), saves/ and states/
+#   backup list              newest first: <name><TAB><bytes>
+#   backup restore [<file>]  unpack that one (or the newest) over /data, after refusing unsafe members
+#
+# It prints one line: "ok <name>" or "error: <why>" (the menu toasts the difference). BANANA_DATA points it at
+# another root -- the host test uses that; the image always uses /data.
+set -u
+DATA=${BANANA_DATA:-/data}
+OUT=$DATA/banana/backups
+
+case ${1:-} in
+create)
+    mkdir -p "$OUT" || { echo "error: can't make $OUT"; exit 1; }
+    name=banana-$(date +%Y%m%d-%H%M%S).tar.gz
+    tmp=$OUT/.$name.part
+    # the list is fixed: no logs, no updates, and never the backups themselves. A fresh card has no accounts.conf
+    # (and may have no saves/), so a member is only added when it is there.
+    members=
+    for f in banana/settings.conf banana/bananad.conf banana/wifi.conf banana/accounts.conf saves states; do
+        [ -e "$DATA/$f" ] && members="$members $f"
+    done
+    [ -n "$members" ] || { echo "error: nothing to back up"; exit 1; }
+    # tar, then gzip: the image's busybox tar creates archives but has no -z (gzip is its own applet), so the two
+    # steps are explicit -- and each one's failure is seen (a pipe would only report gzip's).
+    tarf=$OUT/.$name.tar
+    if ! tar -cf "$tarf" -C "$DATA" $members; then
+        rm -f "$tarf"
+        echo "error: tar failed (is the card full?)"
+        exit 1
+    fi
+    if ! gzip -c "$tarf" > "$tmp"; then
+        rm -f "$tarf" "$tmp"
+        echo "error: gzip failed (is the card full?)"
+        exit 1
+    fi
+    rm -f "$tarf"
+    # a .part until it is whole: a power cut leaves no half backup with a good name
+    mv -f "$tmp" "$OUT/$name" || { rm -f "$tmp"; echo "error: can't keep $name"; exit 1; }
+    echo "ok $name"
+    ;;
+list)
+    [ -d "$OUT" ] || exit 0
+    for f in "$OUT"/banana-*.tar.gz; do
+        [ -f "$f" ] || continue
+        printf '%s\t%s\n' "${f##*/}" "$(wc -c <"$f")"
+    done | sort -r
+    ;;
+restore)
+    f=${2:-}
+    [ -n "$f" ] || f=$(ls -t "$OUT"/banana-*.tar.gz 2>/dev/null | head -n 1)
+    [ -n "$f" ] && [ -f "$f" ] || { echo "error: no backup to restore"; exit 1; }
+    # a backup on the card is user-supplied (File sharing can copy one in): reject absolute and ../ members before
+    # unpacking, the way update does -- tar would otherwise write outside /data.
+    if ! gzip -t "$f" 2>/dev/null; then
+        echo "error: ${f##*/} is not a gzip file"
+        exit 1
+    fi
+    if gzip -dc "$f" | tar -tf - 2>/dev/null | grep -qE '(^/|(^|/)\.\./)'; then
+        echo "error: unsafe path in ${f##*/}"
+        exit 1
+    fi
+    gzip -dc "$f" | tar -xf - -C "$DATA" || { echo "error: can't unpack ${f##*/}"; exit 1; }
+    sync
+    echo "ok ${f##*/}"
+    ;;
+*)
+    echo "usage: backup create | list | restore [<file>]" >&2
+    exit 1
+    ;;
+esac

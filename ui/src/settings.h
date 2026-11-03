@@ -158,9 +158,10 @@ namespace banana
 		Result pressSetup(Key k);
 		void renderSetup();
 		void setupDone();
-		std::string wifiTool, wifiConf;
+		std::string wifiTool, wifiConf, backupTool;
 		bool sync = false;
-		wifi::Job scanJob, statusJob;
+		wifi::Job scanJob, statusJob, backupJob;
+		int backupWhat = 0;	// 0 none, 1 a backup being written, 2 a restore (the menu restarts after it)
 		std::vector<wifi::Network> nets;
 		wifi::Status wstat;
 		bool scanning = false, scannedOnce = false, wifiEnabled = true;

@@ -4,26 +4,23 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Back up & restore `/data/banana`** (small). Settings > System gains "Back up settings" (a tar of `settings.conf`,
-   `bananad.conf`, `wifi.conf`, accounts and the saves/states trees into `/data/banana/backups`) and "Restore". Pairs
-   with the OTA path, and makes a bad sleep-test unit recoverable without a card reader.
-2. **Controller remapping UI** (the pad map the launchers export), and **per-game core options** beyond core + shader.
-3. **Library UX, the rest** -- collections/tags and a screenshot gallery; plus **"scrape missing art"** and a scraper
+1. **Controller remapping UI** (the pad map the launchers export), and **per-game core options** beyond core + shader.
+2. **Library UX, the rest** -- collections/tags and a screenshot gallery; plus **"scrape missing art"** and a scraper
    that only runs while charging or on the cable, so a long scrape cannot flatten a battery (the recent-played shelf,
    multi-disc `.m3u` grouping and shoulder jump-to-letter are done, 0.5.x).
-4. **Local media / music player**, and porting BananaTube's newer settings screen.
-5. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
-6. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
-7. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
+3. **Local media / music player**, and porting BananaTube's newer settings screen.
+4. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
+5. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+6. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-8. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
+7. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
    and measure overnight drain; residual spurious wakes and panel/SD resume latency are still untracked.
-9. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
-10. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-11. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-12. **Store / app catalog** (the Apps shelf only scans local folders).
+8. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
+9. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+10. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+11. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## Ideas (unscheduled)
 Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.
@@ -69,6 +66,17 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **Back up & restore `/data/banana` (0.5.4+).** Settings > System's **Back up settings** (A twice) writes
+  `banana/backups/banana-<date>.tar.gz` with `settings.conf`, `bananad.conf`, `wifi.conf`, `accounts.conf` (when
+  present), `saves/` and `states/` -- logs, updates, box art and the backups themselves stay out. **Restore settings**
+  (A twice) unpacks the newest over `/data` and restarts the menu so the restored file is read; Wi-Fi and sleep
+  settings take effect at the next boot / bananad's SIGHUP. The tool is `/usr/libexec/banana/backup`
+  (`create`/`list`/`restore`, one `ok …`/`error: …` line the menu toasts), written with `tar` then `gzip` because the
+  image's busybox tar has no `-z`. A restore refuses absolute and `../` members before unpacking (a backup on the card
+  is user-supplied), and a `.part` name until the archive is whole. Verified on the unit: create, delete
+  `settings.conf` and a state, restore, both identical by sha256; host test `run-backup-test.sh` (19 checks: archive
+  contents, newest-first list, restore, a hostile `../` archive) and a headless menu test that the two rows run the
+  tool off the loop.
 - [x] **Audio follow-ups (0.5.4).** The automatic recovery in the menu's open path is gone: `banana-ui` forked
   `sound-server recover` after ~10 s of failed opens, and it never fired in normal use (0 asks across two boots, 439
   log lines); the wedged-session-manager case it was written for has not been seen since the config re-read. A
