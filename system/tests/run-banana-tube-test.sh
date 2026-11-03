@@ -42,6 +42,11 @@ else
     # the parsers
     printf '%s\n' "$out" | grep -q 'selftest innertube: ok' && ok "InnerTube videoRenderer parse" || bad "InnerTube parse"
     printf '%s\n' "$out" | grep -q 'selftest split: ok' && ok "yt-dlp --print line split" || bad "yt-dlp line split"
+    printf '%s\n' "$out" | grep -q 'selftest sponsorblock: ok' && ok "SponsorBlock segments parse" || bad "SponsorBlock parse"
+    printf '%s\n' "$out" | grep -q 'selftest sponsorblock none: ok' && ok "SponsorBlock: no segments, no skips" || bad "SponsorBlock none"
+    printf '%s\n' "$out" | grep -q 'selftest keynav: ok' && ok "keyboard: up and down keep the column" || bad "keyboard up/down"
+    printf '%s\n' "$out" | grep -q 'selftest channels: ok' && ok "channels: one channel's videos, B walks out" || bad "channels tab"
+    printf '%s\n' "$out" | grep -q 'selftest recent: ok' && ok "recent file: the resume position (and old rows)" || bad "recent parse"
     printf '%s\n' "$out" | grep -q 'selftest quit: 1' && ok "B on an empty query quits" || bad "quit state"
 fi
 

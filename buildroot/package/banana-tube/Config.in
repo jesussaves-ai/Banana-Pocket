@@ -7,11 +7,8 @@ config BR2_PACKAGE_BANANA_TUBE
 	select BR2_PACKAGE_SDL2_IMAGE
 	select BR2_PACKAGE_LIBCURL
 	select BR2_PACKAGE_MPV
-	# mpv's YouTube support (--ytdl) is its Lua ytdl_hook, compiled only with a Lua interpreter: without one mpv
-	# cannot open a youtube.com URL and banana-tube's playback fails. The interpreter is Lua 5.4 (not LuaJIT):
-	# WirePlumber, the sound server's session manager, requires Lua >= 5.3, and Buildroot allows only one
-	# interpreter, so the image has 5.4 and Buildroot's mpv recipe learned to take it
-	# (buildroot/buildroot-patches/0003-mpv-enable-lua-with-lua-5-4.patch).
+	# yt-dlp resolves the stream and mpv plays it, so mpv needs no Lua (see the defconfig). The image's Lua 5.4 is
+	# there for WirePlumber, the sound server's session manager.
 	select BR2_PACKAGE_LUA
 	select BR2_PACKAGE_YT_DLP
 	help

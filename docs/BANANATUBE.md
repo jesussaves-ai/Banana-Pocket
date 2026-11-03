@@ -32,15 +32,31 @@ mapping `run-port` uses: **A is the east button**).
 
 | Button | Search keyboard | Results | Playing |
 |---|---|---|---|
-| d-pad | move on the keys | move through the results | seek (left/right to the minute) |
+| d-pad | move on the keys | move through the results | seek (up/down 10 s, left/right 60 s) |
 | A | type the key / `Shift` / `Search` | play the chosen video | play / pause |
 | B | clear, then quit | back to the keyboard | stop and go back |
-| X | backspace | a page back | — |
-| Y | `Shift` | a page forward | — |
-| L / R | — | a page back / forward | — |
-| START | run the search | a new search | — |
-| SELECT | — | — | play / pause |
-| touch | tap a key / `Search` | tap a row to focus, tap again to play | zones: left/right seek, centre pause, top-left stop |
+| X | backspace | the chosen video's channel | undo the last SponsorBlock skip |
+| Y | run the search | back to the keyboard (search) | — |
+| L / R | switch tab | a page back / forward | previous / next chapter |
+| L2 | — | — | tap: back 10 s; hold: scrub back 10 s every 0.25 s |
+| R2 | — | — | tap: forward 10 s; hold: play at 2x |
+| START | run the search | a new search | full screen |
+| SELECT | the Recent tab | the quality cap (720/480/360p, next video) | position / length / quality readout |
+| touch | tap a key / `Search`, or a tab | tap a row to focus, tap again to play, or a tab | zones: left/right seek, centre pause, top-left stop |
+
+**Tabs, recent and quality:** the results shelf has three tabs — **Search** (the keyboard and its hits), **Recent** (the
+last 30 videos that actually started playing) and **Channels** (the uploaders either list mentions, with a video count).
+Switch with L/R on the keyboard, SELECT (Recent), or a tap; A on a channel shows its videos from both lists, B walks
+back out. Recent rows remember where playback stopped (written every 10 s and on stop, shown as "resume m:ss"), and
+re-opening one seeks there once mpv has the stream up; a finished video clears its position. Recent survives a reboot in
+`/data/banana/bananatube-recent.tsv`; the quality cap (720p default, 480p/360p for a weak link) is saved in
+`/data/banana/bananatube.conf` and applied by `yt-dlp -g` to the next video.
+
+**SponsorBlock** skips sponsor, self-promotion, interaction reminder, intro and outro segments from SponsorBlock's
+public API (`sponsor.ajay.app`, looked up by video id before playback). The client asks mpv for the playback position
+four times a second over its IPC socket and seeks past a segment when it reaches one. (yt-dlp has no part in this: it
+only cuts segments out of downloads.) A skipped segment is not skipped again in the same playback. Its toast reads
+"Skipped sponsor (X to undo)".
 
 **Touch:** the panel's touchscreen is the FT5x06 (multitouch, `/dev/input/event*`). SDL2's **Wayland** backend does not
 bind `wl_touch`, so under `cage` the app receives no `SDL_FINGER` and no emulated pointer — `banana-tube` therefore
@@ -67,8 +83,10 @@ coordinates, and acting on both fired a second, wrong tap per gesture (the phant
 
 
 Playback: `banana-tube` starts `mpv` (full screen under `cage`) and keeps the pad to itself, telling mpv what to do
-over its JSON IPC socket (`/run/banana/bananatube.sock`). mpv resolves the URL through `yt-dlp` itself
-(`--ytdl`), capped at 720p — what the Adreno `a613` holds comfortably. When mpv exits, the results come back.
+over its JSON IPC socket (`/run/banana/bananatube.sock`). `banana-tube` resolves the stream first, with `yt-dlp -g`
+(capped at 720p, what the Adreno `a613` holds comfortably), and hands mpv the direct URL(s): the picture, and the
+sound for a DASH pair. The image's mpv has no Lua, so nothing runs inside it. The lookup blocks the menu for a few
+seconds before the video opens. When mpv exits, the results come back.
 
 **Video output:** `--vo=wlshm` (software, through shared memory). mpv's GPU output (`--vo=gpu`) under `cage`
 renders a white frame intermittently on the `a613`, and a stalled output stalls the playback clock with it; the

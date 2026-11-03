@@ -32,6 +32,7 @@
 
 #include <atomic>
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cmath>
 #include <condition_variable>
@@ -58,6 +59,10 @@
 
 // mpv's JSON IPC socket (banana-tube drives playback over it): a macro so it concatenates into mpv's argv
 #define IPC_SOCK "/run/banana/bananatube.sock"
+// on the card, beside settings.conf: the last videos played (Select on the keyboard shows them) and the playback
+// quality, so both survive a reboot
+#define RECENT_FILE "/data/banana/bananatube-recent.tsv"
+#define CONF_FILE "/data/banana/bananatube.conf"
 
 // A stop asked from outside (the launcher's `kill` on the app's process group, a shutdown): the loop leaves and the
 // mpv child is reaped, so the menu's launcher always returns and the menu comes back.
@@ -74,10 +79,15 @@ namespace
 	const char* INNERTUBE_SEARCH = "https://www.youtube.com/youtubei/v1/search";
 
 	enum class Mode { KEYS, RESULTS, PLAYING };
+	enum class View { SEARCH, RECENT, CHANNELS };
+
+	// a SponsorBlock segment of the video playing: skipped (seeked past) once per playback
+	struct Skip { double s, e; std::string cat; bool done; };
 
 	struct Item
 	{
 		std::string id, title, uploader, duration;
+		double resume = 0;		// where playback stopped, in seconds (0 = start; recent only)
 	};
 
 	// the on-screen keyboard: rows of keys, the last row the actions. A key is one UTF-8 string ("Shift" swaps the
@@ -95,6 +105,10 @@ namespace
 		{ "Z", "X", "C", "V", "B", "N", "M", ";", ":", "\"", "" },
 	};
 	const int ROWS = 4, COLS = 10;
+	// the action row's button a sits under key column (a + 0.5) * COLS / 4, and a key column c is under the button
+	// whose span holds its centre; the two agree, so up and down come back to the same column
+	int actToKey(int a) { return std::min(COLS - 1, (2 * a + 1) * COLS / 8); }
+	int keyToAct(int c) { return std::min(3, (2 * c + 1) * 4 / (2 * COLS)); }
 
 	std::string shellQuote(const std::string& s)
 	{
@@ -285,6 +299,38 @@ struct App
 	pid_t mpv = -1;
 	int ipc = -1;
 	bool paused = false;				// the play/pause the indicators show (toggled with the command we send)
+	std::vector<Item> recent;			// the last videos played, newest first (recentAdd)
+	std::vector<Item> searchResults;	// the last search's hits, kept while another tab is up
+	std::vector<std::string> channels;	// the unique uploaders of those two lists (Channels tab)
+	View view = View::SEARCH;			// the active tab: Search, Recent, Channels
+	bool channelOpen = false;			// the Channels tab is showing one channel's videos
+	std::string channelName;			// that channel's name
+	int quality = 720;					// the playback quality cap in pixels (cycleQuality)
+	std::string playingId;				// the video mpv is on, so its resume position follows the right row
+	double pendingSeek = 0;				// where the video should resume, applied once the IPC socket is up
+	Uint32 lastResumeSave = 0;			// when the position was last written to the recent file
+	std::vector<Skip> segs;				// the playing video's SponsorBlock segments (sbFetch)
+	int lastSkip = -1;					// the segment skipped last, for X (sbUndo)
+	std::string ipcBuf;					// mpv's replies, not yet a whole line
+	double pos = 0;						// mpv's time-pos, from the last reply to POS_REQ
+	double dur = 0;						// mpv's duration, from the last reply to DUR_REQ
+	bool havePos = false;
+	Uint32 lastAsk = 0;
+	long lastDurAsk = 0;
+	static constexpr long POS_REQ = 7;	// request_id of the time-pos question
+	static constexpr long DUR_REQ = 8;	// request_id of the duration question
+	static std::string fmtTime(double t)
+	{
+		int s = static_cast<int>(t < 0 ? 0 : t);
+		char b[32];
+		snprintf(b, sizeof b, "%d:%02d", s / 60, s % 60);
+		return b;
+	}
+	std::string timeTag() const
+	{
+		if (!havePos || dur <= 0) return "";
+		return fmtTime(pos) + " / " + fmtTime(dur);
+	}
 
 	std::mutex searchLock;
 	std::thread searchThread;
@@ -408,6 +454,8 @@ struct App
 		searchDone = false;
 		searching = true;
 		status = "Searching\u2026";
+		view = View::SEARCH;
+		channelOpen = false;
 		results.clear();
 		sel = scroll = 0;
 		std::string q = query;
@@ -437,19 +485,219 @@ struct App
 		if (searchThread.joinable()) searchThread.join();
 		std::lock_guard<std::mutex> l(searchLock);
 		searching = false;
-		results = found;
-		sel = scroll = 0;
-		if (results.empty()) status = searchErr.empty() ? "No results" : searchErr;
-		else status = std::to_string(results.size()) + " results";
-		if (!results.empty())
+		searchResults = found;
+		buildChannels();		// the tab strip's Channels count follows the new hits
+		if (view == View::SEARCH)
 		{
-			mode = Mode::RESULTS;
-			for (auto& kv : thumbTex) if (kv.second) SDL_DestroyTexture(kv.second);
-			thumbTex.clear();
-			prefetchThumbs();
+			results = found;
+			sel = scroll = 0;
+			if (results.empty()) status = searchErr.empty() ? "No results" : searchErr;
+			else status = std::to_string(results.size()) + " results   SEL " + std::to_string(quality) + "p";
+			if (!results.empty())
+			{
+				mode = Mode::RESULTS;
+				for (auto& kv : thumbTex) if (kv.second) SDL_DestroyTexture(kv.second);
+				thumbTex.clear();
+				prefetchThumbs();
+			}
 		}
 	}
 
+	// ---- recent & quality ----------------------------------------------------------------------------------------
+	// a field of the recent file is one line: a tab or a newline in a title would split the record
+	static std::string cleanField(const std::string& s)
+	{
+		std::string r = s;
+		for (char& c : r) if (c == '\t' || c == '\n' || c == '\r') c = ' ';
+		return r;
+	}
+	// one recent line -> an Item (5th field optional: the resume position older files do not carry)
+	static bool parseRecentLine(const std::string& s, Item& it)
+	{
+		std::vector<std::string> f;
+		size_t p = 0;
+		while (p <= s.size())
+		{
+			size_t t = s.find('\t', p);
+			if (t == std::string::npos) { f.push_back(s.substr(p)); break; }
+			f.push_back(s.substr(p, t - p));
+			p = t + 1;
+		}
+		if (f.size() < 4 || f[0].empty()) return false;
+		it = Item { f[0], f[1], f[2], f[3] };
+		if (f.size() >= 5) it.resume = strtod(f[4].c_str(), nullptr);
+		return true;
+	}
+	void recentLoad()
+	{
+		FILE* f = fopen(RECENT_FILE, "r");
+		if (!f) return;
+		char line[2048];
+		while (fgets(line, sizeof line, f))
+		{
+			std::string s = line;
+			while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+			Item it;
+			if (!s.empty() && parseRecentLine(s, it)) recent.push_back(it);
+		}
+		fclose(f);
+	}
+	void recentSave()
+	{
+		FILE* f = fopen(RECENT_FILE, "w");
+		if (!f) return;
+		for (const Item& it : recent)
+			fprintf(f, "%s\t%s\t%s\t%s\t%.1f\n", cleanField(it.id).c_str(), cleanField(it.title).c_str(),
+				cleanField(it.uploader).c_str(), cleanField(it.duration).c_str(), it.resume);
+		fclose(f);
+	}
+	// the newest first, one entry per video, a bounded list
+	void recentAdd(const Item& it)
+	{
+		Item add = it;
+		// re-opening a video from Search must not wipe the position held by its Recent row
+		if (add.resume <= 0)
+			for (const Item& o : recent) if (o.id == it.id) { add.resume = o.resume; break; }
+		std::vector<Item> keep;
+		for (const Item& o : recent) if (o.id != it.id && keep.size() < 29) keep.push_back(o);
+		recent.clear();
+		recent.push_back(add);
+		for (const Item& o : keep) recent.push_back(o);
+		recentSave();
+		buildChannels();
+	}
+	// the playing video's position into its recent row; the end of a video (or the last 15 s) clears it so the next
+	// play starts over instead of resuming at the credits
+	void saveProgress(bool finished = false)
+	{
+		if (playingId.empty()) return;
+		for (Item& it : recent)
+			if (it.id == playingId)
+			{
+				double p = (finished || (dur > 0 && pos > dur - 15)) ? 0 : pos;
+				if (p < 5) p = 0;
+				if (it.resume == p) return;
+				it.resume = p;
+				recentSave();
+				return;
+			}
+	}
+	void resetThumbs()
+	{
+		for (auto& kv : thumbTex) if (kv.second) SDL_DestroyTexture(kv.second);
+		thumbTex.clear();
+		prefetchThumbs();
+	}
+	// the three tabs of the results shell: the search's hits, everything played (persisted on the card), and the
+	// channels those two lists mention
+	int listSize() const { return view == View::CHANNELS && !channelOpen ? static_cast<int>(channels.size())
+		: static_cast<int>(results.size()); }
+	void buildChannels()
+	{
+		channels.clear();
+		auto add = [this](const Item& it)
+		{
+			if (it.uploader.empty()) return;
+			for (const std::string& c : channels) if (c == it.uploader) return;
+			channels.push_back(it.uploader);
+		};
+		for (const Item& it : searchResults) add(it);
+		for (const Item& it : recent) add(it);
+	}
+	void showChannels()
+	{
+		view = View::CHANNELS;
+		channelOpen = false;
+		buildChannels();
+		results.clear();
+		sel = scroll = 0;
+		mode = Mode::RESULTS;	// an empty list still shows as the tab, with its own hint
+		status = channels.empty() ? "No channels yet. Search or play something."
+			: std::to_string(channels.size()) + " channels   A opens one";
+		resetThumbs();
+	}
+	void openChannel(const std::string& name)
+	{
+		view = View::CHANNELS;
+		channelOpen = true;
+		channelName = name;
+		results.clear();
+		auto add = [this, &name](const Item& it)
+		{
+			if (it.uploader != name) return;
+			for (const Item& o : results) if (o.id == it.id) return;
+			results.push_back(it);
+		};
+		for (const Item& it : searchResults) add(it);
+		for (const Item& it : recent) add(it);
+		sel = scroll = 0;
+		mode = Mode::RESULTS;
+		status = "Channel: " + name + "   " + std::to_string(results.size()) + " videos   B back";
+		resetThumbs();
+	}
+	void showRecent()
+	{
+		view = View::RECENT;
+		channelOpen = false;
+		results = recent;
+		sel = scroll = 0;
+		mode = Mode::RESULTS;	// an empty list still shows as the tab, with its own hint
+		status = "Recent   SEL " + std::to_string(quality) + "p";
+		resetThumbs();
+	}
+	void showSearchTab()
+	{
+		view = View::SEARCH;
+		channelOpen = false;
+		results = searchResults;
+		sel = scroll = 0;
+		mode = results.empty() ? Mode::KEYS : Mode::RESULTS;
+		status = results.empty() ? "" : std::to_string(results.size()) + " results   SEL " + std::to_string(quality) + "p";
+		resetThumbs();
+	}
+	void cycleTab(int dir)
+	{
+		int i = view == View::SEARCH ? 0 : view == View::RECENT ? 1 : 2;
+		i = (i + dir + 3) % 3;
+		if (i == 0) showSearchTab();
+		else if (i == 1) showRecent();
+		else showChannels();
+	}
+	void qualityLoad()
+	{
+		FILE* f = fopen(CONF_FILE, "r");
+		if (!f) return;
+		char line[256];
+		while (fgets(line, sizeof line, f))
+		{
+			int q = 0;
+			if (sscanf(line, " quality = %d", &q) == 1 || sscanf(line, "quality = %d", &q) == 1)
+				if (q == 720 || q == 480 || q == 360) quality = q;
+		}
+		fclose(f);
+	}
+	void qualitySave()
+	{
+		FILE* f = fopen(CONF_FILE, "w");
+		if (!f) return;
+		fprintf(f, "# banana-tube: the playback quality cap in pixels (Select on the results cycles it)\nquality = %d\n", quality);
+		fclose(f);
+	}
+	// 720 -> 480 -> 360 -> 720: the a613 holds 720 comfortably; the lower caps are for a weak link
+	void cycleQuality()
+	{
+		quality = quality == 720 ? 480 : quality == 480 ? 360 : 720;
+		qualitySave();
+		if (mode == Mode::RESULTS)
+		{
+			std::string who = view == View::RECENT ? "Recent"
+				: view == View::CHANNELS && !channelOpen ? std::to_string(channels.size()) + " channels"
+				: view == View::CHANNELS ? "Channel: " + channelName
+				: std::to_string(results.size()) + " results";
+			status = who + "   SEL " + std::to_string(quality) + "p (next video)";
+		}
+		else status = "Quality: " + std::to_string(quality) + "p (next video)";
+	}
 	// ---- mpv -----------------------------------------------------------------------------------------------------
 	void ipcSend(const std::string& command)
 	{
@@ -464,31 +712,162 @@ struct App
 		if (ipc < 0) return;
 		ipcSend("{\"command\":[\"show-text\",\"" + jsonEsc(t) + "\"," + std::to_string(ms) + "]}");
 	}
-	void connectIpc()
+	// the resume seek waits for the first time-pos reply: a seek sent before mpv has opened the stream is dropped
+	void applyPendingSeek()
 	{
-		if (ipc >= 0) return;
+		if (pendingSeek <= 0) return;
+		ipcSend("{\"command\":[\"seek\"," + std::to_string(pendingSeek) + ",\"absolute\"]}");
+		showInd("Resumed at " + fmtTime(pendingSeek), 1500);
+		pendingSeek = 0;
+		havePos = false;
+	}
+	// one non-blocking attempt (the main loop retries every pass, so playback starts without a stall)
+	bool ipcTryConnect()
+	{
+		if (ipc >= 0) return true;
 		int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-		if (fd < 0) return;
+		if (fd < 0) return false;
 		sockaddr_un sa {};
 		sa.sun_family = AF_UNIX;
 		snprintf(sa.sun_path, sizeof sa.sun_path, "%s", IPC_SOCK);
+		if (connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof sa) != 0) { close(fd); return false; }
+		fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);	// pollIpc reads whatever mpv has said
+		ipc = fd;
+		return true;
+	}
+	void connectIpc()
+	{
+		if (ipc >= 0) return;
 		for (int i = 0; i < 50; i++)
 		{
-			if (connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof sa) == 0) { ipc = fd; return; }
+			if (ipcTryConnect()) return;
 			usleep(100000);
 		}
-		close(fd);
+	}
+	// the stream's direct URLs from yt-dlp: the picture and, for a DASH pair, the sound. The format chain caps it at 720p
+	// and skips AV1, which the a613 cannot decode
+	bool resolveStream(const std::string& id, std::vector<std::string>& urls)
+	{
+		// the cap is the player's quality setting (cycleQuality); AV1 is left out, the a613 has no decoder for it
+		const std::string h = std::to_string(quality);
+		const std::string fmt =
+			"bestvideo[height<=" + h + "][vcodec^=avc1]+bestaudio"
+			"/bestvideo[height<=" + h + "][vcodec^=vp9]+bestaudio"
+			"/bestvideo[height<=" + h + "][vcodec!*=av01]+bestaudio"
+			"/best[height<=" + h + "][vcodec!*=av01]/best[height<=" + h + "]/best";
+		std::string cmd = "timeout 60 yt-dlp -g --no-warnings --no-playlist -f " + shellQuote(fmt) + " " +
+			shellQuote("https://www.youtube.com/watch?v=" + id) + " 2>/dev/null";
+		FILE* p = popen(cmd.c_str(), "r");
+		if (!p) return false;
+		char line[4096];
+		while (fgets(line, sizeof line, p))
+		{
+			std::string s = line;
+			while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+			if (!s.empty()) urls.push_back(s);
+		}
+		pclose(p);
+		return !urls.empty() && urls.size() <= 2;
+	}
+	// mpv's replies (the time-pos asked for by sbTick), read on every pass so the socket never backs up
+	void pollIpc()
+	{
+		if (ipc < 0) return;
+		char buf[1024];
+		ssize_t n;
+		while ((n = read(ipc, buf, sizeof buf)) > 0) ipcBuf.append(buf, (size_t)n);
+		size_t nl;
+		while ((nl = ipcBuf.find('\n')) != std::string::npos)
+		{
+			std::string line = ipcBuf.substr(0, nl);
+			ipcBuf.erase(0, nl + 1);
+			banana::JPtr r = banana::parseJson(line);
+			if (!r || !r->isObj()) continue;
+			long id = static_cast<long>(r->num("request_id", -1));
+			if (id != POS_REQ && id != DUR_REQ) continue;
+			const banana::JVal* d = r->get("data");
+			bool ok = d && d->isNum();
+			if (id == POS_REQ) { havePos = ok; if (ok) pos = d->n; if (ok && pendingSeek > 0) applyPendingSeek(); }
+			else if (ok) dur = d->n;
+		}
+	}
+	// SponsorBlock: ask mpv where playback is, four times a second, and seek past a segment it has reached
+	void sbTick(Uint32 now)
+	{
+		if (ipc < 0) return;
+		if (now - lastAsk >= 250)
+		{
+			lastAsk = now;
+			ipcSend("{\"command\":[\"get_property\",\"time-pos\"],\"request_id\":7}");
+		}
+		if (now - lastDurAsk >= 2000)	// the length changes little: ask it rarely, for Select's readout
+		{
+			lastDurAsk = now;
+			ipcSend("{\"command\":[\"get_property\",\"duration\"],\"request_id\":8}");
+		}
+		if (now - lastResumeSave >= 10000 && havePos)	// the resume point, every 10 s (flash-friendly)
+		{
+			lastResumeSave = now;
+			saveProgress();
+		}
+		if (segs.empty() || !havePos) return;
+		for (size_t i = 0; i < segs.size(); i++)
+		{
+			Skip& g = segs[i];
+			if (g.done || pos < g.s || pos >= g.e) continue;
+			g.done = true;
+			lastSkip = static_cast<int>(i);
+			ipcSend("{\"command\":[\"seek\"," + std::to_string(g.e) + ",\"absolute\"]}");
+			showInd("Skipped " + g.cat + "  (X undo)", 1500);
+			havePos = false;
+			return;
+		}
+	}
+	// X in the player: back to the start of the last segment skipped, which then plays through
+	void sbUndo()
+	{
+		if (lastSkip < 0 || lastSkip >= static_cast<int>(segs.size())) return;
+		const Skip& g = segs[static_cast<size_t>(lastSkip)];
+		ipcSend("{\"command\":[\"seek\"," + std::to_string(g.s) + ",\"absolute\"]}");
+		showInd("Unskipped " + g.cat, 1200);
+		lastSkip = -1;
+	}
+	// the API's answer ([{"segment":[start,end],"category":"sponsor",...}, ...]); "Not Found" (no segments for the
+	// video) and anything else that isn't that array give none
+	static std::vector<Skip> sbParse(const std::string& body)
+	{
+		std::vector<Skip> out;
+		banana::JPtr doc = banana::parseJson(body);
+		if (!doc || !doc->isArr()) return out;
+		for (const banana::JPtr& e : doc->arr)
+		{
+			const banana::JVal* seg = e ? e->get("segment") : nullptr;
+			if (!seg || !seg->isArr() || seg->arr.size() < 2 || !seg->arr[0] || !seg->arr[1]) continue;
+			out.push_back(Skip { seg->arr[0]->n, seg->arr[1]->n, e->str("category", "segment"), false });
+		}
+		return out;
+	}
+	// the video's skip segments, looked up before it plays (a failure just plays it with no skips). Only the video id
+	// leaves the handheld; the lookup is SponsorBlock's public API
+	void sbFetch(const std::string& id)
+	{
+		segs.clear();
+		lastSkip = -1;
+		std::string url = "https://sponsor.ajay.app/api/skipSegments?videoID=" + id +
+			"&categories=%5B%22sponsor%22,%22selfpromo%22,%22interaction%22,%22intro%22,%22outro%22%5D";
+		segs = sbParse(curlBody(url, nullptr, nullptr, 4));
 	}
 	void play(const Item& it)
 	{
 		if (mpv > 0) { status = "Already playing"; return; }
 		unlink(IPC_SOCK);
-		std::string url = "https://www.youtube.com/watch?v=" + it.id;
-		const char* ytdlFormat =
-			"bestvideo[height<=720][vcodec^=avc1]+bestaudio"
-			"/bestvideo[height<=720][vcodec^=vp9]+bestaudio"
-			"/bestvideo[height<=720][vcodec!*=av01]+bestaudio"
-			"/best[height<=720][vcodec!*=av01]/best[height<=720]/best";
+		pendingSeek = 0;
+		playingId.clear();
+		// yt-dlp resolves the stream here, so mpv needs no Lua hook of its own (the image's mpv has none)
+		std::vector<std::string> urls;
+		if (!resolveStream(it.id, urls)) { status = "Could not load " + it.title; return; }
+		sbFetch(it.id);
+		std::string url = urls[0];
 		const char* argv[] = {
 			"mpv",
 			"--no-config", "--no-terminal", "--input-default-bindings=no",
@@ -502,22 +881,26 @@ struct App
 			// nothing over the video (mpv's window covers it), so playback is driven by *large* touch zones on the
 			// screen, mapped by banana-tube's own (verified) evdev touch: see tapAt's PLAYING case. osd-playing-msg
 			// shows the (gamepad) controls briefly at the start.
-			"--no-osc", "--osd-level=1", "--osd-font-size=90", "--osd-duration=700",
+			"--osd-level=1", "--osd-font-size=90", "--osd-duration=700",
 			// libass here is built without fontconfig ("can't find selected font provider"), so the OSD needs the
 			// libass provider and an explicit fonts dir + family: the image's Inter is the only font, and without
 			// this the indicators render as nothing at all.
 			"--osd-font-provider=none", "--osd-fonts-dir=/usr/share/banana/banana/fonts", "--osd-font=Inter",
-			"--osd-playing-msg=A play/pause  (touch: left/right seek -/+ 10s, centre pause, top-left stop)",
 			"--fullscreen", "--keep-open=no", "--force-window=yes",
 			"--msg-level=all=warn",
 		};
-		std::string fmt = std::string("--ytdl-format=") + ytdlFormat;
+		// the start-of-playback card: the quality that was picked and the zones, in one line (mpv's only OSD here)
+		std::string osdMsg = "--osd-playing-msg=A play/pause   " + std::to_string(quality) +
+			"p   (touch: sides seek -/+10s, centre pause, top-left stop)";
+		// a DASH pair: the video is the file, the audio its own stream
+		std::string audio = urls.size() > 1 ? "--audio-file=" + urls[1] : std::string();
 		std::vector<char*> av;
 		for (const char* a : argv) av.push_back(const_cast<char*>(a));
-		av.push_back(&fmt[0]);
+		av.push_back(&osdMsg[0]);
+		if (!audio.empty()) av.push_back(&audio[0]);
 		av.push_back(&url[0]);
 		av.push_back(nullptr);
-		logLine("playing " + url);
+		logLine("playing " + it.id);
 		pid_t pid = fork();
 		if (pid == 0)
 		{
@@ -529,12 +912,25 @@ struct App
 		mpv = pid;
 		mode = Mode::PLAYING;
 		paused = false;
-		status = "Playing: " + it.title;
+		trigL = Trigger();
+		trigR = Trigger();
+		havePos = false;
+		ipcBuf.clear();
+		playingId = it.id;
+		// a video re-opened from Search resumes where its Recent row stopped, not from the top
+		double at = it.resume;
+		if (at <= 0)
+			for (const Item& o : recent) if (o.id == it.id) { at = o.resume; break; }
+		pendingSeek = at > 5 ? at : 0;
+		lastResumeSave = SDL_GetTicks();
+		status = "Playing: " + it.title + (pendingSeek > 0 ? "   resume " + fmtTime(pendingSeek) : "");
+		recentAdd(it);	// the recent list (SELECT) keeps what actually played
 	}
 	// graceful stop: ask mpv to quit (so it releases ALSA cleanly), then TERM, then KILL. A hard kill mid-stream
 	// leaves the AudioReach frontend to time out, which is the EBUSY the next open would hit.
 	void stopPlayback()
 	{
+		saveProgress();	// where the viewer stopped, for the Recent tab
 		if (mpv > 0)
 		{
 			ipcSend("{\"command\":[\"quit\"]}");
@@ -545,6 +941,7 @@ struct App
 		}
 		if (ipc >= 0) { close(ipc); ipc = -1; }
 		unlink(IPC_SOCK);
+		playingId.clear();
 	}
 	bool mpvRunning()
 	{
@@ -564,7 +961,11 @@ struct App
 	void back()
 	{
 		if (mode == Mode::PLAYING) { stopPlayback(); mode = Mode::RESULTS; }
-		else if (mode == Mode::RESULTS) { mode = Mode::KEYS; }
+		else if (mode == Mode::RESULTS)
+		{
+			if (view == View::CHANNELS && channelOpen) showChannels();	// out of a channel, back to the channel list
+			else { view = View::SEARCH; channelOpen = false; mode = Mode::KEYS; }
+		}
 		else if (!query.empty()) { query.clear(); }
 		else quit = true;				// leave the loop; the loop quits SDL after it (never SDL_Quit() inside it)
 	}
@@ -589,34 +990,46 @@ struct App
 		}
 		else if (mode == Mode::RESULTS)
 		{
-			if (sel >= 0 && sel < static_cast<int>(results.size())) play(results[sel]);
+			if (view == View::CHANNELS && !channelOpen)
+			{
+				if (sel >= 0 && sel < static_cast<int>(channels.size())) openChannel(channels[sel]);
+			}
+			else if (sel >= 0 && sel < static_cast<int>(results.size())) play(results[sel]);
 		}
 		else if (mode == Mode::PLAYING)
 		{
 			connectIpc();
 			ipcSend("{\"command\":[\"cycle\",\"pause\"]}");
 			paused = !paused;
-			showInd(paused ? "||  Paused" : ">  Playing", 900);
+			std::string tag = timeTag();
+			showInd((paused ? "||  Paused" : ">  Playing") + (tag.empty() ? "" : "   " + tag), 900);
 		}
 	}
 	void move(int dx, int dy)
 	{
 		if (mode == Mode::KEYS)
 		{
-			if (keyRow >= ROWS) keyCol = (keyCol + dx + 4) % 4;
-			else keyCol = (keyCol + dx + COLS) % COLS;
+			if (dx != 0)
+			{
+				if (keyRow >= ROWS) keyCol = (keyCol + dx + 4) % 4;
+				else keyCol = (keyCol + dx + COLS) % COLS;
+			}
 			if (dy != 0)
 			{
+				// up/down keep the column. The action row's four buttons sit under the key columns they are drawn
+				// beneath, so crossing into or out of it converts the column the same way.
 				int nr = keyRow + dy;
 				if (nr < 0) nr = ROWS;
 				if (nr > ROWS) nr = 0;
+				bool wasAct = keyRow >= ROWS, isAct = nr >= ROWS;
+				if (wasAct && !isAct) keyCol = actToKey(keyCol);
+				else if (!wasAct && isAct) keyCol = keyToAct(keyCol);
 				keyRow = nr;
-				keyCol = 0;
 			}
 		}
 		else if (mode == Mode::RESULTS)
 		{
-			int n = static_cast<int>(results.size());
+			int n = listSize();
 			if (n == 0) return;
 			sel += dy != 0 ? dy : dx;
 			if (sel < 0) sel = 0;
@@ -629,10 +1042,45 @@ struct App
 			if (dx != 0) { ipcSend(dx < 0 ? "{\"command\":[\"seek\",\"-60\"]}" : "{\"command\":[\"seek\",\"60\"]}"); showInd(dx < 0 ? "<<  -60s" : ">>  +60s"); }
 		}
 	}
+	// The L2/R2 triggers (read as axes; SDL sends no button for them): a tap seeks 10 s, holding R2 plays at 2x, holding
+	// L2 scrubs back 10 s every quarter second. A press shorter than the hold is the tap; the hold starts after 300 ms.
+	struct Trigger { bool down = false, held = false, fast = false; Uint32 at = 0, lastStep = 0; };
+	Trigger trigL, trigR;
+	void trigger(Trigger& t, bool isDown, int dir, Uint32 now)
+	{
+		if (isDown && !t.down)
+		{
+			connectIpc();
+			t = Trigger();
+			t.down = true;
+			t.at = now;
+			return;
+		}
+		if (!isDown && t.down)
+		{
+			t.down = false;
+			if (t.fast) { ipcSend("{\"command\":[\"set_property\",\"speed\",1]}"); showInd(">  1x", 700); }
+			else if (!t.held) { ipcSend(dir > 0 ? "{\"command\":[\"seek\",\"10\"]}" : "{\"command\":[\"seek\",\"-10\"]}"); showInd(dir > 0 ? ">>  +10s" : "<<  -10s"); }
+			t.held = t.fast = false;
+			return;
+		}
+		if (!t.down || mode != Mode::PLAYING || now - t.at < 300) return;
+		if (!t.held)
+		{
+			t.held = true;
+			t.lastStep = 0;
+			if (dir > 0) { t.fast = true; ipcSend("{\"command\":[\"set_property\",\"speed\",2]}"); showInd(">>  2x", 900); }
+		}
+		if (!t.fast && now - t.lastStep >= 250)
+		{
+			t.lastStep = now;
+			ipcSend("{\"command\":[\"seek\",\"-10\"]}");
+		}
+	}
 	void page(int dir)
 	{
 		if (mode != Mode::RESULTS) return;
-		int n = static_cast<int>(results.size()), step = resultsPerPage();
+		int n = listSize(), step = resultsPerPage();
 		if (n == 0) return;
 		sel += dir * step;
 		if (sel < 0) sel = 0;
@@ -640,7 +1088,15 @@ struct App
 	}
 
 	// ---- shared layout geometry (draw and touch use the SAME rects, so a tap can never land beside what is drawn) --
-	int kTop(int H) const { return H * 17 / 100; }
+	// the top bar: Back, the search field, and the tab strip under them
+	SDL_Rect backRect(int W, int H) const { return SDL_Rect { W * 3 / 100, H * 4 / 100, W * 11 / 100, H * 10 / 100 }; }
+	SDL_Rect queryRect(int W, int H) const { return SDL_Rect { W * 15 / 100, H * 4 / 100, W * 81 / 100, H * 10 / 100 }; }
+	SDL_Rect tabRect(int W, int H, int i) const
+	{
+		int tw = W * 24 / 100, gap = W * 2 / 100;
+		return SDL_Rect { W * 4 / 100 + i * (tw + gap), H * 15 / 100, tw, H * 7 / 100 };
+	}
+	int kTop(int H) const { return H * 26 / 100; }
 	SDL_Rect keyRect(int W, int H, int r, int c) const
 	{
 		int kw = W * 9 / 100, kh = H * 11 / 100, gap = W * 1 / 100;
@@ -653,8 +1109,8 @@ struct App
 		int rowW = 4 * aw + 3 * gap, x0 = (W - rowW) / 2, y = kTop(H) + ROWS * (kh + gap);
 		return SDL_Rect { x0 + c * (aw + gap), y, aw, ah };
 	}
-	int resultsTop(int H) const { return H * 16 / 100; }
-	int resultsRowH(int H) const { return std::max(56, H * 13 / 100); }
+	int resultsTop(int H) const { return H * 26 / 100; }
+	int resultsRowH(int H) const { return std::max(56, H * 12 / 100); }
 	static bool inRect(const SDL_Rect& r, int x, int y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
 	// a tap (touch or pointer) at output-space (x,y): the top bar's Back / query, then the current screen's targets
@@ -663,10 +1119,24 @@ struct App
 		if (getenv("BANANA_TUBE_TOUCH_DEBUG")) { char b[64]; snprintf(b, sizeof b, "tap %d %d (mode %d)", x, y, (int)mode); logLine(b); }
 		int W = 0, H = 0;
 		SDL_GetRendererOutputSize(ren, &W, &H);
-		SDL_Rect backBtn { W * 3 / 100, H * 4 / 100, W * 11 / 100, H * 9 / 100 };
-		SDL_Rect queryBox { W * 15 / 100, H * 4 / 100, W * 81 / 100, H * 9 / 100 };
+		SDL_Rect backBtn = backRect(W, H);
+		SDL_Rect queryBox = queryRect(W, H);
 		if (inRect(backBtn, x, y)) { logLine("tap -> Back"); back(); return; }
-		if (inRect(queryBox, x, y)) { logLine("tap -> query box"); if (mode != Mode::PLAYING) mode = Mode::KEYS; return; }
+		if (inRect(queryBox, x, y))
+		{
+			logLine("tap -> query box");
+			if (mode != Mode::PLAYING) { view = View::SEARCH; channelOpen = false; mode = Mode::KEYS; }
+			return;
+		}
+		if (mode != Mode::PLAYING)
+			for (int i = 0; i < 3; i++)
+				if (inRect(tabRect(W, H, i), x, y))
+				{
+					static const char* names[] = { "search", "recent", "channels" };
+					logLine(std::string("tap -> tab ") + names[i]);
+					if (i == 0) showSearchTab(); else if (i == 1) showRecent(); else showChannels();
+					return;
+				}
 		if (mode == Mode::KEYS)
 		{
 			const char* (*keys)[11] = upper ? UPPER : LOWER;
@@ -689,6 +1159,15 @@ struct App
 			if (y >= top)
 			{
 				int idx = scroll + (y - top) / rh;
+				if (view == View::CHANNELS && !channelOpen)
+				{
+					if (idx >= 0 && idx < static_cast<int>(channels.size()))
+					{
+						if (idx == sel) openChannel(channels[idx]);
+						else sel = idx;
+					}
+					return;
+				}
 				if (idx >= 0 && idx < (int)results.size())
 				{
 					char b[64];
@@ -712,7 +1191,9 @@ struct App
 			if (x < W * 18 / 100 && y < H * 18 / 100) { logLine("player -> stop"); stopPlayback(); mode = Mode::RESULTS; status = "Stopped"; }
 			else if (x < W * 28 / 100) { logLine("player -> seek -10"); ipcSend("{\"command\":[\"seek\",\"-10\"]}"); showInd("<<  -10s"); }
 			else if (x > W * 72 / 100) { logLine("player -> seek +10"); ipcSend("{\"command\":[\"seek\",\"10\"]}"); showInd(">>  +10s"); }
-			else { logLine("player -> play/pause"); ipcSend("{\"command\":[\"cycle\",\"pause\"]}"); paused = !paused; showInd(paused ? "||  Paused" : ">  Playing", 900); }
+			else { logLine("player -> play/pause"); ipcSend("{\"command\":[\"cycle\",\"pause\"]}"); paused = !paused;
+				std::string tag = timeTag();
+				showInd((paused ? "||  Paused" : ">  Playing") + (tag.empty() ? "" : "   " + tag), 900); }
 		}
 	}
 
@@ -932,12 +1413,40 @@ struct App
 					{
 					case SDL_CONTROLLER_BUTTON_A: activate(); break;
 					case SDL_CONTROLLER_BUTTON_B: back(); break;
-					case SDL_CONTROLLER_BUTTON_X: if (mode == Mode::KEYS) { if (!query.empty()) query.pop_back(); } else page(-1); break;
-					case SDL_CONTROLLER_BUTTON_Y: if (mode == Mode::KEYS) upper = !upper; else page(1); break;
-					case SDL_CONTROLLER_BUTTON_START: if (mode != Mode::PLAYING) startSearch(); break;
-					case SDL_CONTROLLER_BUTTON_BACK: if (mode == Mode::PLAYING) activate(); break;	// Select: pause
-					case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: page(-1); break;
-					case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: page(1); break;
+					case SDL_CONTROLLER_BUTTON_X:	// the player's SponsorBlock undo; a backspace on the keys; a channel on the results
+						if (mode == Mode::PLAYING) { connectIpc(); sbUndo(); }
+						else if (mode == Mode::KEYS) { if (!query.empty()) query.pop_back(); }
+						else if (!results.empty() && sel < static_cast<int>(results.size()))
+						{
+							if (!results[sel].uploader.empty()) openChannel(results[sel].uploader);
+						}
+						else page(-1);
+						break;
+					case SDL_CONTROLLER_BUTTON_Y: if (mode == Mode::RESULTS) { view = View::SEARCH; channelOpen = false; results = searchResults; mode = Mode::KEYS; status = ""; } else if (mode == Mode::KEYS) startSearch(); break;
+					case SDL_CONTROLLER_BUTTON_START:
+						if (mode == Mode::PLAYING) { connectIpc(); ipcSend("{\"command\":[\"cycle\",\"fullscreen\"]}"); }
+						else startSearch();
+						break;
+					case SDL_CONTROLLER_BUTTON_BACK:	// Select: where playback is, or the recent list, or the quality
+						if (mode == Mode::PLAYING)
+						{
+							connectIpc();
+							if (havePos && dur > 0) showInd(fmtTime(pos) + " / " + fmtTime(dur) + "   " + std::to_string(quality) + "p", 2200);
+							else showInd("Loading\u2026", 900);
+						}
+						else if (mode == Mode::RESULTS) cycleQuality();
+						else showRecent();
+						break;
+					case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+						if (mode == Mode::PLAYING) { connectIpc(); ipcSend("{\"command\":[\"add\",\"chapter\",-1]}"); }
+						else if (mode == Mode::KEYS) cycleTab(-1);
+						else page(-1);
+						break;
+					case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+						if (mode == Mode::PLAYING) { connectIpc(); ipcSend("{\"command\":[\"add\",\"chapter\",1]}"); }
+						else if (mode == Mode::KEYS) cycleTab(1);
+						else page(1);
+						break;
 					case SDL_CONTROLLER_BUTTON_DPAD_UP: move(0, -1); break;
 					case SDL_CONTROLLER_BUTTON_DPAD_DOWN: move(0, 1); break;
 					case SDL_CONTROLLER_BUTTON_DPAD_LEFT: move(-1, 0); break;
@@ -971,9 +1480,25 @@ struct App
 				else if ((dx || dy) && now - lastRepeat > 250) { move(dx, dy); lastRepeat = now + 60; }
 			}
 
+			if (pad && mode == Mode::PLAYING)
+			{
+				trigger(trigL, SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 16000, -1, now);
+				trigger(trigR, SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000, 1, now);
+			}
+
+			if (mode == Mode::PLAYING && ipc < 0) ipcTryConnect();
+			pollIpc();
+			if (mode == Mode::PLAYING) sbTick(now);
+
 			pollSearch();
 			pollTouch();
-			if (mode == Mode::PLAYING && !mpvRunning()) { mode = Mode::RESULTS; status = "Playback ended (B to go back)"; }
+			if (mode == Mode::PLAYING && !mpvRunning())
+			{
+				saveProgress(true);	// a finished video starts from the top next time
+				playingId.clear();
+				mode = Mode::RESULTS;
+				status = "Playback ended (B to go back)";
+			}
 
 			draw();
 			SDL_RenderPresent(ren);
@@ -996,6 +1521,48 @@ struct App
 		Item it;
 		bool ok = splitLine("abc123\tA Title\tSome One\t3:21", it) && it.id == "abc123" && it.duration == "3:21";
 		printf("bananatube selftest split: %s\n", ok ? "ok" : "fail");
+		{
+			// the recent file's optional 5th field: the resume position (older 4-field rows start at 0)
+			Item r, q;
+			bool r1 = parseRecentLine("abc\tA Title\tSome One\t3:21\t42.5", r) &&
+				r.resume == 42.5 && r.id == "abc" && r.duration == "3:21";
+			bool r2 = parseRecentLine("abc\tA Title\tSome One\t3:21", q) && q.resume == 0 && q.uploader == "Some One";
+			printf("bananatube selftest recent: %s\n", r1 && r2 ? "ok" : "fail");
+		}
+		std::vector<Skip> seg = sbParse("[{\"segment\":[12.5,20.25],\"category\":\"sponsor\",\"UUID\":\"a\"},"
+			"{\"segment\":[0,3.5],\"category\":\"intro\"}]");
+		bool segOk = seg.size() == 2 && seg[0].s == 12.5 && seg[0].e == 20.25 && seg[0].cat == "sponsor" && seg[1].cat == "intro";
+		printf("bananatube selftest sponsorblock: %s\n", segOk ? "ok" : "fail");
+		printf("bananatube selftest sponsorblock none: %s\n", sbParse("Not Found").empty() ? "ok" : "fail");
+		{
+			Mode saved = mode;
+			int r = keyRow, c = keyCol;
+			mode = Mode::KEYS;
+			keyRow = 1; keyCol = 5;
+			move(0, 1); bool a = keyRow == 2 && keyCol == 5;
+			move(0, 1); move(0, 1); bool b = keyRow == ROWS && keyCol == 2;
+			move(0, -1); bool d = keyRow == 3 && keyCol == 6;
+			mode = saved; keyRow = r; keyCol = c;
+			printf("bananatube selftest keynav: %s\n", a && b && d ? "ok" : "fail");
+		}
+		{
+			// the Channels tab: one channel's videos, de-duplicated across search hits and recent plays, and B
+			// walks out to the channel list before the keyboard
+			Mode sm = mode; View sv = view;
+			std::vector<Item> s0 = searchResults, s1 = results, s2 = recent;
+			bool s3 = channelOpen; std::string s4 = channelName;
+			mode = Mode::RESULTS;
+			searchResults = { Item { "a", "A", "Chan One", "1:00" }, Item { "b", "B", "Chan Two", "2:00" },
+				Item { "c", "C", "Chan One", "3:00" } };
+			recent = { Item { "a", "A", "Chan One", "1:00" }, Item { "d", "D", "Chan One", "4:00" } };
+			openChannel("Chan One");
+			bool ok1 = channelOpen && view == View::CHANNELS && results.size() == 3 &&
+				results[0].id == "a" && results[2].id == "d";
+			back();
+			bool ok2 = !channelOpen && view == View::CHANNELS && mode == Mode::RESULTS;
+			mode = sm; view = sv; searchResults = s0; results = s1; recent = s2; channelOpen = s3; channelName = s4;
+			printf("bananatube selftest channels: %s\n", ok1 && ok2 ? "ok" : "fail");
+		}
 		const char* sample = "{\"contents\":{\"x\":{\"contents\":[{\"videoRenderer\":{\"videoId\":\"V1\","
 			"\"title\":{\"runs\":[{\"text\":\"Hello World\"}]},\"ownerText\":{\"runs\":[{\"text\":\"Chan\"}]},"
 			"\"lengthText\":{\"simpleText\":\"4:07\"}}}]}}}";
@@ -1064,7 +1631,7 @@ struct App
 	{
 		int W = 0, H = 0;
 		SDL_GetRendererOutputSize(ren, &W, &H);
-		int per = (H * 74 / 100) / resultsRowH(H);
+		int per = (H * 88 / 100 - resultsTop(H)) / resultsRowH(H);
 		return per < 1 ? 1 : per;
 	}
 
@@ -1077,26 +1644,71 @@ struct App
 		SDL_RenderClear(ren);
 		SDL_Color fg { 236, 238, 242, 255 }, dim { 150, 156, 166, 255 }, acc { 224, 64, 47, 255 }, selbg { 40, 46, 58, 255 };
 
-		// the top bar: a Back button (B's target) and the query box (a tap reopens the keyboard). The rects are the
+		// the top bar: a Back button (B's target) and the search field (a tap reopens the keyboard). The rects are the
 		// same ones tapAt() hit-tests, so a finger lands on exactly what is drawn.
-		SDL_Rect back { W * 3 / 100, H * 4 / 100, W * 11 / 100, H * 9 / 100 };
-		SDL_Rect queryBox { W * 15 / 100, H * 4 / 100, W * 81 / 100, H * 9 / 100 };
+		SDL_Rect back = backRect(W, H), queryBox = queryRect(W, H);
 		panel(back.x, back.y, back.w, back.h, SDL_Color { 30, 34, 44, 255 }, SDL_Color { 60, 66, 80, 255 });
 		int bw = 0, bh = 0;
 		TTF_SizeUTF8(fMed, "Back", &bw, &bh);
 		drawText("Back", fMed, fg, back.x + (back.w - bw) / 2, back.y + (back.h - bh) / 2);
-		panel(queryBox.x, queryBox.y, queryBox.w, queryBox.h, SDL_Color { 22, 26, 34, 255 }, SDL_Color { 60, 66, 80, 255 });
-		std::string shown = query.empty() ? "Type a search\u2026" : query;
-		drawText(shown, fMed, query.empty() ? dim : fg, queryBox.x + W * 2 / 100, queryBox.y + (queryBox.h - bh) / 2, queryBox.w - W * 4 / 100);
-		if (!status.empty()) drawText(status, fSmall, dim, W * 4 / 100, H * 14 / 100, W * 92 / 100);
+		// the field reads as the live one while the keyboard is up
+		bool typing = mode == Mode::KEYS;
+		panel(queryBox.x, queryBox.y, queryBox.w, queryBox.h, SDL_Color { 22, 26, 34, 255 },
+			typing ? acc : SDL_Color { 60, 66, 80, 255 }, typing ? 2 : 0);
+		std::string shown = query.empty() ? "Search YouTube" : query;
+		int qh = 0;
+		TTF_SizeUTF8(fBig, shown.c_str(), nullptr, &qh);
+		drawText(shown, fBig, query.empty() ? dim : fg, queryBox.x + W * 2 / 100,
+			queryBox.y + (queryBox.h - qh) / 2, queryBox.w - W * 4 / 100);
+		// the tab strip: Search (the keyboard and its hits), Recent (what actually played, kept on the card) and
+		// Channels (the uploaders either list mentions)
+		if (mode != Mode::PLAYING)
+		{
+			static const char* tabNames[] = { "Search", "Recent", "Channels" };
+			for (int i = 0; i < 3; i++)
+			{
+				SDL_Rect tr = tabRect(W, H, i);
+				bool on = i == 0 ? view == View::SEARCH : i == 1 ? view == View::RECENT : view == View::CHANNELS;
+				bool hot = (i == 1 && !recent.empty()) || (i == 2 && !channels.empty());
+				panel(tr.x, tr.y, tr.w, tr.h, on ? acc : SDL_Color { 24, 28, 36, 255 },
+					on ? acc : SDL_Color { 54, 60, 74, 255 }, on ? 0 : 1);
+				std::string label = tabNames[i];
+				if (i == 1 && !recent.empty()) label += " " + std::to_string(recent.size());
+				if (i == 2 && !channels.empty()) label += " " + std::to_string(channels.size());
+				int tw = 0, th = 0;
+				TTF_SizeUTF8(fMed, label.c_str(), &tw, &th);
+				drawText(label, fMed, on || hot ? fg : dim, tr.x + (tr.w - tw) / 2, tr.y + (tr.h - th) / 2);
+			}
+			// the active quality cap, right-aligned on the tab row (SELECT on a list cycles it)
+			std::string q = std::to_string(quality) + "p";
+			int qw = 0, qh = 0;
+			TTF_SizeUTF8(fMed, q.c_str(), &qw, &qh);
+			drawText(q, fMed, dim, W * 96 / 100 - qw, H * 15 / 100 + (H * 7 / 100 - qh) / 2);
+		}
+		// the results' position ("3 / 24") on the right of the status line, so a long list is never a guess
+		int counterW = 0;
+		int shownItems = listSize();
+		if (mode == Mode::RESULTS && shownItems > 0 && sel >= shownItems) sel = shownItems - 1;	// a list that shrank under the cursor
+		if (mode == Mode::RESULTS && shownItems > 0)
+		{
+			std::string pos = std::to_string(sel + 1) + " / " + std::to_string(shownItems);
+			int ch = 0;
+			TTF_SizeUTF8(fSmall, pos.c_str(), &counterW, &ch);
+			drawText(pos, fSmall, fg, W * 96 / 100 - counterW, H * 23 / 100);
+			counterW += W * 3 / 100;
+		}
+		if (!status.empty()) drawText(status, fSmall, dim, W * 4 / 100, H * 23 / 100, W * 92 / 100 - counterW);
 
 		if (mode == Mode::KEYS) drawKeyboard(W, H, fg, dim, acc, selbg);
+		else if (mode == Mode::RESULTS && view == View::CHANNELS && !channelOpen) drawChannels(W, H, fg, dim, acc, selbg);
 		else drawResults(W, H, fg, dim, acc, selbg);
 
-		SDL_Color hint { 120, 126, 138, 255 };
-		const char* help = mode == Mode::PLAYING ? "A play/pause   touch: centre pause, left/right seek, top-left stop   B stop"
-			: mode == Mode::RESULTS ? "A play   B back   L/R page   START search   |   player touch: centre pause, sides seek, top-left stop"
-			: "A type   B back   START search   Y shift";
+		// the controls band at the foot: a darker strip, so the hint reads as a bar, not as stray text
+		panel(0, H * 91 / 100, W, H - H * 91 / 100, SDL_Color { 8, 10, 14, 255 }, SDL_Color { 8, 10, 14, 255 });
+		SDL_Color hint { 150, 156, 166, 255 };
+		const char* help = mode == Mode::PLAYING ? "A pause   L2/R2 seek (hold R2 2x)   L1/R1 chapter   X undo skip   START full   SEL time   B stop"
+			: mode == Mode::RESULTS ? "A play   B back   X channel   L/R page   SEL quality   Y search   START search"
+			: "A type   B back   L/R tab   SEL recent   START or Y search";
 		drawText(help, fSmall, hint, W * 4 / 100, H * 94 / 100, W * 92 / 100);
 	}
 
@@ -1109,7 +1721,8 @@ struct App
 				const char* k = keys[r][c];
 				SDL_Rect rr = keyRect(W, H, r, c);
 				bool on = keyRow == r && keyCol == c;
-				panel(rr.x, rr.y, rr.w, rr.h, on ? selbg : SDL_Color { 24, 28, 36, 255 }, on ? acc : SDL_Color { 54, 60, 74, 255 }, on ? 1 : 0);
+				// the focused key is filled with the accent, so where the pad's cursor is reads from across the room
+				panel(rr.x, rr.y, rr.w, rr.h, on ? acc : SDL_Color { 24, 28, 36, 255 }, on ? acc : SDL_Color { 54, 60, 74, 255 }, 0);
 				int tw = 0, th = 0;
 				TTF_SizeUTF8(fMed, k, &tw, &th);
 				drawText(k, fMed, on ? fg : dim, rr.x + (rr.w - tw) / 2, rr.y + (rr.h - th) / 2);
@@ -1120,10 +1733,69 @@ struct App
 			SDL_Rect rr = actRect(W, H, c);
 			bool on = keyRow >= ROWS && keyCol == c;
 			SDL_Color line = on ? acc : SDL_Color { 54, 60, 74, 255 };
-			panel(rr.x, rr.y, rr.w, rr.h, on ? selbg : SDL_Color { 24, 28, 36, 255 }, line, on ? 1 : 0);
+			panel(rr.x, rr.y, rr.w, rr.h, on ? acc : SDL_Color { 24, 28, 36, 255 }, line, 0);
 			int tw = 0, th = 0;
 			TTF_SizeUTF8(fMed, acts[c], &tw, &th);
 			drawText(acts[c], fMed, on ? fg : dim, rr.x + (rr.w - tw) / 2, rr.y + (rr.h - th) / 2);
+		}
+	}
+
+	void drawChannels(int W, int H, SDL_Color fg, SDL_Color dim, SDL_Color acc, SDL_Color selbg)
+	{
+		int top = resultsTop(H);
+		int rowH = resultsRowH(H);
+		int per = resultsPerPage();
+		if (sel < scroll) scroll = sel;
+		if (sel >= scroll + per) scroll = sel - per + 1;
+		if (channels.empty())
+		{
+			drawText("No channels yet. Search for videos or play something.", fMed, dim, W * 6 / 100, top);
+			return;
+		}
+		int pad = W * 1 / 100;
+		for (int i = scroll; i < static_cast<int>(channels.size()) && i < scroll + per; i++)
+		{
+			int y = top + (i - scroll) * rowH;
+			bool on = i == sel;
+			panel(W * 4 / 100, y, W * 92 / 100, rowH - pad, on ? selbg : SDL_Color { 20, 24, 31, 255 },
+				on ? acc : SDL_Color { 46, 52, 64, 255 }, on ? 1 : 0);
+			if (on)
+			{
+				SDL_Rect bar { W * 4 / 100, y, std::max(6, W * 1 / 100), rowH - pad };
+				SDL_SetRenderDrawColor(ren, acc.r, acc.g, acc.b, 255);
+				SDL_RenderFillRect(ren, &bar);
+			}
+			const std::string& name = channels[i];
+			// a square avatar with the channel's first letter: no network round-trip for a channel row
+			int av = rowH - 2 * pad - rowH * 20 / 100;
+			SDL_Rect ar { W * 6 / 100, y + (rowH - pad - av) / 2, av, av };
+			panel(ar.x, ar.y, ar.w, ar.h, on ? acc : SDL_Color { 40, 46, 58, 255 },
+				on ? acc : SDL_Color { 64, 72, 88, 255 }, 0);
+			std::string initial = !name.empty() && static_cast<unsigned char>(name[0]) < 128
+				? std::string(1, static_cast<char>(toupper(static_cast<unsigned char>(name[0])))) : "@";
+			int iw = 0, ih = 0;
+			TTF_SizeUTF8(fBig, initial.c_str(), &iw, &ih);
+			drawText(initial, fBig, on ? fg : dim, ar.x + (ar.w - iw) / 2, ar.y + (ar.h - ih) / 2);
+			// how many of the two lists this channel appears in (unique videos)
+			std::vector<std::string> seen;
+			for (const Item& it : searchResults)
+				if (it.uploader == name)
+				{
+					bool dup = false;
+					for (const std::string& id : seen) if (id == it.id) dup = true;
+					if (!dup) seen.push_back(it.id);
+				}
+			for (const Item& it : recent)
+				if (it.uploader == name)
+				{
+					bool dup = false;
+					for (const std::string& id : seen) if (id == it.id) dup = true;
+					if (!dup) seen.push_back(it.id);
+				}
+			int tx = ar.x + ar.w + W * 2 / 100;
+			drawText(name, fMed, fg, tx, y + rowH * 12 / 100, W * 86 / 100 - tx);
+			drawText(std::to_string(seen.size()) + (seen.size() == 1 ? " video" : " videos"), fSmall, dim,
+				tx, y + rowH * 55 / 100, W * 86 / 100 - tx);
 		}
 	}
 
@@ -1136,7 +1808,10 @@ struct App
 		if (sel >= scroll + per) scroll = sel - per + 1;
 		if (searching || results.empty())
 		{
-			drawText(searching ? "Searching\u2026" : "No results. B for the keyboard.", fMed, dim, W * 6 / 100, top);
+			const char* none = searching ? "Searching\u2026"
+				: view == View::RECENT ? "Nothing played yet. Play a video and it lands here."
+				: "No results. B for the keyboard.";
+			drawText(none, fMed, dim, W * 6 / 100, top);
 			return;
 		}
 		int pad = W * 1 / 100;
@@ -1149,6 +1824,13 @@ struct App
 			bool on = i == sel;
 			panel(W * 4 / 100, y, W * 92 / 100, rowH - pad, on ? selbg : SDL_Color { 20, 24, 31, 255 },
 				on ? acc : SDL_Color { 46, 52, 64, 255 }, on ? 1 : 0);
+			if (on)
+			{
+				// a solid bar down the left edge of the selected row, the mark that survives a small screen
+				SDL_Rect bar { W * 4 / 100, y, std::max(6, W * 1 / 100), rowH - pad };
+				SDL_SetRenderDrawColor(ren, acc.r, acc.g, acc.b, 255);
+				SDL_RenderFillRect(ren, &bar);
+			}
 			int tx = W * 6 / 100;
 			// the thumbnail (a 16:9 card at the left), or a placeholder until it is downloaded
 			SDL_Rect tr { tx, y + (rowH - pad - thumbH) / 2, thumbW, thumbH };
@@ -1174,7 +1856,9 @@ struct App
 				textW -= dw + W * 4 / 100;
 			}
 			drawText(it.title, fMed, fg, textX, y + rowH * 12 / 100, textW);
-			drawText(it.uploader, fSmall, dim, textX, y + rowH * 55 / 100, textW);
+			std::string sub = it.uploader;
+			if (view == View::RECENT && it.resume > 0) sub += "   \u00b7   resume " + fmtTime(it.resume);
+			drawText(sub, fSmall, dim, textX, y + rowH * 55 / 100, textW);
 		}
 	}
 };
@@ -1191,6 +1875,9 @@ int main(int argc, char** argv)
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 	mkdir("/data/banana/cache", 0755);
 	mkdir(CACHE_DIR, 0755);
+	app.recentLoad();
+	app.qualityLoad();
+	app.buildChannels();
 	int rc = app.run();
 	curl_global_cleanup();
 	return rc;
