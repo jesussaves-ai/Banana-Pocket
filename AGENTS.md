@@ -14,12 +14,12 @@ You are a bare-metal embedded Linux systems engineer for BananaOS on the Retroid
   - `60,63p` = §8 USB Dev Link & Screen Capture (`usb-gadget` NCM + mass storage, `usb-msc`, `rpc-screen.sh`)
 - **Source Map (`sed -n 'X,Yp' <file>`; snapshot — regenerate with `make agent-map`):**
   - `ui/src/main.cpp`: main `1074-1909`; helpers/log/signal `65-355`; runHeadless `527-836`; showFrame/playSplash `837-947`; iris `948-973`; poll loop `1780-1880`.
-  - `ui/src/kms.cpp`: makeBuf/freeBuf `24-106`; turn `107-113`; openSingle `114-193`; restore/close `194-212`; present `213-259`; handleEvents `260-268`.
+  - `ui/src/kms.cpp`: makeBuf/freeBuf `24-106`; turn `107-112`; openSingle `114-195`; restore/close `196-216`; present `217-263`; handleEvents `264-272`.
   - `ui/src/soft.cpp`: ctor/upload `151-186`; beginScreen/resolve/addDirty `187-265`; redraw/endScreen `266-318`; draw/fill/clip `319-382`; resample `383-513`; doDraw `514-615`.
-  - `ui/src/sound.cpp`: ctor/dtor `107-147`; play/warm `148-174`; setScreenOn/setBgm `175-206`; release `207-230`; worker run `231-445`.
+  - `ui/src/sound.cpp`: ctor/dtor `121-162`; play/warm `163-191`; setScreenOn/setBgm `192-224`; release `225-256`; worker run `257-495`.
   - `ui/src/library.cpp`: romIconCover `161-197`; ctor `212-222`; scanApps `269-398`; loadDefs/looks `399-484`; save/load state `485-628`; scan `726-814`; countMatches/arrange `815-900`.
-  - `ui/src/settings.cpp`: ctor/setVariant `188-260`; build `261-346`; load/refreshInfo `347-475`; open/openGame `506-591`; render `1273-1398`; update `1446-1619`; keyboard `1620-1954`; renderUpdates/States `1956-2375`; renderSetup `2503-2603`.
-  - `system/bananad/bananad.c`: helpers/say/read `50-250`; ui_pid/osd/jack `256-328`; sleep/rtc `363-491`; suspend/shutdown `492-636`; audio `637-1040`; volume/brightness `1041-1245`; battery/charger `1246-1293`; vibrator `1294-1382`; power_update `1383-1402`; uevent `1403-1523`; handle `1524-1568`; battery_discharging `1569-1600`; main `1609-1869`.
+  - `ui/src/settings.cpp`: ctor/setVariant `189-257`; build `258-345`; load/refreshInfo `346-503`; open/openGame `504-589`; render `1269-1384`; update/keyboard `1447-1956`; renderUpdates/States `1957-2281`; renderSetup `2498-2598`.
+  - `system/bananad/bananad.c`: helpers/say/read `50-293`; ui_pid/osd/jack `294-395`; sleep/rtc `396-607`; suspend/shutdown `608-807`; audio `808-1184`; volume/brightness/dim `1185-1375`; battery/charger `1376-1464`; vibrator `1465-1512`; power_update `1513-1532`; uevent `1533-1625`; inputs/handle `1626-1713`; battery_discharging `1714-1802`; main `1803-1937`.
 - **Ignored Paths:** NEVER search, read, or touch `build/`, `output/`, `dl/`, `host/`, `.git/`, `*.o`, `*.img`, `*.tar`, or binary assets. Also ignored by `rg`: `ui/third_party/` (vendored stb), `ui/rnds/` (parity copy), `docs/RPC-PORT.md` (historical log — read it by path when needed).
 - **Shell & Verification:** Use quiet flags (`make -s`, `git status -s`, `git diff --stat`). Pipe noisy build/test commands through `| grep -iE "error|warning|undefined|fail" | tail -n 30`. Validate changes with `make -s test`; any sound/UCM/PipeWire/`banana-ui` audio change additionally with `make sound-test` on the handheld (`BANANA_HOST`, see `docs/SOUND-TEST.md` — the chain fails silently, so the config test alone is not enough).
 

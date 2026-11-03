@@ -4,34 +4,26 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Confirm the audio on hardware** (small). Boot, game exit and sleep/wake now reach a working Speaker sink and a
-   reopened menu stream (see *Done*). Still to check by ear: a cue on the speaker after a cold boot, after a game, and
-   after a resume. Also listen after the 0.5.0 image is rebuilt, since the sound changes are not committed yet.
-   (The headphone-jack check is dropped: the test unit has no headphones.)
-1a. **Audio follow-ups** (small). `banana-ui`'s open-failure path still calls `sound-server recover` after about 10 s
-   of "device busy" (`openFail` in `ui/src/sound.cpp`); with the config re-read that should be rare, so check whether it
-   ever fires in normal use before removing it. `VERSION` is now 0.5.4, so the next build is distinguishable from the
-   alpha 0.5.3.
-2. **Back up & restore `/data/banana`** (small). Settings > System gains "Back up settings" (a tar of `settings.conf`,
+1. **Back up & restore `/data/banana`** (small). Settings > System gains "Back up settings" (a tar of `settings.conf`,
    `bananad.conf`, `wifi.conf`, accounts and the saves/states trees into `/data/banana/backups`) and "Restore". Pairs
    with the OTA path, and makes a bad sleep-test unit recoverable without a card reader.
-3. **Controller remapping UI** (the pad map the launchers export), and **per-game core options** beyond core + shader.
-4. **Library UX, the rest** -- collections/tags and a screenshot gallery; plus **"scrape missing art"** and a scraper
+2. **Controller remapping UI** (the pad map the launchers export), and **per-game core options** beyond core + shader.
+3. **Library UX, the rest** -- collections/tags and a screenshot gallery; plus **"scrape missing art"** and a scraper
    that only runs while charging or on the cable, so a long scrape cannot flatten a battery (the recent-played shelf,
    multi-disc `.m3u` grouping and shoulder jump-to-letter are done, 0.5.x).
-5. **Local media / music player**, and porting BananaTube's newer settings screen.
-6. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
-7. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
-8. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
+4. **Local media / music player**, and porting BananaTube's newer settings screen.
+5. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
+6. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+7. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-9. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
+8. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
    and measure overnight drain; residual spurious wakes and panel/SD resume latency are still untracked.
-10. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
-11. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-12. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-13. **Store / app catalog** (the Apps shelf only scans local folders).
+9. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
+10. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+11. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+12. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## Ideas (unscheduled)
 Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.
@@ -77,6 +69,17 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **Audio follow-ups (0.5.4).** The automatic recovery in the menu's open path is gone: `banana-ui` forked
+  `sound-server recover` after ~10 s of failed opens, and it never fired in normal use (0 asks across two boots, 439
+  log lines); the wedged-session-manager case it was written for has not been seen since the config re-read. A
+  failing open still logs `open failed: …` and retries every 250 ms (the 0.5.4 backoff), and `sound-server recover`
+  stays as the manual cure the sound test names. `sound-config-test` now asserts the menu never forks the server from
+  its open path.
+- [x] **Confirm the audio on hardware (0.5.4).** All three by-ear checks passed on the unit, each followed by
+  `make sound-test` (14/14): a cold boot (the splash cue and the test's four beeps), a game quit (the menu reopened its
+  PCM and logged `panel back after the game (0 tries)` — the 0.5.4 DRM-master fix), and a sleep/wake (`menu: released
+  the sound device in 0 ms`, `awake (power button)` after 11 s, beeps). The headphone-jack check is dropped: the test
+  unit has no headphones.
 - [x] **The audit's findings, fixed and pruned (0.5.4).** Two independent passes over `system/`, `ui/src`, `app/`,
   `buildroot/` and `tools/` (bloat, then correctness), every finding re-verified in the source. Fixed: BananaTube died
   on SIGPIPE whenever mpv exited with a key still in flight (one `signal(SIGPIPE, SIG_IGN)`); the ambient loop read

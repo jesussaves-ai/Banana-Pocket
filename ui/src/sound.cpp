@@ -276,21 +276,6 @@ namespace banana
 		 * kept the device open across the gaps -- was heard. The menu still releases it when a game starts and
 		 * when the burn-in guard blanks the panel (Sound::release()). */
 		const auto quiet = QUIET;
-		/* A game's release() hands the device over and the menu reopens it on the way back. WirePlumber can wedge
-		 * then: snd_pcm_open("default") fails with EBUSY on every retry (the sink is present and the default is
-		 * right; restarting WirePlumber alone clears it -- measured on the unit). Count the failures and, once they
-		 * are clearly not transient, ask the sound server to restart its session manager. Throttled. */
-		int openFails = 0;
-		auto lastRecover = std::chrono::steady_clock::now();
-		auto openFail = [&]() {
-			if (++openFails < 40) return;	// ~10 s of retries at 250 ms
-			openFails = 0;
-			auto t = std::chrono::steady_clock::now();
-			if (t - lastRecover < std::chrono::seconds(20)) return;
-			lastRecover = t;
-			slog("the device will not open; asking the sound server to recover");
-			if (std::system("/usr/libexec/banana/sound-server recover >/dev/null 2>&1 &") != 0) {}
-		};
 		/* The DSP's route (which frontend, which codec path, the FE<->BE switches) belongs to the sound server now:
 		 * ACP applies the UCM profile and PipeWire re-applies the verb right before it opens the PCM (the UCM-open
 		 * patch), and RetroArch is itself a PipeWire client. So this opens `default` -- the server -- directly, with
@@ -308,7 +293,10 @@ namespace banana
 			 * for each open so "default" is always the server. */
 			snd_config_update_free_global();
 			int e = snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
-			if (e < 0) { slog("open failed: %s", snd_strerror(e)); pcm = nullptr; openFail(); return false; }
+			/* A late release()/sleep handover, or a wedged session manager (EBUSY on every try): either way the loop
+			 * backs off 250 ms and tries again. The wedged case is what `/usr/libexec/banana/sound-server recover` is
+			 * for, by hand (sound-test names it): measured once, and never seen since the config re-read. */
+			if (e < 0) { slog("open failed: %s", snd_strerror(e)); pcm = nullptr; return false; }
 			if (closeNow) { snd_pcm_close(pcm); pcm = nullptr; return false; }	// release() arrived during the open
 			/* The host buffer: as small as the DSP will take, so a cue starts as soon as the mixer has it. A 128 ms
 			 * buffer is refused outright on this card (no sound at all, docs/RPC-PORT.md), so try 15 ms and 20 ms
@@ -319,11 +307,10 @@ namespace banana
 				{ us = tryUs; break; }
 			if (!us)
 			{
-				slog("set_params failed"); snd_pcm_close(pcm); pcm = nullptr; openFail(); return false;
+				slog("set_params failed"); snd_pcm_close(pcm); pcm = nullptr; return false;
 			}
 			openRate = c.rate; openCh = c.channels;
 			devOpen = true;
-			openFails = 0;
 			slog("device open, %d Hz, %d ch, %d ms buffer", openRate, openCh, us / 1000);
 			{
 				char s[64];
