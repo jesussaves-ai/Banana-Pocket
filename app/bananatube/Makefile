@@ -6,12 +6,16 @@ CXXFLAGS ?= -O2
 override CXXFLAGS += -std=c++17 -Wall -Wno-unused-function
 override LDLIBS += -lpthread
 
-SRC = main.cpp json.cpp
+# the JSON reader is banana-ui's (ui/src/json.cpp): one parser, not a copy per app. The cross build's source dir is
+# the package's own, so Buildroot passes JSON_SRC (see buildroot/package/banana-tube/banana-tube.mk).
+JSON_SRC ?= ../../ui/src
+SRC = main.cpp $(JSON_SRC)/json.cpp
 PKGS = sdl2 SDL2_ttf SDL2_image libcurl
+override CXXFLAGS += -I$(JSON_SRC)
 override CXXFLAGS += $(shell $(PKG_CONFIG) --cflags $(PKGS))
 override LDLIBS += $(shell $(PKG_CONFIG) --libs $(PKGS))
 
-banana-tube: $(SRC) json.h
+banana-tube: $(SRC) $(JSON_SRC)/json.h
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(SRC) $(LDLIBS)
 
 install:

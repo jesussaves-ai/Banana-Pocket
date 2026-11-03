@@ -81,6 +81,7 @@ static void audio_route(void);
 static void jack_settle_begin(void);
 static void jack_settle_poll(void);
 static void jack_log(void);
+static void ra_cmd(const char *cmd);
 static void undim(void);
 static void find_panel_bl(void);
 static char panel_bl[64];	/* the panel's backlight name; banana-ui's idle dim owns it while it runs */
@@ -561,18 +562,38 @@ static void sleep_mode(void)
 }
 
 /* the backlights off and on again without changing their level */
-static void backlights_power(int on)
+/* The backlight class's entries, and one of their files. Six callers below each had their own walk of this directory,
+ * which is how they drifted apart (one wrote the panel another owned). Names are short ("backlight0", "panel"): a
+ * longer one is not a backlight this image has, so it is skipped rather than truncated. */
+#define MAX_BL 8
+static int backlights(char names[][64], int max)
 {
 	DIR *d = opendir("/sys/class/backlight");
-	if (!d) return;
+	if (!d) return 0;
 	struct dirent *e;
-	while ((e = readdir(d))) {
-		if (e->d_name[0] == '.') continue;
-		char p[320];
-		snprintf(p, sizeof p, "/sys/class/backlight/%s/bl_power", e->d_name);
-		write_file(p, on ? "0" : "4");
+	int n = 0;
+	while (n < max && (e = readdir(d))) {
+		if (e->d_name[0] == '.' || strlen(e->d_name) >= 64) continue;
+		snprintf(names[n++], 64, "%s", e->d_name);
 	}
 	closedir(d);
+	return n;
+}
+
+static void bl_file(char *out, size_t n, const char *name, const char *what)
+{
+	snprintf(out, n, "/sys/class/backlight/%.63s/%.31s", name, what);	/* the bounds keep -Wformat-truncation quiet */
+}
+
+static void backlights_power(int on)
+{
+	char bl[MAX_BL][64];
+	int n = backlights(bl, MAX_BL);
+	for (int i = 0; i < n; i++) {
+		char p[320];
+		bl_file(p, sizeof p, bl[i], "bl_power");
+		write_file(p, on ? "0" : "4");
+	}
 }
 
 static int charger_online(void);
@@ -902,7 +923,6 @@ static int ctl_exists(int card, const char *name)
 }
 
 /* the switch controls (HPHL, HPHL_RDAC, ...) are simple-mixer elements: the same CTL API reaches them */
-static void sset(int card, const char *name, const char *val) { cset(card, name, val); }
 
 static int mixer_get(int card, const char *name, char *out, size_t n)
 {
@@ -950,14 +970,13 @@ static int sleep_bl_val[4], sleep_bl_n;
 static char sleep_rx0[32], sleep_rx1[32];
 static void sleep_quiet_begin(void)
 {
+	char bl[MAX_BL][64];
+	int n = backlights(bl, 4);	/* sleep_bl_name[] holds four */
 	sleep_bl_n = 0;
-	DIR *d = opendir("/sys/class/backlight");
-	struct dirent *e;
-	while (d && (e = readdir(d)) && sleep_bl_n < 4) {
-		if (e->d_name[0] == '.' || strlen(e->d_name) >= sizeof sleep_bl_name[0]) continue;
+	for (int i = 0; i < n; i++) {
 		char p[600], mx[600];
-		snprintf(p, sizeof p, "/sys/class/backlight/%.255s/brightness", e->d_name);
-		snprintf(mx, sizeof mx, "/sys/class/backlight/%.255s/max_brightness", e->d_name);
+		bl_file(p, sizeof p, bl[i], "brightness");
+		bl_file(mx, sizeof mx, bl[i], "max_brightness");
 		int cur = read_int(p, -1);
 		if (cur < 0) continue;
 		/* A panel that is already dark (the menu's burn-in guard blanked it, or an earlier sleep) has no level of
@@ -969,11 +988,10 @@ static void sleep_quiet_begin(void)
 			if (cur == 0) cur = 1;
 		}
 		if (cur <= 0) continue;
-		snprintf(sleep_bl_name[sleep_bl_n], sizeof sleep_bl_name[0], "%s", e->d_name);
+		snprintf(sleep_bl_name[sleep_bl_n], sizeof sleep_bl_name[0], "%.127s", bl[i]);
 		sleep_bl_val[sleep_bl_n++] = cur;
 		write_file(p, "0");
 	}
-	if (d) closedir(d);
 	if (card_ar >= 0) {
 		mixer_get(card_ar, "RX_RX0 Digital Volume", sleep_rx0, sizeof sleep_rx0);
 		mixer_get(card_ar, "RX_RX1 Digital Volume", sleep_rx1, sizeof sleep_rx1);
@@ -985,7 +1003,7 @@ static void sleep_quiet_end(void)
 {
 	for (int i = 0; i < sleep_bl_n; i++) {
 		char p[600], v[32];
-		snprintf(p, sizeof p, "/sys/class/backlight/%.255s/brightness", sleep_bl_name[i]);
+		bl_file(p, sizeof p, sleep_bl_name[i], "brightness");
 		snprintf(v, sizeof v, "%d", sleep_bl_val[i]);
 		write_file(p, v);
 	}
@@ -1074,11 +1092,7 @@ static void audio_route(void)
 	}
 	/* a running RetroArch game opens its sound again where it plays now: alsa-lib reads its configuration once per
 	 * process (Banana's RetroArch patch forgets it on AUDIO_REINIT). The menu's own sound watches the file itself. */
-	int rc = open("/run/banana/retroarch.cmd", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
-	if (rc >= 0) {
-		if (write(rc, "AUDIO_REINIT\n", 13) < 0) {}
-		close(rc);
-	}
+	ra_cmd("AUDIO_REINIT");
 	say("sound: playback on card %d (%s), 48 kHz", card_play, headphones ? "headphones" : "speakers");
 }
 
@@ -1151,12 +1165,12 @@ static void audio_setup(void)
 		 * asound.state (saved by alsactl store when the volume changed) after rcS has run, which puts these back to
 		 * their reset state, so rcS's own copy is not enough. The speaker path (SENARY MI2S -> AW88166) is separate
 		 * and does not need them. */
-		sset(card_ar, "HPHL", "on");
-		sset(card_ar, "HPHR", "on");
-		sset(card_ar, "HPHL_RDAC", "on");
-		sset(card_ar, "HPHR_RDAC", "on");
-		sset(card_ar, "HPHL_COMP", "on");
-		sset(card_ar, "HPHR_COMP", "on");
+		cset(card_ar, "HPHL", "on");
+		cset(card_ar, "HPHR", "on");
+		cset(card_ar, "HPHL_RDAC", "on");
+		cset(card_ar, "HPHR_RDAC", "on");
+		cset(card_ar, "HPHL_COMP", "on");
+		cset(card_ar, "HPHR_COMP", "on");
 		cset(card_ar, "RX HPH Mode", "CLS_H_LOHIFI");
 		cset(card_ar, "RX_HPH PWR Mode", "LOHIFI");
 		cset(card_ar, "RX_MACRO RX0 MUX", "AIF1_PB");
@@ -1199,16 +1213,13 @@ static void volume(int dir)
 
 static void brightness(int dir, int step_pct)
 {
-	DIR *d = opendir("/sys/class/backlight");
-	if (!d) return;
-	struct dirent *e;
-	int pct = -1;
-	while ((e = readdir(d))) {
-		if (e->d_name[0] == '.') continue;
+	char bl[MAX_BL][64];
+	int n = backlights(bl, MAX_BL), pct = -1;
+	for (int i = 0; i < n; i++) {
 		char p[320], v[32];
-		snprintf(p, sizeof p, "/sys/class/backlight/%s/max_brightness", e->d_name);
+		bl_file(p, sizeof p, bl[i], "max_brightness");
 		int max = read_int(p, 0);
-		snprintf(p, sizeof p, "/sys/class/backlight/%s/brightness", e->d_name);
+		bl_file(p, sizeof p, bl[i], "brightness");
 		int cur = read_int(p, 0);
 		int step = max * step_pct / 100;
 		if (step < 1) step = 1;
@@ -1221,7 +1232,6 @@ static void brightness(int dir, int step_pct)
 		write_file(p, v);
 		if (max > 0) pct = nv * 100 / max;
 	}
-	closedir(d);
 	save_backlight_at = mono() + 2;
 	if (pct >= 0) osd("brightness", pct);
 }
@@ -1229,40 +1239,33 @@ static void brightness(int dir, int step_pct)
 /* both backlights at a fraction of their maximum */
 static void backlight_set_permille(int pm)
 {
-	DIR *d = opendir("/sys/class/backlight");
-	if (!d) return;
-	struct dirent *e;
-	while ((e = readdir(d))) {
-		if (e->d_name[0] == '.') continue;
+	char bl[MAX_BL][64];
+	int n = backlights(bl, MAX_BL);
+	for (int i = 0; i < n; i++) {
 		char p[320], v[32];
-		snprintf(p, sizeof p, "/sys/class/backlight/%s/max_brightness", e->d_name);
+		bl_file(p, sizeof p, bl[i], "max_brightness");
 		int max = read_int(p, 0);
 		if (max <= 0) continue;
 		int nv = max * pm / 1000;
 		if (nv < 1) nv = 1;
-		snprintf(p, sizeof p, "/sys/class/backlight/%s/brightness", e->d_name);
+		bl_file(p, sizeof p, bl[i], "brightness");
 		snprintf(v, sizeof v, "%d", nv);
 		write_file(p, v);
 	}
-	closedir(d);
 }
 
 /* the first backlight's level, in thousandths of its maximum */
 static int backlight_permille(void)
 {
-	DIR *d = opendir("/sys/class/backlight");
-	if (!d) return -1;
-	struct dirent *e;
-	int r = -1;
-	while (r < 0 && (e = readdir(d))) {
-		if (e->d_name[0] == '.') continue;
+	char bl[MAX_BL][64];
+	int n = backlights(bl, MAX_BL), r = -1;
+	for (int i = 0; i < n && r < 0; i++) {
 		char p[320];
-		snprintf(p, sizeof p, "/sys/class/backlight/%s/max_brightness", e->d_name);
+		bl_file(p, sizeof p, bl[i], "max_brightness");
 		int max = read_int(p, 0);
-		snprintf(p, sizeof p, "/sys/class/backlight/%s/brightness", e->d_name);
+		bl_file(p, sizeof p, bl[i], "brightness");
 		if (max > 0) r = read_int(p, 0) * 1000 / max;
 	}
-	closedir(d);
 	return r;
 }
 
@@ -1298,16 +1301,14 @@ static char dim_name[4][256];
 static int dim_level[4];
 static void dim(void)
 {
-	DIR *d = opendir("/sys/class/backlight");
-	if (!d) return;
-	struct dirent *e;
+	char bl[MAX_BL][64];
+	int n = backlights(bl, 4);	/* dim_name[] holds four */
 	dim_count = 0;
-	while ((e = readdir(d)) && dim_count < 4) {
-		if (e->d_name[0] == '.' || strlen(e->d_name) >= sizeof dim_name[0]) continue;
-		if (panel_bl[0] && !strcmp(e->d_name, panel_bl) && !access("/run/banana/panel-ui", F_OK)) continue;
+	for (int i = 0; i < n; i++) {
+		if (panel_bl[0] && !strcmp(bl[i], panel_bl) && !access("/run/banana/panel-ui", F_OK)) continue;
 		char p[600], v[32];
-		snprintf(dim_name[dim_count], sizeof dim_name[0], "%s", e->d_name);
-		snprintf(p, sizeof p, "/sys/class/backlight/%.255s/brightness", dim_name[dim_count]);
+		snprintf(dim_name[dim_count], sizeof dim_name[0], "%.255s", bl[i]);
+		bl_file(p, sizeof p, dim_name[dim_count], "brightness");
 		int cur = read_int(p, -1);
 		if (cur < 0) continue;
 		dim_level[dim_count++] = cur;
@@ -1316,12 +1317,11 @@ static void dim(void)
 		snprintf(v, sizeof v, "%d", nv);
 		write_file(p, v);
 	}
-	closedir(d);
 	dimmed = dim_count > 0;
 	/* the level before dimming, for the settings screen (opened by the press that undims) */
 	if (dimmed) {
 		char p[600];
-		snprintf(p, sizeof p, "/sys/class/backlight/%.255s/max_brightness", dim_name[0]);
+		bl_file(p, sizeof p, dim_name[0], "max_brightness");
 		int max = read_int(p, 0);
 		if (max > 0) { char v[16]; snprintf(v, sizeof v, "%d\n", dim_level[0] * 1000 / max); write_file("/run/banana/dim", v); }
 	}
@@ -1331,7 +1331,7 @@ static void undim(void)
 	if (!dimmed) return;
 	for (int i = 0; i < dim_count; i++) {
 		char p[600], v[32];
-		snprintf(p, sizeof p, "/sys/class/backlight/%.255s/brightness", dim_name[i]);
+		bl_file(p, sizeof p, dim_name[i], "brightness");
 		snprintf(v, sizeof v, "%d", dim_level[i]);
 		write_file(p, v);
 	}

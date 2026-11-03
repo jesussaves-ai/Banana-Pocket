@@ -15,7 +15,7 @@ if [ ! -f $P/PortMaster/PortMaster.sh ] && [ -f /usr/share/banana/portmaster/Por
 fi
 # The RPC's pad, mapped for SDL (see the export below): this handheld's buttons are the Nintendo order (A is the east
 # button as banana-ui's own menu reads them), not SDL's Xbox order.
-SDL_MAP="0300f3f7242f00000100000001000000,Retroid Pocket Classic Gamepad,a:b1,b:b0,x:b2,y:b3,back:b8,guide:b10,start:b9,leftstick:b11,rightstick:b12,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,dpup:b13,dpdown:b14,dpleft:b15,dpright:b16,platform:Linux,"
+SDL_MAP="$(cat /etc/banana/sdl-pad.map 2>/dev/null)"	# the one pad map: /etc/banana/sdl-pad.map
 # PortMaster's own get_controls (control.txt) finds a pad by its /dev/input/by-path name; this handheld's rsinput
 # gamepad is none of the names it knows, so it leaves DEVICE empty and copies the *whole* gamecontrollerdb.txt into
 # SDL_GAMECONTROLLERCONFIG -- hundreds of KB, past ARG_MAX, so every exec in a port's script dies with "Argument list
@@ -58,40 +58,29 @@ export PYSDL2_DLL_PATH=/usr/lib
 # Everything else SDL already has right (X = north, Y = west, the d-pad at 13..16, the shoulders/triggers, SELECT
 # 8 / START 9 / MODE 10). The button numbers are evdev code order (SDL_sysjoystick.c: BTN_JOYSTICK..KEY_MAX first):
 # 0 SOUTH, 1 EAST, 2 NORTH, 3 WEST, 4 TL, 5 TR, 6 TL2, 7 TR2, 8 SELECT, 9 START, 10 MODE, 11/12 THUMBL/R, 13..16 D-pad.
-export SDL_GAMECONTROLLERCONFIG="0300f3f7242f00000100000001000000,Retroid Pocket Classic Gamepad,a:b1,b:b0,x:b2,y:b3,back:b8,guide:b10,start:b9,leftstick:b11,rightstick:b12,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,dpup:b13,dpdown:b14,dpleft:b15,dpright:b16,platform:Linux,"
+export SDL_GAMECONTROLLERCONFIG="$SDL_MAP"
 cd "$(dirname "$1")"
-CAGE=
-if [ -x /usr/bin/cage ]; then
-    CAGE=1
-    # cage puts its socket here: a private, 0700 runtime dir on tmpfs.
-    export XDG_RUNTIME_DIR=/run/banana/wayland
-    mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null
-    # cage's seat (libseat's builtin backend, seatd, in this process) must not be VT-bound: this kernel has no virtual
-    # terminals, and the kernel's own VT switch on suspend would wait for cage to release a VT that does not exist
-    # while bananad has the port's whole process group SIGSTOPped -- the suspend would never return.
-    export SEATD_VTBOUND=0
-    # SDL2 under cage draws through the Wayland video driver (KMSDRM would fight cage for DRM master). SDL picks
-    # Wayland when WAYLAND_DISPLAY is set, but a port's own script may set SDL_VIDEODRIVER: set here as the default,
-    # so a port that insists on KMSDRM by hand keeps its own. Audio stays ALSA "default" (bananad's asound.conf);
-    # there is no PulseAudio/PipeWire here.
-    : "${SDL_VIDEODRIVER:=wayland}"; export SDL_VIDEODRIVER
-    : "${SDL_AUDIODRIVER:=alsa}"; export SDL_AUDIODRIVER
-else
-    # no cage (a card without it): the port takes the panel itself, as ROCKNIX runs it. SDL's KMSDRM must be told it
-    # need not be DRM master: PortMaster starts its splash (a LOVE app on KMSDRM, holding master) and then its menu,
-    # which stops the splash only after SDL is up.
-    export XDG_RUNTIME_DIR=/run
-    export SDL_KMSDRM_REQUIRE_DRM_MASTER=0
-fi
+# cage puts its socket here: a private, 0700 runtime dir on tmpfs.
+export XDG_RUNTIME_DIR=/run/banana/wayland
+mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null
+# cage's seat (libseat's builtin backend, seatd, in this process) must not be VT-bound: this kernel has no virtual
+# terminals, and the kernel's own VT switch on suspend would wait for cage to release a VT that does not exist
+# while bananad has the port's whole process group SIGSTOPped -- the suspend would never return.
+export SEATD_VTBOUND=0
+# SDL2 under cage draws through the Wayland video driver (KMSDRM would fight cage for DRM master). SDL picks
+# Wayland when WAYLAND_DISPLAY is set, but a port's own script may set SDL_VIDEODRIVER: set here as the default,
+# so a port that insists on KMSDRM by hand keeps its own. Audio stays ALSA "default" (bananad's asound.conf);
+# there is no PulseAudio/PipeWire here.
+: "${SDL_VIDEODRIVER:=wayland}"; export SDL_VIDEODRIVER
+: "${SDL_AUDIODRIVER:=alsa}"; export SDL_AUDIODRIVER
 # the port in its own session (its process group = $C): a quit from the menu, and the port's end, reach everything it
 # started. PortMaster's script runs its menu (python3 pugwash) as a child: a TERM to the script alone left that
 # running, holding the display, and the menu's next game got no panel
-if [ -n "$CAGE" ]; then setsid cage -- bash "$1" & else setsid bash "$1" & fi
+setsid cage -- bash "$1" &
 C=$!
 # bananad's SIGUSR1 on the way out of a sleep goes here (bananad reads the file): cage re-modesets its output, because
-# a panel its driver turned off on the way down comes back dark and only a modeset clears it. With no cage there is
-# nothing to re-modeset, and the file goes away.
-if [ -n "$CAGE" ]; then echo $C > /run/banana/cage.pid; else rm -f /run/banana/cage.pid; fi
+# a panel its driver turned off on the way down comes back dark and only a modeset clears it.
+echo $C > /run/banana/cage.pid
 trap 'kill -TERM -$C 2>/dev/null' TERM INT HUP
 wait $C; S=$?
 while kill -0 $C 2>/dev/null; do wait $C; S=$?; done

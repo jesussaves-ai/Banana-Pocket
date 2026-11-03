@@ -15,7 +15,7 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
 2. **Back up & restore `/data/banana`** (small). Settings > System gains "Back up settings" (a tar of `settings.conf`,
    `bananad.conf`, `wifi.conf`, accounts and the saves/states trees into `/data/banana/backups`) and "Restore". Pairs
    with the OTA path, and makes a bad sleep-test unit recoverable without a card reader.
-3. **Controller remapping UI** (on top of `pad-profile`), and **per-game core options** beyond core + shader.
+3. **Controller remapping UI** (the pad map the launchers export), and **per-game core options** beyond core + shader.
 4. **Library UX, the rest** -- collections/tags and a screenshot gallery; plus **"scrape missing art"** and a scraper
    that only runs while charging or on the cable, so a long scrape cannot flatten a battery (the recent-played shelf,
    multi-disc `.m3u` grouping and shoulder jump-to-letter are done, 0.5.x).

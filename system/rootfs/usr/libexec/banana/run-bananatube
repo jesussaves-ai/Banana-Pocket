@@ -21,27 +21,20 @@ mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/nul
 # group SIGSTOPped (run-retroarch's note, the same seat).
 export SEATD_VTBOUND=0
 # SDL2 under cage draws through the Wayland video driver; audio stays ALSA "default" (bananad's asound.conf). There
-# is no PulseAudio/PipeWire here. A card without cage falls back to the KMSDRM driver (below).
+# is no PulseAudio/PipeWire here.
 : "${SDL_VIDEODRIVER:=wayland}"; export SDL_VIDEODRIVER
 : "${SDL_AUDIODRIVER:=alsa}"; export SDL_AUDIODRIVER
-# The RPC's pad, mapped for SDL: this handheld's buttons are the Nintendo order (A is the east button, as banana-ui's
-# own menu reads them), not SDL's Xbox order (run-port writes the same line, SDL_sysjoystick.c's evdev code order).
-export SDL_GAMECONTROLLERCONFIG="0300f3f7242f00000100000001000000,Retroid Pocket Classic Gamepad,a:b1,b:b0,x:b2,y:b3,back:b8,guide:b10,start:b9,leftstick:b11,rightstick:b12,leftshoulder:b4,rightshoulder:b5,lefttrigger:b6,righttrigger:b7,dpup:b13,dpdown:b14,dpleft:b15,dpright:b16,platform:Linux,"
+# The RPC's pad, mapped for SDL: one file, shared with run-port (Nintendo order: A is the east button, as banana-ui's
+# menu reads it, not SDL's Xbox order).
+export SDL_GAMECONTROLLERCONFIG="$(cat /etc/banana/sdl-pad.map 2>/dev/null)"
 
 L=/data/banana/logs/bananatube.log
 [ -s "$L" ] && mv -f "$L" "$L.1"
 # the app in its own session (its process group = $C): a stop from the menu, and mpv (started by banana-tube), reach
-# everything it started. cage is the kiosk compositor; a card without it has banana-tube take the panel on KMS.
-if [ -x /usr/bin/cage ]; then
-    setsid cage -- "$BIN" >"$L" 2>&1 &
-    C=$!
-    echo $C > /run/banana/cage.pid
-else
-    export SDL_KMSDRM_REQUIRE_DRM_MASTER=0
-    setsid "$BIN" >"$L" 2>&1 &
-    C=$!
-    rm -f /run/banana/cage.pid
-fi
+# everything it started. cage is the kiosk compositor.
+setsid cage -- "$BIN" >"$L" 2>&1 &
+C=$!
+echo $C > /run/banana/cage.pid
 trap 'kill -TERM -$C 2>/dev/null' TERM INT HUP
 wait $C; S=$?
 while kill -0 $C 2>/dev/null; do wait $C; S=$?; done

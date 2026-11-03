@@ -200,19 +200,19 @@ esac
 # VK_KHR_wayland_surface) and cage turns the output with the panel's "panel orientation", which leaves
 # video_rotation at 0. A card with no cage falls back to RetroArch taking the panel itself: the khr_display pair,
 # and the RPC's 270 degrees, the turn the menu rotation patches (buildroot/patches/retroarch) cover.
+# what the emulator runs on. A core that wants OpenGL -- the N64 core's GLideN64 -- is no problem: RetroArch forces
+# glcore for that core itself (gfx/video_driver.c, video_driver_find_driver), so the software cores and the Vulkan ones
+# run on Vulkan and GLideN64 keeps its GL. The *context* driver and video_rotation follow the compositor: the game
+# runs under cage, so RetroArch is a Wayland client (vk_wayland -- the Wayland surface, Turnip's VK_KHR_wayland_surface)
+# and cage turns the output with the panel's "panel orientation", which leaves video_rotation at 0.
 #
 # Vulkan is the a613 through Mesa's Turnip, which only exists on the handheld: a machine without the SoC (the QEMU
 # test's virtio GPU) has no Vulkan device and RetroArch would come up with no picture, so it falls back to GL. The
-# device tree's compatible says which; the *context* driver is glcore's pairing then (wayland, and kms with no cage).
+# device tree's compatible says which; the *context* driver is glcore's pairing then (wayland).
 vk=
 grep -qa 'qcom,sm4450' /proc/device-tree/compatible 2>/dev/null && vk=1
-if [ -x /usr/bin/cage ]; then
-	if [ -n "$vk" ]; then drv=vulkan; ctx=vk_wayland; else drv=glcore; ctx=wayland; fi
-	rot=0
-else
-	if [ -n "$vk" ]; then drv=vulkan; ctx=khr_display; else drv=gl; ctx=kms; fi
-	rot=3
-fi
+if [ -n "$vk" ]; then drv=vulkan; ctx=vk_wayland; else drv=glcore; ctx=wayland; fi
+rot=0
 # Dreamcast: Flycast is the one core this handheld cannot quite hold, and its renderer is what paces it. Sampled on
 # the unit, the emulation thread sits in Flycast's own render-thread wait (a futex) while the GPU is already at its
 # top step and the console runs 55-60 fps -- and the sound comes out choppy, with no ALSA underrun at all. ROCKNIX
@@ -222,9 +222,7 @@ fi
 # enable flag only -- the preset file is left alone).
 glc=
 case $c in flycast) glc=1 ;; esac
-if [ -n "$glc" ]; then
-	if [ -x /usr/bin/cage ]; then drv=glcore; ctx=wayland; else drv=gl; ctx=kms; fi
-fi
+if [ -n "$glc" ]; then drv=glcore; ctx=wayland; fi
 set_cfg video_driver $drv
 set_cfg video_context_driver $ctx
 set_cfg video_rotation $rot
@@ -358,9 +356,8 @@ set_cfg savestate_auto_load ${q:-false}
 # to accounts.conf instead, now and after the game.
 A=/data/banana/accounts.conf
 RA=/run/banana/retroarch-account.cfg
-acct() { sed -n "s/^$1=//p" $A 2>/dev/null | head -n 1; }
 /usr/libexec/banana/ra-secrets scrub    # (a card from before this, or a game cut short, kept them in retroarch.cfg)
-u=$(acct ra_user)
+u=$(/usr/libexec/banana/ra-secrets get ra_user)
 (umask 077; : > $RA)
 if [ -n "$u" ]; then
     set_cfg cheevos_enable true; set_cfg cheevos_username "$u"
@@ -368,7 +365,7 @@ if [ -n "$u" ]; then
     # already unlocked as the game loads, and for each one as it is won) into thumbnails/cheevos/badges on the card,
     # and the patch that tells the menu about an unlock hands it that path. Off by default in RetroArch.
     set_cfg cheevos_badges_enable true
-    printf 'cheevos_password = "%s"\ncheevos_token = "%s"\n' "$(acct ra_password)" "$(acct ra_retroarch_token)" > $RA
+    printf 'cheevos_password = "%s"\ncheevos_token = "%s"\n' "$(/usr/libexec/banana/ra-secrets get ra_password)" "$(/usr/libexec/banana/ra-secrets get ra_retroarch_token)" > $RA
 elif [ -f $A ]; then
     set_cfg cheevos_enable false
 fi
@@ -412,18 +409,13 @@ tries=0
 while :; do
     # cage is a kiosk compositor: one application, fullscreen, and it turns the output with the panel (the
     # connector's "panel orientation" property, which wlroots reads) so RetroArch's menu, its OSD and the game
-    # are all upright -- the per-driver rotation patches are not needed under it. Fall back to RetroArch on KMS
-    # if cage is not there, so a card without it still runs.
-    if [ -x /usr/bin/cage ]; then
-        cage -- retroarch -v --config $CFG --appendconfig "$L|$RA" -L "$CORE" "$2" < $FIFO --log-file $RL &
-    else
-        retroarch -v --config $CFG --appendconfig "$L|$RA" -L "$CORE" "$2" < $FIFO --log-file $RL &
-    fi
+    # are all upright -- the per-driver rotation patches are not needed under it.
+    cage -- retroarch -v --config $CFG --appendconfig "$L|$RA" -L "$CORE" "$2" < $FIFO --log-file $RL &
     P=$!
     # bananad's SIGUSR1 on the way out of a sleep goes here: cage re-modesets its output, because a panel its
     # driver turned off on the way down comes back dark and only a modeset clears it (Banana has no session
-    # manager to hear about a resume). With no cage there is nothing to re-modeset, and the file goes away.
-    if [ -x /usr/bin/cage ]; then echo $P > /run/banana/cage.pid; else rm -f /run/banana/cage.pid; fi
+    # manager to hear about a resume).
+    echo $P > /run/banana/cage.pid
     trap 'kill -TERM $P 2>/dev/null' TERM INT HUP
     # A watchdog: RetroArch prints "Unloading game" as it tears a game down, then exits. On this SoC the teardown can
     # hang there (the AudioReach PCM or the Vulkan swapchain not letting go) -- the config and SRAM are already saved

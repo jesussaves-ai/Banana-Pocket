@@ -1,6 +1,7 @@
 #include <ctime>
 #include "settings.h"
 #include "settings_defaults.h"
+#include "json.h"
 #include "theme.h"
 #include <algorithm>
 #include <dlfcn.h>
@@ -2276,25 +2277,6 @@ namespace banana
 			}
 		};
 		size_t onBody(char* p, size_t sz, size_t n, void* u) { ((std::string*)u)->append(p, sz * n); return sz * n; }
-		// "Key":"value" or "Key":123 in the server's JSON (enough for its flat login reply)
-		std::string jsonField(const std::string& j, const std::string& key)
-		{
-			size_t at = j.find("\"" + key + "\"");
-			if (at == std::string::npos) return "";
-			at = j.find(':', at);
-			if (at == std::string::npos) return "";
-			at++;
-			while (at < j.size() && j[at] == ' ') at++;
-			if (at < j.size() && j[at] == '"')
-			{
-				std::string v;
-				for (size_t i = at + 1; i < j.size() && j[i] != '"'; i++) v += j[i] == '\\' && i + 1 < j.size() ? j[++i] : j[i];
-				return v;
-			}
-			size_t e = at;
-			while (e < j.size() && j[e] != ',' && j[e] != '}') e++;
-			return j.substr(at, e - at);
-		}
 	}
 
 	void Settings::startRaCheck(const std::string& user, const std::string& pass)
@@ -2330,16 +2312,26 @@ namespace banana
 					if (cu.perform(h) == 0)
 					{
 						cu.getinfo(h, RESPONSE_CODE, &status);
-						if (jsonField(body, "Success") == "true")
+						// the server's flat login reply, through the theme reader the menu already links
+						const JPtr jk = parseJson(body);
+						auto field = [&jk](const char* key) -> std::string {
+							const JVal* v = jk ? jk->get(key) : nullptr;
+							if (!v) return "";
+							if (v->kind == JVal::STR) return v->s;
+							if (v->kind == JVal::BOOL) return v->b ? "true" : "false";
+							if (v->kind == JVal::NUM) { char b[32]; snprintf(b, sizeof b, "%.0f", v->n); return b; }
+							return "";
+						};
+						if (field("Success") == "true")
 						{
 							kind = 1;
-							std::string name = jsonField(body, "User"), score = jsonField(body, "Score");
+							std::string name = field("User"), score = field("Score");
 							l2 = "Logged in as " + (name.empty() ? user : name) + (score.empty() || score == "0" ? "" : " \xc2\xb7 " + score + " points");
 						}
 						else
 						{
 							kind = 2;
-							std::string err = jsonField(body, "Error");
+							std::string err = field("Error");
 							bool wrong = status == 401 || err.find("nvalid") != std::string::npos || err.find("assword") != std::string::npos;
 							l2 = wrong ? "Wrong account name or password" : !err.empty() ? err : "The server said no (" + std::to_string(status) + ")";
 						}
