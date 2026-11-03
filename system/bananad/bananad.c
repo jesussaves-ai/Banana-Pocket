@@ -1651,7 +1651,7 @@ static void usb_housekeeping(double now)
 	struct dirent *e;
 	while ((e = readdir(d))) {
 		if (e->d_name[0] == '.') continue;
-		if (!udcname[0]) snprintf(udcname, sizeof udcname, "%s", e->d_name);
+		if (!udcname[0]) snprintf(udcname, sizeof udcname, "%.63s", e->d_name);
 		char p[300], st[32];
 		snprintf(p, sizeof p, "/sys/class/udc/%s/state", e->d_name);
 		read_str(p, st, sizeof st);
@@ -1667,7 +1667,7 @@ static void usb_housekeeping(double now)
 	snprintf(state, sizeof state, "%s/%s/%s", cur[0] ? cur : "?", pcur[0] ? pcur : "?",
 	    configured ? "up" : "down");
 	if (strcmp(state, said)) {
-		snprintf(said, sizeof said, "%s", state);
+		snprintf(said, sizeof said, "%.47s", state);
 		say("usb: typec data_role=%s power_role=%s controller=%s", cur[0] ? cur : "?",
 		    pcur[0] ? pcur : "?", configured ? "configured" : "not configured");
 	}
