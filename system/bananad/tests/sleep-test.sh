@@ -16,8 +16,12 @@ if [ "$1" != --inside ]; then
 #include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
+/* the menu's part of the handover: it publishes what its PCM is doing, and closes it on SIGHUP -- after 50 ms, so the
+ * test can tell bananad waited for the note (not a fixed delay) */
+static void state(const char *s) { FILE *f = fopen("/run/banana/sound-state", "w"); if (f) { fputs(s, f); fclose(f); } }
 static void on(int s) { FILE *f = fopen("/run/test/ui-signals", "a"); if (f) { fprintf(f, "SIGUSR1\n"); fclose(f); } }
-int main(void) { signal(SIGUSR1, on); signal(SIGHUP, SIG_IGN); for (;;) pause(); }
+static void onhup(int s) { usleep(50000); state("closed (test)\n"); }
+int main(void) { signal(SIGUSR1, on); signal(SIGHUP, onhup); state("open (test)\n"); for (;;) pause(); }
 EOF
     mkdir -p /data 2>/dev/null || true
     exec unshare -m -p -f --mount-proc sh "$0" --inside "$W" "$ROOTFS"
@@ -29,12 +33,6 @@ POWEROFF=0
 trap 'POWEROFF=1' USR2
 mount -t tmpfs none /sys/power
 mount -t tmpfs none /sys/class
-# The wakeup_sources table bananad reads to name a wake. /sys may be read-only (a runner) and debugfs may already be
-# mounted there -- and bananad mounts debugfs itself at start, over whatever is here. So the fake is only set up
-# where those cannot happen (a userns without CAP_SYS_ADMIN), and the check that reads it looks for its own row first.
-WAKESRC=
-mkdir -p /sys/kernel/debug 2>/dev/null && mount -t tmpfs none /sys/kernel/debug 2>/dev/null &&
-    : > /sys/kernel/debug/wakeup_sources 2>/dev/null && WAKESRC=/sys/kernel/debug/wakeup_sources
 mount -t tmpfs none /dev/input 2>/dev/null || { mkdir -p /dev/input; mount -t tmpfs none /dev/input; }
 mount -t tmpfs none /run
 mount -t tmpfs none /data
@@ -85,29 +83,16 @@ echo $GAME > /run/banana/game.pid
 
 echo "1. the power button sleeps and wakes it"
 start
-# the table as the kernel has it, snapshotted before "mem": the waker is the source whose event_count moves. The
-# table's last_change column (what the log used to read) names only mmc0, the SD host, for every wake.
-if [ -n "$WAKESRC" ]; then
-    printf 'name\tactive_count\tevent_count\twakeup_count\texpire_count\ntest-waker\t0\t0\t0\t0\nmmc0\t0\t0\t0\t0\n' > "$WAKESRC" 2>/dev/null || true
-fi
 power
 if asleep; then ok "suspended on the power button"; else bad "no suspend on the power button"; fi
 [ "$(gstate)" = T ] && ok "game stopped while asleep" || bad "game not stopped ($(gstate))"
 [ "$(cat /sys/power/pm_async)" = 1 ] && ok "devices resume in parallel (pm_async 1)" || bad "pm_async $(cat /sys/power/pm_async)"
 grep -q "\[deep\]" /sys/power/mem_sleep && ok "deep sleep chosen" || bad "mem_sleep $(cat /sys/power/mem_sleep)"
 grep -q 'going to sleep (power button)' /data/banana/logs/sleep-state && ok "the pre-sleep note was written" || bad "no sleep-state note"
-WAKER=0     # the kernel's own table is in its place (a runner with debugfs, or a read-only /sys): nothing to fake
-if [ -n "$WAKESRC" ] && grep -q test-waker "$WAKESRC" 2>/dev/null; then
-    printf 'name\tactive_count\tevent_count\twakeup_count\texpire_count\ntest-waker\t0\t1\t1\t0\nmmc0\t0\t0\t0\t0\n' > "$WAKESRC" 2>/dev/null || true
-    WAKER=1
-fi
 wake
 [ "$(gstate)" != T ] && ok "game running again after the wake" || bad "game still stopped"
 rm -f /run/banana/game.pid; sleep 0.1
 grep -q 'awake (power button)' /data/banana/logs/sleep.log && ok "sleep.log: $(tail -n1 /data/banana/logs/sleep.log | cut -c21-)" || bad "no wake in sleep.log"
-if [ $WAKER = 1 ]; then
-    grep -q 'wake test-waker +1' /data/banana/logs/sleep.log && ok "the wake names the source whose count moved" || bad "the wake did not name test-waker"
-fi
 stop
 
 echo "2. the battery guard: an RTC wake with the battery nearly empty shuts down cleanly"
@@ -182,6 +167,8 @@ asleep && ok "suspended" || bad "no suspend"
 wake
 sleep 0.4
 grep -q SIGUSR1 /run/test/ui-signals 2>/dev/null && ok "banana-ui was told to draw again (SIGUSR1)" || bad "banana-ui was not signalled after the wake"
+grep -q 'menu: released the sound device in' /data/banana/logs/sleep.log && ok "waited for the menu to hand the device over" || bad "no handover wait logged"
+grep -q 'sound device: closed (test)' /data/banana/logs/sleep-state && ok "the note recorded the closed device" || bad "the note did not record the handover"
 grep -q 'awake' /data/banana/logs/sleep.log && ok "the wake was logged" || bad "no wake logged"
 stop
 

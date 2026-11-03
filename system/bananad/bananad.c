@@ -410,63 +410,37 @@ static int sleep_too_low(void)
 	return pct >= 0 && pct <= cfg.sleep_floor_pct;
 }
 
-/* The kernel's wakeup_sources table taken before a sleep: each source's name and event_count. Comparing it with the
- * table after the wake names the source that really fired. The table's last_change column is what the log used to
- * go by, and that is whoever moved first on the way back -- mmc0 (the SD host) always does, so every wake read
- * "wake mmc0" whether the card had anything to do with it or not (its event_count stays 0). */
-#define WAKESRC_MAX 32
-struct wakesrc { char name[64]; unsigned events; };
-
-static int wake_snapshot(struct wakesrc *out, int max)
+/* Why the kernel resumed. It cannot say on this board: /sys/power/pm_wakeup_irq is absent, and a real power-key wake
+ * leaves every wakeup_sources counter at 0 (the PMIC's PON IRQ is not a tracked wakeup source; mmc0, which the table's
+ * last_change used to name for every wake, never fires at all -- measured with a key wake on the handheld: pwrkey 0/0).
+ * So report what bananad itself saw: the power key press (wake_key_press()), the cable, or neither -- plus the kernel's
+ * global wakeup_count, which says whether it counted a wakeup event at all. */
+static void wake_reason(char *out, size_t n, int key, int cable, unsigned long wk0)
 {
-	FILE *f = fopen("/sys/kernel/debug/wakeup_sources", "r");
-	if (!f) return 0;
-	char line[256];
-	int n = 0;
-	if (!fgets(line, sizeof line, f)) { fclose(f); return 0; }	/* the header row */
-	while (n < max && fgets(line, sizeof line, f)) {
-		char name[64];
-		unsigned events;
-		if (sscanf(line, "%63s %*u %u", name, &events) != 2) continue;
-		snprintf(out[n].name, sizeof out[n].name, "%s", name);
-		out[n].events = events;
-		n++;
-	}
-	fclose(f);
-	return n;
+	unsigned long wk = 0;
+	FILE *f = fopen("/sys/power/wakeup_count", "r");
+	if (f) { if (fscanf(f, "%lu", &wk) != 1) wk = 0; fclose(f); }
+	const char *seen = key ? "power key" : cable ? "cable" : "no key and no cable";
+	if (wk > wk0) snprintf(out, n, "wake: %s (kernel wakeup_count +%lu)", seen, wk - wk0);
+	else snprintf(out, n, "wake: %s (the kernel counted no wakeup event)", seen);
 }
 
-/* the sources whose event_count went up since the snapshot: "name +n, name +n" (empty: nothing moved) */
-static void wake_moved(const struct wakesrc *before, int nb, char *out, size_t n)
+/* The menu's handover, waited for rather than guessed at. After SIGHUP, banana-ui releases the DSP and closes its PCM
+ * (Sound::release waits up to 2 s for the sound thread), publishing each step to /run/banana/sound-state. A PCM close
+ * still in flight when the DSP is told to sleep is what the overnight hang on 03:40 might have been (logs/sleep-state
+ * from the next sleep said "releasing (handover)" at the write of mem). So: 1 = it closed (ms), 0 = still open after
+ * the menu's own 2 s, -1 = no note at all (a menu from before this, which gets the old fixed 200 ms). */
+static int ui_release_wait(double *ms)
 {
-	struct wakesrc now[WAKESRC_MAX];
-	int nn = wake_snapshot(now, WAKESRC_MAX);
-	size_t used = 0;
-	out[0] = 0;
-	for (int i = 0; i < nn && used + 1 < n; i++) {
-		unsigned was = 0;
-		for (int j = 0; j < nb; j++)
-			if (!strcmp(before[j].name, now[i].name)) { was = before[j].events; break; }
-		if (now[i].events <= was) continue;
-		used += snprintf(out + used, n - used, "%s%s +%u", used ? ", " : "", now[i].name, now[i].events - was);
+	double t = mono();
+	for (;;) {
+		char s[128] = "";
+		read_str("/run/banana/sound-state", s, sizeof s);
+		if (!s[0]) return -1;
+		if (!strstr(s, "open") && !strstr(s, "releasing")) { *ms = (mono() - t) * 1000; return 1; }
+		if (mono() - t > 2.0) { *ms = (mono() - t) * 1000; return 0; }
+		sleep_us(20000);
 	}
-}
-
-/* Why the kernel resumed. /sys/power/pm_wakeup_irq is often 0 or absent here, so the waker is the source whose
- * event_count moved across the sleep (wake_snapshot(), taken just before the write of "mem"). debugfs is mounted at
- * start for this (main()). Also carries the device/step that failed, when a suspend failed. */
-static void wake_reason(char *out, size_t n, const struct wakesrc *before, int nb)
-{
-	int irq = read_int("/sys/power/pm_wakeup_irq", -1);
-	char irqbuf[16], dev[64] = "", step[32] = "", fired[192];
-	if (irq >= 0) snprintf(irqbuf, sizeof irqbuf, "%d", irq);
-	else snprintf(irqbuf, sizeof irqbuf, "?");
-	read_str("/sys/power/suspend_stats/last_failed_dev", dev, sizeof dev);
-	read_str("/sys/power/suspend_stats/last_failed_step", step, sizeof step);
-	wake_moved(before, nb, fired, sizeof fired);
-	if (fired[0]) snprintf(out, n, "wake %s (irq %s)%s%s", fired, irqbuf, dev[0] ? ", failed " : "", dev);
-	else if (dev[0]) snprintf(out, n, "wake irq %s, failed %s at %s", irqbuf, dev, step[0] ? step : "?");
-	else snprintf(out, n, "wake irq %s, no source's count moved", irqbuf);
 }
 
 /* What the handheld looked like as the kernel went under, on the data partition. A sleep whose resume never returns
@@ -595,9 +569,21 @@ static void suspend_now(const char *why)
 	pid_t game = pid_of("/run/banana/game.pid");
 	pid_t pg = game ? getpgid(game) : 0;
 	if (pg > 0 && !skip("stop")) kill(-pg, SIGSTOP);	/* an emulator's dynarec mustn't run on while the clocks drop */
-	/* the menu's ambient loop, if any: stop it and have it release the DSP before the ADSP sleeps (SIGHUP), and give
-	 * it a moment to close the device; then darken the panel and mute the codec so nothing flashes or pops */
-	if (!game && !skip("ui")) { pid_t u = ui_pid(); if (u > 0) { kill(u, SIGHUP); sleep_us(200000); } }
+	/* the menu's ambient loop, if any: stop it and have it release the DSP before the ADSP sleeps (SIGHUP). Wait for
+	 * the close it publishes to /run/banana/sound-state instead of guessing at a delay -- a PCM close still in flight
+	 * when the DSP goes under is the one thing the overnight hang of 03:40 was seen doing (logs/sleep-state says
+	 * "releasing (handover)" at the write of mem); then darken the panel and mute the codec so nothing flashes or pops */
+	if (!game && !skip("ui")) {
+		pid_t u = ui_pid();
+		if (u > 0) {
+			kill(u, SIGHUP);
+			double ms = 0;
+			int rel = ui_release_wait(&ms);
+			if (rel == 1) sleep_log("menu: released the sound device in %.0f ms", ms);
+			else if (rel == 0) sleep_log("menu: the sound device was still open %.0f ms after the handover: sleeping anyway", ms);
+			else sleep_us(200000);	/* a menu from before sound-state: the old fixed wait */
+		}
+	}
 	if (!skip("mute")) sleep_quiet_begin();
 	if (!skip("hooks")) hooks("pre", 0);
 	if (!skip("sync")) sync();
@@ -609,8 +595,8 @@ static void suspend_now(const char *why)
 	int plugged0 = charger_online();
 	double asleep = 0;
 	const char *woke = "?";
-	struct wakesrc before[WAKESRC_MAX];
-	int nb = 0;
+	int woke_key = 0, woke_cable = 0;
+	unsigned long wk0 = 0;
 	for (;;) {
 		time_t alarm = rtc_alarm((int)(cfg.sleep_check_hours * 3600));
 		double t_in = mono();
@@ -620,8 +606,18 @@ static void suspend_now(const char *why)
 		    (t_prep - t0) * 1000, (t_in - t0) * 1000, game ? ", game paused" : "");
 		char mode[32] = "";
 		read_str("/sys/power/mem_sleep", mode, sizeof mode);
-		nb = wake_snapshot(before, WAKESRC_MAX);	/* the waker is the source this count moves for */
-		sleep_note(why, mode[0] ? mode : cfg.mem_sleep, nb);
+		{	/* how many wakeup sources the kernel still has armed, for the note (3 with the power key and the cable) */
+			FILE *wf = fopen("/sys/kernel/debug/wakeup_sources", "r");
+			int n = 0;
+			char ln[256];
+			if (wf) { while (fgets(ln, sizeof ln, wf)) n++; fclose(wf); }
+			sleep_note(why, mode[0] ? mode : cfg.mem_sleep, n > 0 ? n - 1 : 0);
+		}
+		wk0 = 0;
+		{
+			FILE *f = fopen("/sys/power/wakeup_count", "r");
+			if (f) { if (fscanf(f, "%lu", &wk0) != 1) wk0 = 0; fclose(f); }
+		}
 		int r = write_file("/sys/power/state", "mem");
 		int err = errno;
 		/* a signal (SIGHUP from the menu, SIGCHLD) interrupted the write: nothing slept, so retry rather than
@@ -671,7 +667,9 @@ static void suspend_now(const char *why)
 		/* The pwrkey is the only armed wake source and its IRQ is glitchy (it fires on the release of the very press
 		 * that asked for this sleep), so a wake with no real KEY_POWER press and no cable change is the panel lighting
 		 * up for nothing: go back to sleep, a bounded number of times, and only then stay awake. */
-		if (spurious < 3 && !wake_key_press() && !(charger_online() && !plugged0)) {
+		woke_key = wake_key_press();
+		woke_cable = charger_online() && !plugged0;
+		if (spurious < 3 && !woke_key && !woke_cable) {
 			spurious++;
 			sleep_log("wake with no key or cable (spurious): back to sleep (%d/3)", spurious);
 			continue;
@@ -707,7 +705,7 @@ static void suspend_now(const char *why)
 	power_down = 0;
 	last_input = mono();
 	char wr[256];
-	wake_reason(wr, sizeof wr, before, nb);
+	wake_reason(wr, sizeof wr, woke_key, woke_cable, wk0);
 	sleep_log("awake (%s) after %.0f s asleep%s%s, %s, game and menu back %.1f ms after the kernel", woke, asleep,
 		rtc_wakes ? ", battery checked" : "", asleep < 5.0 ? " (it did not take)" : "", wr, (t_back - t_wake) * 1000);
 	sleep_note_resume(wr);
