@@ -818,6 +818,7 @@ struct App
 			std::string who = view == View::RECENT ? "Recent"
 				: view == View::CHANNELS && !channelOpen ? std::to_string(channels.size()) + " channels"
 				: view == View::CHANNELS ? "Channel: " + channelName
+				: view == View::LOCAL ? std::to_string(localItems.size()) + " files"
 				: std::to_string(results.size()) + " results";
 			status = who + "   SEL " + std::to_string(quality) + "p (next video)";
 		}
@@ -1049,7 +1050,7 @@ struct App
 			// nothing over the video (mpv's window covers it), so playback is driven by *large* touch zones on the
 			// screen, mapped by banana-tube's own (verified) evdev touch: see tapAt's PLAYING case. osd-playing-msg
 			// shows the (gamepad) controls briefly at the start.
-			"--osd-level=1", "--osd-font-size=90", "--osd-duration=700",
+			"--osd-level=1", "--osd-font-size=40", "--osd-duration=700",
 			// libass here is built without fontconfig ("can't find selected font provider"), so the OSD needs the
 			// libass provider and an explicit fonts dir + family: the image's Inter is the only font, and without
 			// this the indicators render as nothing at all.
@@ -1264,7 +1265,7 @@ struct App
 	SDL_Rect queryRect(int W, int H) const { return SDL_Rect { W * 15 / 100, H * 4 / 100, W * 81 / 100, H * 10 / 100 }; }
 	SDL_Rect tabRect(int W, int H, int i) const
 	{
-		int tw = W * 22 / 100, gap = W * 2 / 100;
+		int tw = W * 20 / 100, gap = W * 1 / 100;
 		return SDL_Rect { W * 4 / 100 + i * (tw + gap), H * 15 / 100, tw, H * 7 / 100 };
 	}
 	int kTop(int H) const { return H * 26 / 100; }
@@ -1517,12 +1518,16 @@ struct App
 	// ---- the loop ------------------------------------------------------------------------------------------------
 	int run()
 	{
+		// mpv's window has the focus while a video plays; without this SDL2 drops every pad event the app gets in
+		// the background, so the player's pad controls did nothing
+		SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 		SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);
 		TTF_Init();
 		IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
 		SDL_GameControllerEventState(SDL_ENABLE);
 		for (int i = 0; i < SDL_NumJoysticks(); i++)
 			if (SDL_IsGameController(i)) { pad = SDL_GameControllerOpen(i); if (pad) break; }
+		logLine("pads: " + std::to_string(SDL_NumJoysticks()) + (pad ? std::string(" opened: ") + SDL_GameControllerName(pad) : std::string(" none opened")));
 
 		win = SDL_CreateWindow("BananaTube", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1024, 768,
 			SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_SHOWN);
@@ -1600,25 +1605,22 @@ struct App
 						if (mode == Mode::PLAYING) { connectIpc(); ipcSend("{\"command\":[\"cycle\",\"fullscreen\"]}"); }
 						else startSearch();
 						break;
-					case SDL_CONTROLLER_BUTTON_BACK:	// Select: where playback is, or the recent list, or the quality
+					case SDL_CONTROLLER_BUTTON_BACK:	// Select: where playback is, or the quality cap
 						if (mode == Mode::PLAYING)
 						{
 							connectIpc();
 							if (havePos && dur > 0) showInd(whereTag(pos) + "\n" + std::to_string(quality) + "p", 2200);
 							else showInd("Loading\u2026", 900);
 						}
-						else if (mode == Mode::RESULTS) cycleQuality();
-						else showRecent();
+						else cycleQuality();
 						break;
 					case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
 						if (mode == Mode::PLAYING) { connectIpc(); ipcSend("{\"command\":[\"add\",\"chapter\",-1]}"); }
-						else if (mode == Mode::KEYS) cycleTab(-1);
-						else page(-1);
+						else cycleTab(-1);
 						break;
 					case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
 						if (mode == Mode::PLAYING) { connectIpc(); ipcSend("{\"command\":[\"add\",\"chapter\",1]}"); }
-						else if (mode == Mode::KEYS) cycleTab(1);
-						else page(1);
+						else cycleTab(1);
 						break;
 					case SDL_CONTROLLER_BUTTON_DPAD_UP: move(0, -1); break;
 					case SDL_CONTROLLER_BUTTON_DPAD_DOWN: move(0, 1); break;
@@ -1657,6 +1659,17 @@ struct App
 			{
 				trigger(trigL, SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 16000, -1, now);
 				trigger(trigR, SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000, 1, now);
+			}
+			else if (pad && mode == Mode::RESULTS)
+			{
+				// a page of results on the triggers: the shoulders are the tabs now
+				static bool l0 = false, r0 = false;
+				bool l = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 16000;
+				bool r = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000;
+				if (l && !l0) page(-1);
+				if (r && !r0) page(1);
+				l0 = l;
+				r0 = r;
 			}
 
 			if (mode == Mode::PLAYING && ipc < 0) ipcTryConnect();
@@ -1928,8 +1941,8 @@ struct App
 		panel(0, H * 91 / 100, W, H - H * 91 / 100, SDL_Color { 8, 10, 14, 255 }, SDL_Color { 8, 10, 14, 255 });
 		SDL_Color hint { 150, 156, 166, 255 };
 		const char* help = mode == Mode::PLAYING ? "A pause   D-pad seek   L2/R2 hold   L/R chapter   Y quality   SEL where   START full   X undo skip   B stop"
-			: mode == Mode::RESULTS ? "A play   B back   X channel   L/R page   SEL quality   Y search   START search"
-			: "A type   B back   L/R tab   SEL recent   START or Y search";
+			: mode == Mode::RESULTS ? "A play   B back   X channel   L/R tab   L2/R2 page   SEL quality   Y search   START search"
+			: "A type   B back   L/R tab   SEL quality   START or Y search";
 		drawText(help, fSmall, hint, W * 4 / 100, H * 94 / 100, W * 92 / 100);
 	}
 

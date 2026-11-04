@@ -37,11 +37,11 @@ mapping `run-port` uses: **A is the east button**).
 | B | clear, then quit | back to the keyboard | stop and go back |
 | X | backspace | the chosen video's channel | undo the last SponsorBlock skip |
 | Y | run the search | back to the keyboard (search) | quality: 720 → 480 → 360p, reloaded at the same position |
-| L / R | switch tab | a page back / forward | previous / next chapter |
-| L2 | — | — | tap: back 10 s; hold: scrub back 10 s every 0.25 s |
-| R2 | — | — | tap: forward 10 s; hold: play at 2x |
+| L / R | switch tab | switch tab | previous / next chapter |
+| L2 | — | a page back | tap: back 10 s; hold: scrub back 10 s every 0.25 s |
+| R2 | — | a page forward | tap: forward 10 s; hold: play at 2x |
 | START | run the search | a new search | full screen |
-| SELECT | the Recent tab | the quality cap (720/480/360p, next video) | position / length bar / quality readout |
+| SELECT | the quality cap (720/480/360p) | the quality cap (720/480/360p) | position / length bar / quality readout |
 | touch | tap a key / `Search`, or a tab | tap a row to focus, tap again to play, or a tab | zones: left/right seek, centre pause, top-left stop |
 
 **Tabs, recent and quality:** the results shelf has four tabs — **Search** (the keyboard and its hits), **Recent** (the
