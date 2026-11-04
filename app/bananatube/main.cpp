@@ -1720,6 +1720,8 @@ struct App
 					else if (k == SDLK_DOWN) move(0, 1);
 					else if (k == SDLK_LEFT) move(-1, 0);
 					else if (k == SDLK_RIGHT) move(1, 0);
+					else if (k == SDLK_TAB && mode != Mode::PLAYING)	// a desktop keyboard (the QEMU test); the pad uses L/R
+						cycleTab((ev.key.keysym.mod & KMOD_SHIFT) ? -1 : 1);
 					else if (k >= 32 && k < 127 && mode == Mode::KEYS) query += static_cast<char>(k);
 				}
 				// Touch is read from evdev (pollTouch), never through SDL: under cage SDL delivers a touch as a
@@ -2140,8 +2142,31 @@ struct App
 
 		drawHints(W, H, sk);
 	}
-	// filled by Task 4; the band itself is part of the backdrop
-	void drawHints(int, int, const Skin&) {}
+	// the menu's button pills: a key chip and what it does, at most four per screen
+	void drawHints(int W, int H, const Skin& sk)
+	{
+		struct Hint { const char* key; const char* label; };
+		static const Hint keysH[] = { { "A", "Type" }, { "B", "Back" }, { "Y", "Search" }, { "L/R", "Tab" } };
+		static const Hint resultsH[] = { { "A", "Play" }, { "B", "Back" }, { "Y", "Search" }, { "L/R", "Tab" } };
+		static const Hint channelH[] = { { "A", "Play" }, { "B", "Back" }, { "L/R", "Tab" } };
+		bool inChannel = view == View::CHANNELS && channelOpen;
+		const Hint* hs = mode == Mode::KEYS ? keysH : inChannel ? channelH : resultsH;
+		int n = mode == Mode::KEYS || !inChannel ? 4 : 3;
+		int chipH = H * 42 / 1000, padX = W * 15 / 1000;
+		int x = W * 4 / 100, y = hintTop(H) + (hintH(H) - chipH) / 2;
+		for (int i = 0; i < n; i++)
+		{
+			int kw = 0, kh = 0;
+			TTF_SizeUTF8(fSmall, hs[i].key, &kw, &kh);
+			box(x, y, kw + 2 * padX, chipH, sk.panel, sk.edge, 2);
+			drawText(hs[i].key, fSmall, sk.ink, x + padX, y + (chipH - kh) / 2);
+			x += kw + 2 * padX + W * 1 / 100;
+			int lw = 0, lh = 0;
+			TTF_SizeUTF8(fSmall, hs[i].label, &lw, &lh);
+			drawText(hs[i].label, fSmall, sk.soft, x, y + (chipH - lh) / 2);
+			x += lw + W * 3 / 100;
+		}
+	}
 
 	void drawKeyboard(int W, int H, const Skin& sk)
 	{
