@@ -30,12 +30,21 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   - **Queued, one variable per sleep:** (2) unbind `ath10k_snoc`/WPSS instead of only downing the supplicant;
     (3) stop the USB gadget/PHY; (4) a `s2idle` sleep for comparison, to know what `deep` is worth. If none moves it,
     the floor is the platform's S2R depth (firmware) and the remaining wins are on the wake side.
+  - **Audio at sleep (measured win, hook in):** stopping the sound server around the sleep costs 8-13 mA of the
+    drain (37-42 → 29 mA) because the keep-alive keeps the AudioReach graph instantiated. `sleep.d/20-sound` stops it in
+    `pre` and starts it in the background in `post`; the next overnight sleep measures the result, with `make sound-test`
+    after the wake to prove the chain comes back.
   - **Wake side:** 57–60 ms from the kernel's resume to a drawn menu; the kernel's own resume is ~1.05 s; Wi-Fi coming
     back is the slow part (the post hook reconnects in the background). Measure it, then consider keeping the link
     associated across suspend (`sleep.d/10-wifi` currently always downs it) — "works instantly" is mostly this.
   - The meter is **bind-mounted on the unit's current boot**, not in the 0.5.5 image: do not reboot until the tests
     finish.
 
+- **BananaTube idle frames (Track A1, approved).** The app redraws the whole window every 8 ms and renders a fresh TTF
+  texture for every visible string, even with nothing happening. A `dirty` flag gates drawing (none at all while mpv
+  owns the screen), a bounded text-texture cache ends the per-frame allocation, and the thumbnail worker wakes the loop
+  when a picture lands. Design: `docs/superpowers/specs/2026-11-04-bananatube-idle-frames-design.md`; plan:
+  `docs/superpowers/plans/2026-11-04-bananatube-idle-frames.md`. Track A2 (cards, focus, keyboard) and Tracks B/C follow.
 - **Languages: Spanish and German, Settings screen first.** The pipeline is in: the English string is the key,
   `tr()` in `ui/src/i18n.cpp` falls back to English, catalogs are JSON in `/usr/share/banana/lang/<code>.json` with a
   `/data/banana/lang/` override on the card (like a theme), and Settings > Display & sound gains a **Language** row

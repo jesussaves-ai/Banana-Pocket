@@ -1,0 +1,12 @@
+#!/bin/sh
+# The sound server stops for a sleep. PipeWire + WirePlumber keep the AudioReach graph instantiated (the keep-alive that
+# stops the DSP un-routing), and that graph is the sleep's biggest measured cost: 37-42 mA with the server up, 29 mA
+# with it stopped, on the unit (gauge charge_counter). The menu has already released its PCM (bananad's SIGHUP), so
+# nothing is playing into it; on the way out the server comes back in the background, the menu is up first and its
+# sound thread retries its opens every 250 ms until the sink is there.
+[ -x /usr/libexec/banana/sound-server ] || exit 0
+case $1 in
+pre)  /usr/libexec/banana/sound-server down ;;
+post) /usr/libexec/banana/sound-server up >/dev/null 2>&1 & ;;
+esac
+exit 0
