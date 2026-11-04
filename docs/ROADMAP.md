@@ -51,8 +51,16 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   texture for every visible string, even with nothing happening. A `dirty` flag gates drawing (none at all while mpv
   owns the screen), a bounded text-texture cache ends the per-frame allocation, and the thumbnail worker wakes the loop
   when a picture lands. Design: `docs/superpowers/specs/2026-11-04-bananatube-idle-frames-design.md`; plan:
-  `docs/superpowers/plans/2026-11-04-bananatube-idle-frames.md`. Track A2's cards and the thumbnail-map bound are in;
-  focus and the keyboard follow. Tracks B/C: player OSD done, continuity later.
+  `docs/superpowers/plans/2026-11-04-bananatube-idle-frames.md`. Track A2's cards, focus and keyboard are in (the Pocket
+  shell below). Tracks B/C: player OSD done, continuity later.
+- **BananaTube Pocket shell (visual rehaul, implemented; unit pass pending).** The client wears the OS's own Pocket
+  theme: the `#17140d` brown-black ground, butter ink and olive metadata, banana-gold focus, Pixelify Sans, a crisp
+  framed screen with the dot grid, a top strip with the banana mark and the *BananaTube* wordmark, four Pocket cards,
+  a keyboard that fills the frame (abc/ABC Shift, gold Search), and button-chip hints. The player's mpv OSD takes the
+  same palette and face; the app tile is gold. Design: `docs/superpowers/specs/2026-11-04-bananatube-pocket-shell-design.md`;
+  plan: `docs/superpowers/plans/2026-11-04-bananatube-pocket-shell.md`. Host renders verified the keyboard and results;
+  the headless QEMU image cannot start cage/SDL (no EGL on its virtio GPU), so the panel pass is on the unit. Idle CPU
+  stays 0.2 % of a core (4 ticks/20 s).
 - **Languages: Spanish and German, Settings screen first.** The pipeline is in: the English string is the key,
   `tr()` in `ui/src/i18n.cpp` falls back to English, catalogs are JSON in `/usr/share/banana/lang/<code>.json` with a
   `/data/banana/lang/` override on the card (like a theme), and Settings > Display & sound gains a **Language** row

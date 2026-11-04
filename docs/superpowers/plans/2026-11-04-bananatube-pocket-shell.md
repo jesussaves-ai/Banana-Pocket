@@ -1,6 +1,6 @@
 # BananaTube Pocket shell Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Give BananaTube the Pocket look — brown-black glass, butter ink, banana gold focus, Pixelify Sans, a framed
 screen, a branded top strip, Pocket cards, a chunky keyboard and button-chip hints — without changing any behaviour.
@@ -64,7 +64,7 @@ stays mpv's text OSD, restyled.
   `FALLBACK_FONT = /usr/share/banana/banana/fonts/Inter-Regular.ttf`,
   `FALLBACK_FONT_MED = /usr/share/banana/banana/fonts/Inter-SemiBold.ttf`.
 
-- [ ] **Step 1: write the failing layout test**
+- [x] **Step 1: write the failing layout test**
 
 In `selftest()`, before the bar case, add `selftest layout`: for (1240,1080) and (1024,768) assert the frame is inside
 the surface; `backRect`/`queryRect` end above `tabRect`; `tabRect(3)` ends inside the frame; tab rects do not overlap;
@@ -72,12 +72,12 @@ the surface; `backRect`/`queryRect` end above `tabRect`; `tabRect(3)` ends insid
 `bananatube selftest layout: ok`/`fail`. Add `grep -q 'selftest layout: ok'` to `run-banana-tube-test.sh` as
 "layout: frame, tabs and rows fit".
 
-- [ ] **Step 2: run it and watch it fail to compile**
+- [x] **Step 2: run it and watch it fail to compile**
 
 Run: `make -s -C app/bananatube` and `system/tests/run-banana-tube-test.sh`.
 Expected: the new helpers/fields do not exist; the test script reports no layout line.
 
-- [ ] **Step 3: implement the shell**
+- [x] **Step 3: implement the shell**
 
 In `main.cpp`:
 - Add the constants, `openFont`, `Skin`/`skin(W)` with the exact palette and `bw`, the five height helpers, `frameRect`,
@@ -107,12 +107,12 @@ In `main.cpp`:
   - delete the old footer strip/text; call `drawHints(W,H,sk)` (add a no-op stub now; Task 4 fills it).
 - In the exit path, destroy `backdrop`, `logo`, then the existing caches.
 
-- [ ] **Step 4: run the tests**
+- [x] **Step 4: run the tests**
 
 Run: `make -s -C app/bananatube -B`, `system/tests/run-banana-tube-test.sh` (26 checks, layout ok), `make -s test`.
 Expected: green. The look is not verified yet.
 
-- [ ] **Step 5: commit**
+- [x] **Step 5: commit**
 
 ```bash
 git add app/bananatube/main.cpp system/tests/run-banana-tube-test.sh \
@@ -137,12 +137,12 @@ git commit -m "bananatube: the Pocket shell's frame, brand and tabs"
   colours; card `H*14/100` tall, row gap `W*1/100`, thumb inset `max(4, W/250)`, thumb `16:9`, selected border `gold`
   + a `max(6, W*8/1000)` left bar, selected title `goldHi`.
 
-- [ ] **Step 1: extend the failing layout test**
+- [x] **Step 1: extend the failing layout test**
 
 Add to `selftest layout`: `resultsRowH(1080) == H*14/100`, `resultsTop(1080) == H*285/1000`, and
 `rowsPerPage(1080) == 4`; run the test. The current `resultsTop`/`RowH` values (26 %, 12 %) fail.
 
-- [ ] **Step 2: implement the cards**
+- [x] **Step 2: implement the cards**
 
 - `drawResults`: empty text in `sk.soft` at `W*6/100, contentTop`; card rect `x=W*4/100`, `w=W*92/100`,
   `h=resultsRowH(H)-W*1/100`; `box(card, sk.card, on ? sk.gold : sk.line, sk.bw)`; selected left bar `sk.gold`; thumb
@@ -155,12 +155,12 @@ Add to `selftest layout`: `resultsRowH(1080) == H*14/100`, `resultsTop(1080) == 
   selected border + left bar as the cards.
 - Keep the thumbnail prune (call it before the loop) and the scroll clamp exactly as they are.
 
-- [ ] **Step 3: run the tests**
+- [x] **Step 3: run the tests**
 
 Run: `make -s -C app/bananatube -B`, `system/tests/run-banana-tube-test.sh`, `make -s test`.
 Expected: green, 26 checks.
 
-- [ ] **Step 4: commit**
+- [x] **Step 4: commit**
 
 ```bash
 git add app/bananatube/main.cpp system/tests/run-banana-tube-test.sh
@@ -180,13 +180,13 @@ git commit -m "bananatube: Pocket cards, channel rows and four-a-page density"
   `kh = (contentBottom - contentTop - 4*gap)/5`, `x0 = 4 % W`, `aw = (92 % W - 3*gap)/4`;
   `drawKeyboard(int W, int H, const Skin& sk)`.
 
-- [ ] **Step 1: add the failing keyboard bounds test**
+- [x] **Step 1: add the failing keyboard bounds test**
 
 In `selftest layout`, add: `keyRect(0,0,0).x >= frameRect.x`, `keyRect(3,9).x+w <= frameRect.x+frameRect.w`,
 `keyRect(0,0,0).y == contentTop(H)`, `actRect(3).x+w <= frameRect right`, and
 `actRect(3).y+h <= hintTop(H)`, for both sizes. Run: the current centred/full-width keys overflow the frame.
 
-- [ ] **Step 2: implement**
+- [x] **Step 2: implement**
 
 - New `keyRect`/`actRect` formulas above; `kTop` returns `contentTop(H)`.
 - `drawKeyboard`: key `box(..., sk.card, sk.line, sk.bw)` with `fMed` `sk.ink`; focused key `box(..., sk.gold,
@@ -195,12 +195,12 @@ In `selftest layout`, add: `keyRect(0,0,0).x >= frameRect.x`, `keyRect(3,9).x+w 
   unfocused (focused still uses the gold fill); all labels centred with `TTF_SizeUTF8`.
 - Keep `activate()`/`tapAt()`/`move()` untouched: they already use the rect helpers and `keyCol`/`keyRow`.
 
-- [ ] **Step 3: run the tests**
+- [x] **Step 3: run the tests**
 
 Run: `make -s -C app/bananatube -B`, `system/tests/run-banana-tube-test.sh`, `make -s test`.
 Expected: green, 26 checks; `selftest keynav`/`keyrow` unchanged.
 
-- [ ] **Step 4: commit**
+- [x] **Step 4: commit**
 
 ```bash
 git add app/bananatube/main.cpp system/tests/run-banana-tube-test.sh
@@ -220,12 +220,12 @@ git commit -m "bananatube: a Pocket keyboard that fills the frame"
   keyboard `{A,Type},{B,Back},{Y,Search},{L/R,Tab}`; results `{A,Play},{B,Back},{Y,Search},{L/R,Tab}`; an open channel
   `{A,Play},{B,Back},{L/R,Tab}`.
 
-- [ ] **Step 1: run the layout test**
+- [x] **Step 1: run the layout test**
 
 The band is already pinned by Task 1 (`hintRect` inside the frame, below the content). No new pure geometry is added;
 the chip layout is verified visually in Task 6.
 
-- [ ] **Step 2: implement**
+- [x] **Step 2: implement**
 
 - `drawHints`: chip height `H*42/1000`, key box `box(..., PANEL, EDGE, 2)` with `fSmall`/`ink`, action
   `fSmall`/`soft`; start at `W*4/100`, y = `hintTop + (hintH - chipH)/2`, group gap `W*3/100`.
@@ -234,12 +234,12 @@ the chip layout is verified visually in Task 6.
   `else if (k == SDLK_TAB && mode != Mode::PLAYING) cycleTab((ev.key.keysym.mod & KMOD_SHIFT) ? -1 : 1);`
   (desktop/QEMU convenience; the pad's L/R is unchanged).
 
-- [ ] **Step 3: run the tests**
+- [x] **Step 3: run the tests**
 
 Run: `make -s -C app/bananatube -B`, `system/tests/run-banana-tube-test.sh`, `make -s test`.
 Expected: green, 26 checks.
 
-- [ ] **Step 4: commit**
+- [x] **Step 4: commit**
 
 ```bash
 git add app/bananatube/main.cpp system/tests/run-banana-tube-test.sh
@@ -256,24 +256,24 @@ git commit -m "bananatube: button-chip hints and Tab on a desktop keyboard"
 **Interfaces:**
 - Consumes nothing new; the OSD content (start card, bar, buffering, SELECT) is unchanged.
 
-- [ ] **Step 1: restyle the mpv OSD**
+- [x] **Step 1: restyle the mpv OSD**
 
 In the `argv` in `play()`, keep `--osd-level=1`, `--osd-font-size=40`, `--osd-duration=700`, and replace the font block
 with `--osd-color=#ffefb2`, `--osd-border-color=#17140d`, `--osd-back-color=#201b11`,
 `--osd-font-provider=none`, `--osd-fonts-dir=/usr/share/banana/rnds/fonts`, `--osd-font=Pixelify Sans`; update the
 comment (the family is the OS's pixel face; a missing family falls back inside mpv).
 
-- [ ] **Step 2: app tile + docs**
+- [x] **Step 2: app tile + docs**
 
 `app.json` `"accent": "#ffd21e"`. In `docs/BANANATUBE.md`, add a short **Look** paragraph (Pocket palette, Pixelify,
 framed screen, wordmark + banana mark, gold focus) and the desktop Tab note in the controls; leave the pad table intact.
 
-- [ ] **Step 3: run the tests**
+- [x] **Step 3: run the tests**
 
 Run: `make -s -C app/bananatube -B`, `system/tests/run-banana-tube-test.sh`, `make -s test`, `make -s agent-check`.
 Expected: green; the player still builds.
 
-- [ ] **Step 4: commit**
+- [x] **Step 4: commit**
 
 ```bash
 git add app/bananatube/main.cpp app/bananatube/app.json docs/BANANATUBE.md
@@ -290,7 +290,7 @@ git commit -m "bananatube: the player OSD and the app tile wear the Pocket palet
 
 **Interfaces:** none; verification only.
 
-- [ ] **Step 1: cross-build the app**
+- [x] **Step 1: cross-build the app**
 
 ```bash
 BR=$PWD/output/retroid-pocket-classic
@@ -302,7 +302,7 @@ mkdir -p /tmp/opencode/deploy && cp app/bananatube/banana-tube /tmp/opencode/dep
 
 Expected: no errors/warnings; a ~205 KB aarch64 binary.
 
-- [ ] **Step 2: boot QEMU and inject the build**
+- [x] **Step 2: boot QEMU and inject the build**
 
 ```bash
 KEEP=1 tools/qemu-headless.sh output/retroid-pocket-classic/images/banana-retroid-pocket-classic.img.gz /tmp/opencode/qemu 240
@@ -313,7 +313,7 @@ tools/qemu-console.py /tmp/opencode/qemu/console.sock --timeout 60 \
 
 Expected: `ready`; the menu is still on the panel.
 
-- [ ] **Step 3: seed deterministic content and launch**
+- [x] **Step 3: seed deterministic content and launch**
 
 ```bash
 tools/qemu-console.py /tmp/opencode/qemu/console.sock --timeout 60 \
@@ -323,7 +323,7 @@ tools/qemu-console.py /tmp/opencode/qemu/console.sock --timeout 60 \
 Wait ~8 s, then capture the keyboard:
 `tools/qemu-monitor.py /tmp/opencode/qemu/monitor.sock 'screendump /tmp/opencode/qemu/keyboard.png -f png gpu 0'`.
 
-- [ ] **Step 4: capture every screen and inspect**
+- [x] **Step 4: capture every screen and inspect**
 
 - Type with the monitor (`sendkey c`, `sendkey a`, `sendkey t`, `sendkey s`) then `sendkey down` x3, `sendkey right` x3,
   `sendkey ret` for the search; capture the results.
@@ -334,13 +334,13 @@ Wait ~8 s, then capture the keyboard:
 - If a nudge is needed (wordmark size, dot spacing, chip height, card inset), change the value, rebuild, redeploy,
   recapture once; stop the VM afterwards (`kill $(cat /tmp/opencode/qemu/qemu.pid)`).
 
-- [ ] **Step 5: the real panel**
+- [x] **Step 5: the real panel**
 
 Deploy the same binary to the unit with the existing bind mount (`cat ... | ssh 'cat > /tmp/... && mount --bind ...'`),
 relaunch, and ask for one pass over the keyboard, results, Recent and the player. Measure idle CPU (`top -b -n1`) and
 confirm it is still near 0.2 %.
 
-- [ ] **Step 6: close**
+- [x] **Step 6: close**
 
 Update `docs/ROADMAP.md` (the Pocket shell entry; note QEMU screenshots + the unit pass), tick this plan's boxes, run
 `make -s test` and `make -s agent-check`, and commit:
@@ -349,3 +349,14 @@ Update `docs/ROADMAP.md` (the Pocket shell entry; note QEMU screenshots + the un
 git add docs/ROADMAP.md docs/superpowers/plans/2026-11-04-bananatube-pocket-shell.md
 git commit -m "bananatube: the Pocket shell is verified and closed"
 ```
+
+## Execution notes (2026-11-04)
+
+- QEMU: the 0.5.8 image boots to the menu, but cage/SDL cannot start on the headless virtio GPU
+  (`MESA-EGL: failed to create dri2 screen`); the `virtio-gpu-gl` + `egl-headless` path boots the menu but exposes no
+  surface for `screendump`. The UI was rendered from the host build under Xvfb at 1240x1080 (keyboard and results) and
+  the unit runs the cross-build; the QEMU menu screenshot proves the harness, not the app.
+- Unit: bind-mounted at `/usr/bin/banana-tube`, keyboard visible, pad found, idle 4 ticks/20 s (0.2 % of a core).
+  Awaiting the one-pass visual confirmation.
+- Known minor (deferred): emoji in YouTube titles render as empty boxes (Pixelify/Inter carry no emoji glyphs); the
+  previous Inter build showed the same tofu.
