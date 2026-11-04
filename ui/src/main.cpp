@@ -83,6 +83,37 @@ static void logf(const char* fmt, ...)
 	va_end(ap);
 }
 
+// ---- resume the game a shutdown interrupted ---------------------------------------------------------------
+// /data/banana/resume is one line, the ROM's absolute path, written by bananad when a shutdown interrupts a game;
+// /data/banana/resume-tries bounds how many boots may try it before the menu gives up (a game that wedges the
+// device must not loop the boot). These three are the whole policy, so the headless harness can check it.
+enum class Resume { None, Ready, Missing, Blocked };
+
+static Resume resumePlan(const std::string& data, std::string& rom)
+{
+	int tries = 0;
+	if (std::ifstream f(data + "/resume-tries"); f) f >> tries;
+	if (tries >= 3) return Resume::Blocked;
+	std::ifstream f(data + "/resume");
+	if (!f) return Resume::None;
+	std::getline(f, rom);
+	while (!rom.empty() && (rom.back() == '\r' || rom.back() == '\n' || rom.back() == ' ')) rom.pop_back();
+	if (rom.empty()) return Resume::Missing;
+	return access(rom.c_str(), R_OK) == 0 ? Resume::Ready : Resume::Missing;
+}
+static void resumeTake(const std::string& data)	// it launched: count it and consume the marker
+{
+	int tries = 0;
+	if (std::ifstream f(data + "/resume-tries"); f) f >> tries;
+	std::ofstream(data + "/resume-tries") << (tries + 1) << "\n";
+	unlink((data + "/resume").c_str());
+}
+static void resumeCancel(const std::string& data)	// cancelled, missing or exhausted: forget it all
+{
+	unlink((data + "/resume").c_str());
+	unlink((data + "/resume-tries").c_str());
+}
+
 static rnds::Bitmap stbLoad(const std::string& path)
 {
 	rnds::Bitmap b;
@@ -614,6 +645,18 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 			cs >> lib.testPower.percent >> ch;
 			lib.testPower.charging = ch == "charging";
 			if (low.check(lib.power(), shutdownPercent(o.data), now)) logf("battery %d%%: notice %s", lib.testPower.percent, low.showing(now) ? low.title.c_str() : "hidden");
+		}
+		else if (op == "resume")
+		{
+			// resume [take|cancel]: the boot decision, for the headless checks (test only)
+			std::string what, rom;
+			cs >> what;
+			Resume p = resumePlan(o.data, rom);
+			const char* name = p == Resume::Ready ? "ready" : p == Resume::Missing ? "missing" : p == Resume::Blocked ? "blocked" : "none";
+			logf("resume: %s%s%s", name, p == Resume::Ready ? " " : "", p == Resume::Ready ? rom.c_str() : "");
+			if (p == Resume::Ready && what == "take") resumeTake(o.data);
+			else if (what == "cancel") resumeCancel(o.data);
+			else if (p == Resume::Missing || p == Resume::Blocked) resumeCancel(o.data);
 		}
 		else if (op == "wifi-add")
 		{

@@ -240,6 +240,26 @@ for size in 640x480 1024x768; do
     grep -q 'ssid="BadKey"' "$FX/data/wifi.conf" && { echo "FAIL $size: a 3-character WEP key was accepted"; fail=1; }
     grep -q 'wifi-scan WEP: secured=1 wep=1 unsupported=0' "$rlog" || { echo "FAIL $size: WEP scan flags are wrong"; fail=1; }
     grep -q 'wifi-scan WPA2-PSK-CCMP: secured=1 wep=0 unsupported=0' "$rlog" || { echo "FAIL $size: WPA scan flags are wrong"; fail=1; }
+    # resume: the boot decision (ready / missing / blocked) and the two consumers, through the script verb
+    ROM="$FX/roms/nds/Peel Quest.nds"; RR=$FX/data/resume; RT=$FX/data/resume-tries
+    resume_run() {	# resume_run <marker text or ""> <tries or ""> [take|cancel]
+        rm -f "$RR" "$RT"; [ -n "$1" ] && echo "$1" > "$RR"; [ -n "$2" ] && echo "$2" > "$RT"
+        "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
+            --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" --script "resume $3" 2>> "$rlog" ||
+            { echo "FAIL $size: banana-ui (resume) exited $?"; fail=1; }; }
+    resume_run "$ROM" ""
+    grep -q "resume: ready $ROM" "$rlog" || { echo "FAIL $size: a real ROM is not ready to resume"; fail=1; }
+    [ -f "$RR" ] || { echo "FAIL $size: the plan consumed the marker"; fail=1; }
+    resume_run "$ROM" "" take
+    [ ! -e "$RR" ] && [ "$(cat "$RT" 2>/dev/null)" = 1 ] || { echo "FAIL $size: take did not consume and count"; fail=1; }
+    resume_run "/nope/Missing.nds" ""
+    grep -q 'resume: missing' "$rlog" || { echo "FAIL $size: a missing ROM was not reported"; fail=1; }
+    [ ! -e "$RR" ] || { echo "FAIL $size: a missing ROM left the marker"; fail=1; }
+    resume_run "$ROM" 3
+    grep -q 'resume: blocked' "$rlog" || { echo "FAIL $size: the tries cap did not block"; fail=1; }
+    [ ! -e "$RR" ] && [ ! -e "$RT" ] || { echo "FAIL $size: blocked did not clear both files"; fail=1; }
+    resume_run "$ROM" "" cancel
+    [ ! -e "$RR" ] && [ ! -e "$RT" ] || { echo "FAIL $size: cancel did not clear both files"; fail=1; }
     # the Settings screen in German: the catalog in ui/assets/lang loads (BANANA_LANG_DIR) and the menu draws with it
     sed -i '/^lang = /d' "$FX/data/settings.conf"; echo 'lang = de' >> "$FX/data/settings.conf"
     BANANA_LANG_DIR="$HERE/assets/lang" "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
