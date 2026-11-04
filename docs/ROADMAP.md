@@ -13,7 +13,8 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-3. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+3. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a
+   bespoke path (no BlueZ/DBus in the stack).
 4. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## In progress
@@ -35,6 +36,14 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   - The meter is **bind-mounted on the unit's current boot**, not in the 0.5.5 image: do not reboot until the tests
     finish.
 
+- **Resume the last game at boot (implemented, awaiting the image).** A clean shutdown while a game runs leaves
+  `/data/banana/resume` (written by `bananad` from the menu's `/run/banana/game.path`); the next menu start sees it, gives
+  a 2 s any-key cancel window, then feeds the existing `/run/banana/launch` hook; three tries cap a game that wedges the
+  device, and a missing card/ROM clears the marker. A quit back to the menu clears both (unless the shutdown flag says
+  the exit *is* the shutdown). Host checks: the sleep test (marker on a battery-guard shutdown, none from the menu) and
+  five headless `resume` cases. On the unit: a restarted menu with a seeded marker launched the game, consumed the
+  marker and counted the try; quitting the game returned the panel and reset the count. Pending: a real shutdown →
+  power-on with the next image, and a physical key during the window.
 - **Languages: Spanish and German, Settings screen first.** The pipeline is in: the English string is the key,
   `tr()` in `ui/src/i18n.cpp` falls back to English, catalogs are JSON in `/usr/share/banana/lang/<code>.json` with a
   `/data/banana/lang/` override on the card (like a theme), and Settings > Display & sound gains a **Language** row
