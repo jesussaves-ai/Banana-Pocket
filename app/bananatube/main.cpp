@@ -1339,18 +1339,22 @@ struct App
 		int gap = W * 15 / 1000, tw = (W * 92 / 100 - 3 * gap) / 4;
 		return SDL_Rect { W * 4 / 100 + i * (tw + gap), H * 175 / 1000, tw, H * 65 / 1000 };
 	}
-	int kTop(int H) const { return H * 26 / 100; }
+
 	SDL_Rect keyRect(int W, int H, int r, int c) const
 	{
-		int kw = W * 9 / 100, kh = H * 11 / 100, gap = W * 1 / 100;
-		int rowW = COLS * kw + (COLS - 1) * gap, x0 = (W - rowW) / 2;
-		return SDL_Rect { x0 + c * (kw + gap), kTop(H) + r * (kh + gap), kw, kh };
+		int gap = W * 1 / 100;
+		int kw = (W * 92 / 100 - (COLS - 1) * gap) / COLS;
+		int kh = (contentBottom(H) - contentTop(H) - 4 * gap) / 5;
+		int x0 = W * 4 / 100;
+		return SDL_Rect { x0 + c * (kw + gap), contentTop(H) + r * (kh + gap), kw, kh };
 	}
 	SDL_Rect actRect(int W, int H, int c) const
 	{
-		int gap = W * 1 / 100, kh = H * 11 / 100, aw = W * 21 / 100, ah = H * 11 / 100;
-		int rowW = 4 * aw + 3 * gap, x0 = (W - rowW) / 2, y = kTop(H) + ROWS * (kh + gap);
-		return SDL_Rect { x0 + c * (aw + gap), y, aw, ah };
+		int gap = W * 1 / 100;
+		int kh = (contentBottom(H) - contentTop(H) - 4 * gap) / 5;
+		int aw = (W * 92 / 100 - 3 * gap) / 4;
+		int x0 = W * 4 / 100;
+		return SDL_Rect { x0 + c * (aw + gap), contentTop(H) + ROWS * (kh + gap), aw, kh };
 	}
 	int resultsTop(int H) const { return contentTop(H); }
 	int resultsRowH(int H) const { return std::max(56, H * 14 / 100); }
@@ -1824,6 +1828,9 @@ struct App
 				ok = ok && hint.y + hint.h <= fr.y + fr.h;
 				ok = ok && resultsTop(H) == contentTop(H) && resultsRowH(H) == std::max(56, H * 14 / 100);
 				ok = ok && rowsPerPage(H) >= 4;
+				SDL_Rect k0 = keyRect(W, H, 0, 0), kEnd = keyRect(W, H, 3, COLS - 1), aEnd = actRect(W, H, 3);
+				ok = ok && k0.x >= fr.x && kEnd.x + kEnd.w <= fr.x + fr.w;
+				ok = ok && k0.y == contentTop(H) && aEnd.x + aEnd.w <= fr.x + fr.w && aEnd.y + aEnd.h <= hintTop(H);
 			}
 			printf("bananatube selftest layout: %s\n", ok ? "ok" : "fail");
 		}
@@ -2138,7 +2145,6 @@ struct App
 
 	void drawKeyboard(int W, int H, const Skin& sk)
 	{
-		SDL_Color fg = sk.ink, dim = sk.soft, acc = sk.gold;
 		const char* (*keys)[11] = upper ? UPPER : LOWER;
 		for (int r = 0; r < ROWS; r++)
 			for (int c = 0; c < COLS; c++)
@@ -2146,22 +2152,35 @@ struct App
 				const char* k = keys[r][c];
 				SDL_Rect rr = keyRect(W, H, r, c);
 				bool on = keyRow == r && keyCol == c;
-				// the focused key is filled with the accent, so where the pad's cursor is reads from across the room
-				panel(rr.x, rr.y, rr.w, rr.h, on ? acc : SDL_Color { 24, 28, 36, 255 }, on ? acc : SDL_Color { 54, 60, 74, 255 }, 0);
+				box(rr.x, rr.y, rr.w, rr.h, on ? sk.gold : sk.card, on ? sk.goldHi : sk.line, sk.bw);
+				if (on)
+				{
+					int in = sk.bw + 2;
+					box(rr.x + in, rr.y + in, rr.w - 2 * in, rr.h - 2 * in,
+						SDL_Color { 0, 0, 0, 0 }, sk.goldHi, 2);
+				}
 				int tw = 0, th = 0;
 				TTF_SizeUTF8(fMed, k, &tw, &th);
-				drawText(k, fMed, on ? fg : dim, rr.x + (rr.w - tw) / 2, rr.y + (rr.h - th) / 2);
+				drawText(k, fMed, on ? sk.bg : sk.ink, rr.x + (rr.w - tw) / 2, rr.y + (rr.h - th) / 2);
 			}
-		const char* acts[] = { "Space", "Del", "Shift", "Search" };
+		const char* acts[] = { "Space", "Del", upper ? "ABC" : "abc", "Search" };
 		for (int c = 0; c < 4; c++)
 		{
 			SDL_Rect rr = actRect(W, H, c);
 			bool on = keyRow >= ROWS && keyCol == c;
-			SDL_Color line = on ? acc : SDL_Color { 54, 60, 74, 255 };
-			panel(rr.x, rr.y, rr.w, rr.h, on ? acc : SDL_Color { 24, 28, 36, 255 }, line, 0);
+			bool primary = c == 3 && !query.empty();
+			box(rr.x, rr.y, rr.w, rr.h, on ? sk.gold : sk.card,
+				on ? sk.goldHi : primary ? sk.gold : sk.line, sk.bw);
+			if (on)
+			{
+				int in = sk.bw + 2;
+				box(rr.x + in, rr.y + in, rr.w - 2 * in, rr.h - 2 * in,
+					SDL_Color { 0, 0, 0, 0 }, sk.goldHi, 2);
+			}
 			int tw = 0, th = 0;
 			TTF_SizeUTF8(fMed, acts[c], &tw, &th);
-			drawText(acts[c], fMed, on ? fg : dim, rr.x + (rr.w - tw) / 2, rr.y + (rr.h - th) / 2);
+			drawText(acts[c], fMed, on ? sk.bg : primary ? sk.gold : sk.ink,
+				rr.x + (rr.w - tw) / 2, rr.y + (rr.h - th) / 2);
 		}
 	}
 
