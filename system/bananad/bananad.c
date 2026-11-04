@@ -787,7 +787,15 @@ static void suspend_now(const char *why)
 static void shutdown_now(const char *why)
 {
 	say("shutting down (%s)", why);
+	/* A game a shutdown interrupts is the one to resume at the next boot: the menu wrote its path when it launched
+	 * it, and this has to be read before the game is stopped. Coming from the menu there is nothing to remember, and
+	 * a marker left by an older boot goes. */
+	char rom[PATH_MAX] = "";
+	read_str("/run/banana/game.path", rom, sizeof rom);
 	pid_t game = pid_of("/run/banana/game.pid");
+	if (game && rom[0]) {
+		if (FILE *f = fopen("/data/banana/resume", "w")) { fprintf(f, "%s\n", rom); fclose(f); }
+	} else unlink("/data/banana/resume");
 	if (game) {
 		pid_t pg = getpgid(game);
 		kill(pg > 0 ? -pg : game, SIGTERM);	/* let the emulator write its saves */

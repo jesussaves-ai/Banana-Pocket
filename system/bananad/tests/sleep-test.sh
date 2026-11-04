@@ -98,6 +98,7 @@ stop
 
 echo "2. the battery guard: an RTC wake with the battery nearly empty shuts down cleanly"
 echo $GAME > /run/banana/game.pid
+echo /data/roms/gba/Test.gba > /run/banana/game.path
 echo 3 > /sys/class/power_supply/battery/capacity
 start "sleep_check_hours = 0.002" "sleep_poweroff_percent = 5"
 power
@@ -107,6 +108,19 @@ for i in $(seq 30); do [ $POWEROFF = 1 ] && break; sleep 0.1; done
 [ $POWEROFF = 1 ] && ok "shut down cleanly (init asked to power off)" || bad "no shutdown at 3%"
 kill -0 $GAME 2>/dev/null && bad "the game wasn't told to quit and save" || ok "the game was told to quit and save first"
 grep -q 'battery check: 3%' /data/banana/logs/sleep.log && ok "logged the battery check" || bad "battery check not logged"
+grep -qx /data/roms/gba/Test.gba /data/banana/resume && ok "the interrupted game is remembered" || bad "no resume marker"
+stop
+POWEROFF=0
+
+echo "2b. a shutdown from the menu leaves no resume marker"
+rm -f /run/banana/game.pid /run/banana/game.path
+echo 3 > /sys/class/power_supply/battery/capacity
+start "sleep_check_hours = 0.002" "sleep_poweroff_percent = 5"
+power
+asleep && ok "suspended from the menu" || bad "no suspend"
+: > /sys/class/rtc/rtc0/wakealarm; rtc_wake
+for i in $(seq 30); do [ $POWEROFF = 1 ] && break; sleep 0.1; done
+[ ! -e /data/banana/resume ] && ok "nothing to resume after a menu shutdown" || bad "a menu shutdown left a resume marker"
 stop
 POWEROFF=0
 setsid sleep 600 & GAME=$!; sleep 0.1; echo $GAME > /run/banana/game.pid
