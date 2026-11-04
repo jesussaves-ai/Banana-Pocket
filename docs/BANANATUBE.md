@@ -47,8 +47,12 @@ mapping `run-port` uses: **A is the east button**).
 **Tabs, recent and quality:** the results shelf has four tabs — **Search** (the keyboard and its hits), **Recent** (the
 last 30 videos that actually started playing), **Channels** (the uploaders either list mentions, with a video count)
 and **Local** (the music and video files on the card).
-Switch with L/R on the keyboard, SELECT (Recent), or a tap; A on a channel shows its videos from both lists, B walks
+Switch with L/R, or a tap; SELECT changes the quality cap. A on a channel shows its videos from both lists, B walks
 back out.
+
+**Results cards:** each row is a full-height 16:9 thumbnail with the video's length on its bottom-right corner; a
+Recent row also shows where playback stopped on the thumbnail's top-left. Only the visible page's thumbnails (and one
+row either side) are kept in memory, so scrolling a long list does not grow the app.
 
 **Player feedback:** the app draws nothing while a video plays (mpv owns the screen), so everything is mpv's text OSD:
 the start card names the video, the cap and the whole pad map; every seek, pause and SELECT shows `03:21 / 12:04` over a

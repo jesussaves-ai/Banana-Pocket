@@ -51,7 +51,8 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   texture for every visible string, even with nothing happening. A `dirty` flag gates drawing (none at all while mpv
   owns the screen), a bounded text-texture cache ends the per-frame allocation, and the thumbnail worker wakes the loop
   when a picture lands. Design: `docs/superpowers/specs/2026-11-04-bananatube-idle-frames-design.md`; plan:
-  `docs/superpowers/plans/2026-11-04-bananatube-idle-frames.md`. Track A2 (cards, focus, keyboard) and Tracks B/C follow.
+  `docs/superpowers/plans/2026-11-04-bananatube-idle-frames.md`. Track A2's cards and the thumbnail-map bound are in;
+  focus and the keyboard follow. Tracks B/C: player OSD done, continuity later.
 - **Languages: Spanish and German, Settings screen first.** The pipeline is in: the English string is the key,
   `tr()` in `ui/src/i18n.cpp` falls back to English, catalogs are JSON in `/usr/share/banana/lang/<code>.json` with a
   `/data/banana/lang/` override on the card (like a theme), and Settings > Display & sound gains a **Language** row

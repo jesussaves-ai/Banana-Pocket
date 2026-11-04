@@ -376,6 +376,7 @@ struct App
 
 	// thumbnails: downloaded to disk by one background worker, loaded into textures on the render thread, keyed by id
 	std::map<std::string, SDL_Texture*> thumbTex;
+	int thumbWinFirst = -1, thumbWinLast = -1;	// the visible window thumbTex was last pruned to
 	std::thread thumbThread;
 	std::mutex thumbMx;
 	std::condition_variable thumbCv;
@@ -664,7 +665,24 @@ struct App
 	{
 		for (auto& kv : thumbTex) if (kv.second) SDL_DestroyTexture(kv.second);
 		thumbTex.clear();
+		thumbWinFirst = thumbWinLast = -1;
 		prefetchThumbs();
+	}
+	// Keep only the visible page's textures (+/- one row): a long browse would otherwise hold every row's picture
+	// for the life of the list. Runs when the window moves, so the render loop still allocates nothing.
+	void pruneThumbs(int first, int last)
+	{
+		if (first < 0) first = 0;
+		if (last > static_cast<int>(results.size())) last = static_cast<int>(results.size());
+		for (auto it = thumbTex.begin(); it != thumbTex.end(); )
+		{
+			bool keep = false;
+			for (int i = first; i < last && !keep; i++) keep = results[i].id == it->first;
+			if (keep) ++it;
+			else { if (it->second) SDL_DestroyTexture(it->second); it = thumbTex.erase(it); }
+		}
+		thumbWinFirst = first;
+		thumbWinLast = last;
 	}
 	// the three tabs of the results shell: the search's hits, everything played (persisted on the card), and the
 	// channels those two lists mention
@@ -1732,6 +1750,32 @@ struct App
 			ok = ok && nextQuality(720) == 480 && nextQuality(480) == 360 && nextQuality(360) == 720;
 			printf("bananatube selftest bar: %s\n", ok ? "ok" : "fail");
 		}
+		{
+			// the thumbnail map follows the visible window: a long browse must not keep every row's texture
+			std::vector<Item> back = results;
+			results.clear();
+			for (const char* id : { "a", "b", "c", "d", "e", "f" })
+			{
+				Item x;
+				x.id = id;
+				results.push_back(x);
+			}
+			bool made = true;
+			for (const Item& x : results)
+			{
+				SDL_Texture* t = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STATIC, 2, 2);
+				if (t) thumbTex[x.id] = t;
+				else made = false;
+			}
+			thumbWinFirst = thumbWinLast = -1;
+			pruneThumbs(1, 4);
+			bool ok = made && thumbTex.size() == 3 && thumbTex.count("b") && thumbTex.count("c") && thumbTex.count("d");
+			for (auto& kv : thumbTex) if (kv.second) SDL_DestroyTexture(kv.second);
+			thumbTex.clear();
+			thumbWinFirst = thumbWinLast = -1;
+			results = back;
+			printf("bananatube selftest thumbs: %s\n", ok ? "ok" : "fail");
+		}
 		Item it;
 		bool ok = splitLine("abc123\tA Title\tSome One\t3:21", it) && it.id == "abc123" && it.duration == "3:21";
 		printf("bananatube selftest split: %s\n", ok ? "ok" : "fail");
@@ -2048,8 +2092,12 @@ struct App
 			drawText(none, fMed, dim, W * 6 / 100, top);
 			return;
 		}
+		// the map carries the visible page and its neighbours only
+		int wf = std::max(0, scroll - 1), wl = std::min(static_cast<int>(results.size()), scroll + per + 1);
+		if (wf != thumbWinFirst || wl != thumbWinLast) pruneThumbs(wf, wl);
 		int pad = W * 1 / 100;
-		int thumbH = rowH - 2 * pad, thumbW = thumbH * 16 / 9;
+		// the thumbnail is the card's full height (the old art was inset by the card's padding), in 16:9
+		int thumbH = rowH - pad, thumbW = thumbH * 16 / 9;
 		if (thumbW > W * 30 / 100) { thumbW = W * 30 / 100; thumbH = thumbW * 9 / 16; }
 		for (int i = scroll; i < static_cast<int>(results.size()) && i < scroll + per; i++)
 		{
@@ -2067,7 +2115,7 @@ struct App
 			}
 			int tx = W * 6 / 100;
 			// the thumbnail (a 16:9 card at the left), or a placeholder until it is downloaded
-			SDL_Rect tr { tx, y + (rowH - pad - thumbH) / 2, thumbW, thumbH };
+			SDL_Rect tr { tx, y, thumbW, thumbH };
 			SDL_Texture* t = thumb(it.id);
 			if (t) SDL_RenderCopy(ren, t, nullptr, &tr);
 			else
@@ -2077,22 +2125,28 @@ struct App
 				SDL_SetRenderDrawColor(ren, 54, 60, 74, 255);
 				SDL_RenderDrawRect(ren, &tr);
 			}
-			int textX = tr.x + tr.w + W * 2 / 100;
-			int textW = W * 88 / 100 - textX;
-			// the duration badge, right-aligned before the ring
+			// the duration, on the picture's bottom-right corner (where a video's length belongs)
 			if (!it.duration.empty())
 			{
 				int dw = 0, dh = 0;
 				TTF_SizeUTF8(fSmall, it.duration.c_str(), &dw, &dh);
-				int bx = W * 94 / 100 - dw - W * 2 / 100, by = y + (rowH - pad) / 2 - dh / 2;
+				int bx = tr.x + tr.w - dw - W * 1 / 100, by = tr.y + tr.h - dh - W * 1 / 200;
 				panel(bx - 6, by - 2, dw + 12, dh + 4, SDL_Color { 8, 9, 12, 220 }, SDL_Color { 0, 0, 0, 0 });
 				drawText(it.duration, fSmall, fg, bx, by);
-				textW -= dw + W * 4 / 100;
 			}
+			// a Recent row's resume point, on the picture's top-left corner (not in the channel line)
+			if (view == View::RECENT && it.resume > 0)
+			{
+				std::string rs = fmtTime(it.resume);
+				int rw = 0, rh = 0;
+				TTF_SizeUTF8(fSmall, rs.c_str(), &rw, &rh);
+				panel(tr.x + 4, tr.y + 4, rw + 12, rh + 4, SDL_Color { 8, 9, 12, 220 }, acc);
+				drawText(rs, fSmall, acc, tr.x + 10, tr.y + 6);
+			}
+			int textX = tr.x + tr.w + W * 2 / 100;
+			int textW = W * 88 / 100 - textX;
 			drawText(it.title, fMed, fg, textX, y + rowH * 12 / 100, textW);
-			std::string sub = it.uploader;
-			if (view == View::RECENT && it.resume > 0) sub += "   \u00b7   resume " + fmtTime(it.resume);
-			drawText(sub, fSmall, dim, textX, y + rowH * 55 / 100, textW);
+			drawText(it.uploader, fSmall, dim, textX, y + rowH * 55 / 100, textW);
 		}
 	}
 };
