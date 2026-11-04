@@ -63,8 +63,9 @@ namespace banana
 				n.dbm = atoi(f[2].c_str());
 				const std::string& fl = f[3];
 				bool psk = fl.find("PSK") != std::string::npos, sae = fl.find("SAE") != std::string::npos;
-				if (fl.find("EAP") != std::string::npos || fl.find("WEP") != std::string::npos || fl.find("OWE") != std::string::npos)
+				if (fl.find("EAP") != std::string::npos || fl.find("OWE") != std::string::npos)
 					n.unsupported = true;
+				else if (fl.find("WEP") != std::string::npos) { n.secured = true; n.wep = true; }
 				else if (psk || sae) { n.secured = true; n.saeOnly = sae && !psk; }
 				auto it = best.find(n.ssid);
 				if (it == best.end() || it->second.dbm < n.dbm) best[n.ssid] = n;
@@ -159,9 +160,23 @@ namespace banana
 			return true;
 		}
 
+		bool wepKeyOk(const std::string& k)
+		{
+			if (k.size() == 5 || k.size() == 13)
+			{
+				for (unsigned char c : k) if (c < 0x20 || c > 0x7e || c == '"' || c == '\\') return false;	// quoted in the conf
+				return true;
+			}
+			if (k.size() != 10 && k.size() != 26) return false;
+			for (unsigned char c : k)
+				if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
+			return true;
+		}
+
 		bool remember(const std::string& conf, const Network& n, const std::string& password)
 		{
-			if (n.ssid.empty() || n.unsupported || (n.secured && !passwordOk(password))) return false;
+			if (n.ssid.empty() || n.unsupported) return false;
+			if (n.wep ? !wepKeyOk(password) : (n.secured && !passwordOk(password))) return false;
 			std::string head;
 			std::vector<Block> blocks;
 			readConf(conf, head, blocks);
@@ -173,7 +188,8 @@ namespace banana
 			if (printable) ssid = "\"" + n.ssid + "\"";
 			else { char h[3]; for (unsigned char c : n.ssid) { snprintf(h, sizeof h, "%02x", c); ssid += h; } }
 			std::string b = "network={\n\tssid=" + ssid + "\n";
-			if (!n.secured) b += "\tkey_mgmt=NONE\n";
+			if (n.wep) b += "\tkey_mgmt=NONE\n\twep_key0=\"" + password + "\"\n\twep_tx_keyidx=0\n";
+			else if (!n.secured) b += "\tkey_mgmt=NONE\n";
 			else
 			{
 				b += "\tpsk=\"" + password + "\"\n";

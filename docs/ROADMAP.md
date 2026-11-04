@@ -4,10 +4,11 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), static IP, hotspot. **Saved-network
-   priority is done**: L/R on a network in Settings > Network moves a saved one up or down in `wifi.conf` (the list
-   wpa_supplicant tries); the rest is still open (802.1X needs an identity/certificate screen, static IP needs address
-   fields, hotspot needs hostapd, which the image does not carry).
+1. **Wi-Fi management depth** -- 802.1X, static IP, hotspot. **Saved-network priority and WEP are done**: L/R on a
+   network in Settings > Network moves a saved one up or down `wifi.conf`, and an old WEP network takes its 5/13-
+   character (10/26-hex) key on the same keyboard and is written as `key_mgmt=NONE` + `wep_key0`. What is left:
+   802.1X needs an identity/certificate screen, static IP needs address fields, hotspot needs hostapd (not in the
+   image -- I would drop it).
 2. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
@@ -85,6 +86,12 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **WEP networks (0.5.x).** The scan's `[WEP]` flag now means "secured, key_mgmt=NONE + wep_key0" instead of
+  "unsupported": A joins it, the password keyboard takes the key (5 or 13 printable characters, or 10/26 hex digits --
+  quotes and backslashes refused so the quoted conf stays valid), and `banana/wifi.conf` gets `key_mgmt=NONE`,
+  `wep_key0="…"`, `wep_tx_keyidx=0` with the usual priority. Enterprise (802.1X) and OWE stay hand-written. Tested
+  through the headless menu (`wifi-add`, `wifi-scan` script verbs): the WEP block, a refused 3-character key, and the
+  scan flags for WEP vs WPA2.
 - [x] **Saved-network priority (0.5.x).** Settings > Network's L/R moves the selected saved network one place up
   (higher priority, tried first) or down by swapping the two `priority=` values in `banana/wifi.conf`; every other
   byte of the file is kept, and a network that is not saved is left alone. Tested through the headless menu (the

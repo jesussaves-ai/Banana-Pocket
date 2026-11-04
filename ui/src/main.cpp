@@ -614,6 +614,27 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 			lib.testPower.charging = ch == "charging";
 			if (low.check(lib.power(), shutdownPercent(o.data), now)) logf("battery %d%%: notice %s", lib.testPower.percent, low.showing(now) ? low.title.c_str() : "hidden");
 		}
+		else if (op == "wifi-add")
+		{
+			// wifi-add <ssid> <key> <wep|wpa>: remember a network in the card's wifi.conf (test only)
+			std::string ssid, key, kind;
+			cs >> ssid >> key >> kind;
+			wifi::Network n;
+			n.ssid = ssid; n.secured = true; n.wep = kind == "wep";
+			bool ok = wifi::remember(o.data + "/wifi.conf", n, key);
+			logf("wifi-add %s %s: %s", ssid.c_str(), kind.c_str(), ok ? "ok" : "no");
+		}
+		else if (op == "wifi-scan")
+		{
+			// wifi-scan <bss-flags>: what parseScan makes of one scan line (test only)
+			std::string flags;
+			cs >> flags;
+			std::string line = "00:11:22:33:44:55\t2412\t-50\t" + flags + "\tTestNet\n";
+			auto nets = wifi::parseScan(line);
+			logf("wifi-scan %s: secured=%d wep=%d unsupported=%d", flags.c_str(),
+				nets.empty() ? 0 : (int)nets[0].secured, nets.empty() ? 0 : (int)nets[0].wep,
+				nets.empty() ? 0 : (int)nets[0].unsupported);
+		}
 		else if (op == "wifi")
 		{
 			// wifi <ssid> <up|down>: move a saved network in the card's wifi.conf (test only; the Network page's L/R)

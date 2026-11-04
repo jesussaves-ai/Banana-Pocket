@@ -16,9 +16,10 @@ namespace banana
 		{
 			std::string ssid;
 			int dbm = -100;
-			bool secured = false;		// WPA/WPA2/WPA3 personal: a password
+			bool secured = false;		// WPA/WPA2/WPA3 personal, or WEP: a key
 			bool saeOnly = false;		// WPA3 only (no WPA2 to fall back on)
-			bool unsupported = false;	// enterprise (802.1X) or WEP: wifi.conf by hand
+			bool wep = false;			// the old WEP: key_mgmt=NONE + wep_key0
+			bool unsupported = false;	// enterprise (802.1X) or OWE: wifi.conf by hand
 			bool saved = false;			// in wifi.conf already
 			bool current = false;		// the one connected now
 			int bars() const { return dbm >= -55 ? 3 : dbm >= -67 ? 2 : dbm >= -78 ? 1 : 0; }
@@ -43,6 +44,8 @@ namespace banana
 		bool bump(const std::string& conf, const std::string& ssid, int dir);
 		// a password wpa_supplicant takes: 8 to 63 printable ASCII characters
 		bool passwordOk(const std::string& p);
+		// a WEP key as wpa_supplicant takes it quoted: 5 or 13 printable characters, or 10 or 26 hex digits
+		bool wepKeyOk(const std::string& k);
 
 		// a command run in the background (scans take seconds); sync runs it at once (the headless test)
 		class Job

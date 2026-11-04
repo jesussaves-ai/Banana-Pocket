@@ -315,7 +315,7 @@ namespace banana
 			add(O, "gamepad", "Nintendo 64", "The emulator for N64 games. Mupen64Plus-Next: the usual choice, with its own GLideN64. ParaLLEl N64: the alternative.", menu, "core.n64", { "Mupen64Plus-Next", "ParaLLEl N64" }, { "mupen64plus_next", "parallel_n64" });
 		const char* W = "Network";
 		add(W, "phone", "Wi-Fi", "", menu, "wifi", { "On", "Off" }, { "on", "off" });
-		add(W, "phone", "Network", "The networks around: A on one joins it, with a password typed on the keyboard here (or by touch).", "", "network", {}, {}, Item::PAGE);
+		add(W, "phone", "Network", "The networks around: A on one joins it, with a password typed on the keyboard here (or by touch). An old WEP network takes its key the same way; a company (802.1X) network still needs banana/wifi.conf by hand.", "", "network", {}, {}, Item::PAGE);
 		add(W, "phone", "File sharing", "", menu, "share", { "Off", "On" }, { "off", "on" });
 		const char* S = "System";
 		{
@@ -1599,7 +1599,7 @@ namespace banana
 			if (!n || !joining.empty()) return NONE;
 			const wifi::Network& net = nets[nsel];
 			if (net.unsupported)
-				message = net.ssid + " signs in a way the menu can't (a company network, or the old WEP): it can be written in banana/wifi.conf on a computer.";
+				message = net.ssid + " signs in a way the menu can't (a company network): it can be written in banana/wifi.conf on a computer.";
 			else if (net.current)
 				message = "Connected to " + net.ssid + (wstat.ip.empty() ? "." : " (" + wstat.ip + ").");
 			else if (!net.secured)
@@ -2270,9 +2270,11 @@ namespace banana
 		switch (entry)
 		{
 		case ENTRY_WIFI:
-			if (!wifi::passwordOk(pw))
+			if (target.wep ? !wifi::wepKeyOk(pw) : !wifi::passwordOk(pw))
 			{
-				message = "A Wi-Fi password has 8 to 63 characters; this one has " + std::to_string(pw.size()) + ".";
+				message = target.wep
+					? "A WEP key is 5 or 13 characters (or 10 or 26 hex digits); this one is not."
+					: "A Wi-Fi password has 8 to 63 characters; this one has " + std::to_string(pw.size()) + ".";
 				return MOVED;
 			}
 			join(target, pw);

@@ -228,6 +228,17 @@ for size in 640x480 1024x768; do
     grep -A3 'ssid="Home"' "$FX/data/wifi.conf" | grep -q 'priority=2' || { echo "FAIL $size: Home did not move up"; fail=1; }
     grep -A3 'ssid="Cafe"' "$FX/data/wifi.conf" | grep -q 'priority=1' || { echo "FAIL $size: Cafe did not move down"; fail=1; }
     grep -q 'wifi Nobody up: no change' "$rlog" || { echo "FAIL $size: an unsaved network changed the file"; fail=1; }
+    # the old WEP: its key is written as key_mgmt=NONE + wep_key0, a bad key is refused, and the scan flags decide
+    "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
+        --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" \
+        --script "wifi-add WepNet abcde wep; wifi-add BadKey abc wep; wifi-scan WEP; wifi-scan WPA2-PSK-CCMP" \
+        2>> "$rlog" || { echo "FAIL $size: banana-ui (wep) exited $?"; fail=1; }
+    grep -A5 'ssid="WepNet"' "$FX/data/wifi.conf" | grep -q 'key_mgmt=NONE' || { echo "FAIL $size: no key_mgmt=NONE for WEP"; fail=1; }
+    grep -A5 'ssid="WepNet"' "$FX/data/wifi.conf" | grep -q 'wep_key0="abcde"' || { echo "FAIL $size: no wep_key0"; fail=1; }
+    grep -A5 'ssid="WepNet"' "$FX/data/wifi.conf" | grep -q 'wep_tx_keyidx=0' || { echo "FAIL $size: no wep_tx_keyidx"; fail=1; }
+    grep -q 'ssid="BadKey"' "$FX/data/wifi.conf" && { echo "FAIL $size: a 3-character WEP key was accepted"; fail=1; }
+    grep -q 'wifi-scan WEP: secured=1 wep=1 unsupported=0' "$rlog" || { echo "FAIL $size: WEP scan flags are wrong"; fail=1; }
+    grep -q 'wifi-scan WPA2-PSK-CCMP: secured=1 wep=0 unsupported=0' "$rlog" || { echo "FAIL $size: WPA scan flags are wrong"; fail=1; }
     # a layout theme (the image's pocket.json, the handheld's own): every screen drawn from its JSON, home ->
     # library -> a launch, and a tap on a system. It is the single-panel layout, so it runs at its own 640x557.
     # The menu reads the theme from the card's settings.conf (--theme is the real launcher's), so point it at the
