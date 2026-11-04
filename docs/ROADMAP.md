@@ -4,18 +4,17 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
-2. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
-3. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
+1. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+2. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-4. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
+3. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
    and measure overnight drain; residual spurious wakes and panel/SD resume latency are still untracked.
-5. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
-6. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-7. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-8. **Store / app catalog** (the Apps shelf only scans local folders).
+4. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
+5. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+6. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+7. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## Ideas (unscheduled)
 Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.
@@ -72,7 +71,8 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 `statistics_show`, already rotated by its patches) covers FPS/CPU if wanted. And on 2026-11-04, by request: a screenshot
 gallery and collections/tags (auto genre shelves from the scraped `gamelist.xml` were proposed; not wanted). The
 library-UX item is closed: the scraper already skips games that have art, and now starts only on the charger or cable.
-Also dropped by request: porting BananaTube's newer settings screen (its in-app settings are kept as they are).)*
+Also dropped by request: porting BananaTube's newer settings screen (its in-app settings are kept as they are), and the
+accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 
 ## Completed Baseline (0.4.9+)
 - **Core & CI:** End-to-end QEMU `virt` boot/update/test (`tools/qemu-boot.sh`), A/B OTA updates, first-time setup, `ksmbd`, `dropbear`, `ath10k_snoc`.
