@@ -350,6 +350,39 @@ struct App
 	bool thumbStop = false;
 
 	// ---- text ----------------------------------------------------------------------------------------------------
+	// A rendered string is owned here: the font pointer + colour + text is the key, so a repeated row costs a map
+	// lookup and a copy, not a TTF rasterisation and a texture. Bounded, and evicted all at once (a big change of
+	// screen is the only time it fills).
+	struct TextEntry { SDL_Texture* t = nullptr; int w = 0, h = 0; };
+	std::map<const void*, std::map<Uint32, std::map<std::string, TextEntry>>> textCache;
+	size_t textHits = 0, textMisses = 0, textCacheCount = 0;
+	void clearTextCache()
+	{
+		for (auto& f : textCache)
+			for (auto& c : f.second)
+				for (auto& e : c.second)
+					if (e.second.t) SDL_DestroyTexture(e.second.t);
+		textCache.clear();
+		textCacheCount = 0;
+	}
+	SDL_Texture* cachedText(const std::string& s, TTF_Font* f, SDL_Color c, int* w, int* h)
+	{
+		Uint32 rgba = (Uint32)c.r | ((Uint32)c.g << 8) | ((Uint32)c.b << 16) | ((Uint32)c.a << 24);
+		auto& byColour = textCache[f];
+		auto ci = byColour.find(rgba);
+		if (ci != byColour.end())
+		{
+			auto e = ci->second.find(s);	// the caller's string: a hit copies and allocates nothing
+			if (e != ci->second.end()) { textHits++; if (w) *w = e->second.w; if (h) *h = e->second.h; return e->second.t; }
+		}
+		SDL_Texture* t = text(s, f, c, w, h);
+		if (!t) return nullptr;
+		if (textCacheCount >= 256) clearTextCache();
+		textCache[f][rgba][s] = TextEntry { t, w ? *w : 0, h ? *h : 0 };
+		textCacheCount++;
+		textMisses++;
+		return t;
+	}
 	SDL_Texture* text(const std::string& s, TTF_Font* f, SDL_Color col, int* w = nullptr, int* h = nullptr)
 	{
 		if (s.empty()) { if (w) *w = 0; if (h) *h = 0; return nullptr; }
@@ -378,11 +411,10 @@ struct App
 			if (tw > maxW && shown.size() > 1) shown += "\u2026";
 		}
 		int w = 0, h = 0;
-		SDL_Texture* t = text(shown, f, col, &w, &h);
+		SDL_Texture* t = cachedText(shown, f, col, &w, &h);
 		if (!t) return;
 		SDL_Rect r { x, y, w, h };
 		SDL_RenderCopy(ren, t, nullptr, &r);
-		SDL_DestroyTexture(t);
 	}
 	// a rounded-ish focus panel: a filled rect with a 2px accent ring
 	void panel(int x, int y, int w, int h, SDL_Color fill, SDL_Color line, int ring = 0)
@@ -1573,6 +1605,7 @@ struct App
 		thumbCv.notify_all();
 		if (thumbThread.joinable()) thumbThread.join();
 		if (touchFd >= 0) { close(touchFd); touchFd = -1; }
+		clearTextCache();
 		for (auto& kv : thumbTex) if (kv.second) SDL_DestroyTexture(kv.second);
 		return 0;
 	}
@@ -1581,6 +1614,19 @@ struct App
 	// the keyboard navigation and the back()/activate() state machine.
 	int selftest()
 	{
+		{
+			// the text cache: the same string, font and colour is one texture; a different colour is another
+			clearTextCache();
+			size_t m0 = textMisses, h0 = textHits;
+			SDL_Color white { 255, 255, 255, 255 }, red { 255, 0, 0, 255 };
+			drawText("Cache me", fSmall, white, 0, 0);
+			drawText("Cache me", fSmall, white, 0, 0);
+			bool ok = textMisses == m0 + 1 && textHits == h0 + 1;
+			drawText("Cache me", fSmall, red, 0, 0);
+			ok = ok && textMisses == m0 + 2;
+			printf("bananatube selftest cache: %s\n", ok ? "ok" : "fail");
+			clearTextCache();
+		}
 		Item it;
 		bool ok = splitLine("abc123\tA Title\tSome One\t3:21", it) && it.id == "abc123" && it.duration == "3:21";
 		printf("bananatube selftest split: %s\n", ok ? "ok" : "fail");
