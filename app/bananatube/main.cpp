@@ -1116,9 +1116,10 @@ struct App
 			// shows the (gamepad) controls briefly at the start.
 			"--osd-level=1", "--osd-font-size=40", "--osd-duration=700",
 			// libass here is built without fontconfig ("can't find selected font provider"), so the OSD needs the
-			// libass provider and an explicit fonts dir + family: the image's Inter is the only font, and without
-			// this the indicators render as nothing at all.
-			"--osd-font-provider=none", "--osd-fonts-dir=/usr/share/banana/banana/fonts", "--osd-font=Inter",
+			// libass provider and an explicit fonts dir + family. Pixelify Sans is BananaOS's own face; mpv falls
+			// back to its default when the family is not installed.
+			"--osd-color=#ffefb2", "--osd-border-color=#17140d", "--osd-back-color=#201b11",
+			"--osd-font-provider=none", "--osd-fonts-dir=/usr/share/banana/rnds/fonts", "--osd-font=Pixelify Sans",
 			"--fullscreen", "--keep-open=no", "--force-window=yes",
 			"--msg-level=all=warn",
 		};

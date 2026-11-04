@@ -25,10 +25,20 @@ The manifest keys are `id` (default: the folder name), `name`, `maker`, `run` (`
 `ext` (the marker's extension), `perf` (the clock profile the launcher applies), and optionally `icon` (a picture in
 the app folder) and `accent` (`#rrggbb`). An id `systems.conf` already lists wins over a scanned one.
 
+## Look
+
+The client wears BananaOS's **Pocket** theme: a warm brown-black ground (`#17140d`), butter text, olive metadata and
+banana gold for focus, the active tab and the brand. Pixelify Sans is the face (Inter is the fallback), black-and-gold
+crisp borders replace rounded corners, and the app sits in the menu's raised bezel with its dot-grid backdrop. The top
+strip carries the OS banana mark and the **BananaTube** wordmark; the search well, tabs, cards, keyboard and button-chip
+hints live inside the frame. Thumbnails, duration and resume chips sit on the card art, and the player's mpv OSD uses
+the same palette and face.
+
 ## Controls
 
 The client reads the RPC's pad through SDL2 (the launcher exports `SDL_GAMECONTROLLERCONFIG`, the same Nintendo-order
-mapping `run-port` uses: **A is the east button**).
+mapping `run-port` uses: **A is the east button**). A desktop keyboard works too: the arrows and Enter act as the pad,
+and Tab / Shift+Tab switch tabs (the QEMU test drives the app that way; the RPC has no Tab key).
 
 | Button | Search keyboard | Results | Playing |
 |---|---|---|---|

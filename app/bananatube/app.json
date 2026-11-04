@@ -10,5 +10,5 @@
         "run": "/usr/libexec/banana/run-bananatube %ROM%",
         "ext": "app",
         "perf": "balanced",
-        "accent": "#e0402f"
+        "accent": "#ffd21e"
 }
