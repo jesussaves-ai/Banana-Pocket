@@ -13,16 +13,28 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-3. **Sleep leftovers / an Android-like sleep** -- the awake line now records the sleep's real cost (`battery 99% ->
-   95% (196 mAh in 7.0 h, 28 mA)`, from the gauge's `charge_counter`, plus whether the sleep had stray wakes), so a
-   night or a 3-4 h test is a measurement instead of a guess. Measured 2026-11-03: **≈0.6 %/h (~30 mA)** in `deep`,
-   with three spurious (no key, no cable) wakes; the 99->75 "drain" was the 2026-11-02 hang (100->74 in 15 h). Open:
-   what the ~30 mA is (Wi-Fi kept up vs downed, the USB gadget/PHY, the always-powered SD card, `deep` vs `s2idle`),
-   the spurious SD-host wake that cannot be disarmed from userspace, and keeping Wi-Fi associated across suspend while a
-   download is in flight (`sleep.d/10-wifi` always downs it).
-4. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-5. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-6. **Store / app catalog** (the Apps shelf only scans local folders).
+3. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+4. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+5. **Store / app catalog** (the Apps shelf only scans local folders).
+
+## In progress
+
+- **An Android-like sleep: find and cut the 37–42 mA standby drain.** Measured on the unit with the gauge's
+  `charge_counter` (the awake line has recorded it since `a81a11f`): `battery 99% -> 96% (164 mAh in 3.9 h, 42 mA)` and
+  `96% -> 94% (105 mAh in 2.8 h, 37 mA)` in `deep` — about **140 mW**, where an Android-class standby is 5–20 mW. The
+  spurious wakes (3–5 a night, the SD host's IRQ, no key or cable) cost well under 1 mAh together, so this is a steady
+  state, not wake churn; the 99→75 in the field notes was the 2026-11-02 hang (100→74 in 15 h).
+  - **Running:** test 1 — the sound server (PipeWire/WirePlumber) is stopped before sleeping, to see whether the
+    AudioReach graph (pinned `session.suspend-timeout-seconds = 0`) keeps the ADSP awake. Read: the next
+    `battery … (mAh in H h, mA)` line against the 37–42 mA baseline.
+  - **Queued, one variable per sleep:** (2) unbind `ath10k_snoc`/WPSS instead of only downing the supplicant;
+    (3) stop the USB gadget/PHY; (4) a `s2idle` sleep for comparison, to know what `deep` is worth. If none moves it,
+    the floor is the platform's S2R depth (firmware) and the remaining wins are on the wake side.
+  - **Wake side:** 57–60 ms from the kernel's resume to a drawn menu; the kernel's own resume is ~1.05 s; Wi-Fi coming
+    back is the slow part (the post hook reconnects in the background). Measure it, then consider keeping the link
+    associated across suspend (`sleep.d/10-wifi` currently always downs it) — "works instantly" is mostly this.
+  - The meter is **bind-mounted on the unit's current boot**, not in the 0.5.5 image: do not reboot until the tests
+    finish.
 
 ## Ideas (unscheduled)
 Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.
