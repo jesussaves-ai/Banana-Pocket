@@ -53,7 +53,7 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   when a picture lands. Design: `docs/superpowers/specs/2026-11-04-bananatube-idle-frames-design.md`; plan:
   `docs/superpowers/plans/2026-11-04-bananatube-idle-frames.md`. Track A2's cards, focus and keyboard are in (the Pocket
   shell below). Tracks B/C: player OSD done, continuity later.
-- **BananaTube Pocket shell (visual rehaul, implemented; unit pass pending).** The client wears the OS's own Pocket
+- **BananaTube Pocket shell (visual rehaul, done in 0.5.9).** The client wears the OS's own Pocket
   theme: the `#17140d` brown-black ground, butter ink and olive metadata, banana-gold focus, Pixelify Sans, a crisp
   framed screen with the dot grid, a top strip with the banana mark and the *BananaTube* wordmark, four Pocket cards,
   a keyboard that fills the frame (abc/ABC Shift, gold Search), and button-chip hints. The player's mpv OSD takes the

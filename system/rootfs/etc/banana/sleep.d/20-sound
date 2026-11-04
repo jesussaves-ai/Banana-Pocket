@@ -6,7 +6,12 @@
 # sound thread retries its opens every 250 ms until the sink is there.
 [ -x /usr/libexec/banana/sound-server ] || exit 0
 case $1 in
-pre)  /usr/libexec/banana/sound-server down ;;
+pre)
+    /usr/libexec/banana/sound-server down
+    # pipewire tears the DSP graph down on the way out (~1 s): let it finish before the SoC suspends, bounded
+    i=0
+    while pidof pipewire >/dev/null 2>&1 && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done
+    ;;
 post) /usr/libexec/banana/sound-server up >/dev/null 2>&1 & ;;
 esac
 exit 0
