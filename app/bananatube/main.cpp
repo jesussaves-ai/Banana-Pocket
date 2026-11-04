@@ -467,13 +467,17 @@ struct App
 		{
 			int tw = 0, th = 0;
 			TTF_SizeUTF8(f, shown.c_str(), &tw, &th);
-			while (tw > maxW && shown.size() > 1)
+			if (tw > maxW)
 			{
-				shown.resize(shown.size() - 1);
-				while (!shown.empty() && (static_cast<unsigned char>(shown.back()) & 0xC0) == 0x80) shown.pop_back();
-				TTF_SizeUTF8(f, shown.c_str(), &tw, &th);
+				while (!shown.empty())
+				{
+					while (!shown.empty() && (static_cast<unsigned char>(shown.back()) & 0xC0) == 0x80) shown.pop_back();
+					if (!shown.empty()) shown.pop_back();
+					std::string cand = shown + "\u2026";
+					TTF_SizeUTF8(f, cand.c_str(), &tw, &th);
+					if (tw <= maxW) { shown = cand; break; }
+				}
 			}
-			if (tw > maxW && shown.size() > 1) shown += "\u2026";
 		}
 		int w = 0, h = 0;
 		SDL_Texture* t = cachedText(shown, f, col, &w, &h);
@@ -754,8 +758,7 @@ struct App
 		results.clear();
 		sel = scroll = 0;
 		mode = Mode::RESULTS;	// an empty list still shows as the tab, with its own hint
-		status = channels.empty() ? "No channels yet. Search or play something."
-			: std::to_string(channels.size()) + " channels   A opens one";
+		status = channels.empty() ? "" : std::to_string(channels.size()) + " channels   A opens one";
 		resetThumbs();
 	}
 	void openChannel(const std::string& name)
@@ -839,8 +842,7 @@ struct App
 		results = localItems;
 		sel = scroll = 0;
 		mode = Mode::RESULTS;	// an empty list still shows as the tab, with its own hint
-		status = localItems.empty() ? "No music or video files in /data/music or /data/videos"
-			: std::to_string(localItems.size()) + " files on the card   A plays one";
+		status = localItems.empty() ? "" : std::to_string(localItems.size()) + " files on the card   A plays one";
 		resetThumbs();	// no network thumbnails: a file on the card has none
 	}
 	void cycleTab(int dir)
@@ -1330,7 +1332,7 @@ struct App
 	int contentTop(int H) const { return H * 285 / 1000; }
 	int contentBottom(int H) const { return H * 88 / 100; }
 	int hintTop(int H) const { return H * 895 / 1000; }
-	int hintH(int H) const { return H * 7 / 100; }
+	int hintH(int H) const { return H * 65 / 1000; }
 	SDL_Rect frameRect(int W, int H) const { return SDL_Rect { W * 2 / 100, H * 8 / 100, W * 96 / 100, H * 89 / 100 }; }
 	SDL_Rect hintRect(int W, int H) const { return SDL_Rect { W * 4 / 100, hintTop(H), W * 92 / 100, hintH(H) }; }
 	SDL_Rect backRect(int W, int H) const { return SDL_Rect { W * 4 / 100, H * 95 / 1000, W * 10 / 100, H * 7 / 100 }; }
@@ -1838,6 +1840,27 @@ struct App
 			printf("bananatube selftest layout: %s\n", ok ? "ok" : "fail");
 		}
 		{
+			// the device's own type size: the longest empty-state and status strings fit their boxes, and the
+			// status line clears the first card (the host runs at 1024; open the faces at 1080's sizes here)
+			TTF_Font* fm = openFont(fontPathMed, 1080 * 4 / 100, FALLBACK_FONT_MED);
+			TTF_Font* fs = openFont(fontPath, 1080 * 3 / 100, FALLBACK_FONT);
+			bool ok = fm && fs;
+			if (ok)
+			{
+				int w = 0, h = 0;
+				TTF_SizeUTF8(fm, "No channels yet. Search or play something.", &w, &h);
+				ok = ok && w <= 1240 * 86 / 100;
+				TTF_SizeUTF8(fm, "No music or video files on the card.", &w, &h);
+				ok = ok && w <= 1240 * 86 / 100;
+				TTF_SizeUTF8(fs, "18 results   SEL 720p", &w, &h);
+				ok = ok && w <= 1240 * 92 / 100;
+				ok = ok && 1080 * 245 / 1000 + TTF_FontHeight(fs) <= contentTop(1080);
+			}
+			if (fm) TTF_CloseFont(fm);
+			if (fs) TTF_CloseFont(fs);
+			printf("bananatube selftest textfit: %s\n", ok ? "ok" : "fail");
+		}
+		{
 			// the position bar and the quality cycle (the player's OSD text)
 			std::string a = barText(0, 100, 10), m = barText(50, 100, 10), z = barText(100, 100, 10);
 			bool ok = a.size() == 10 && a[0] == '|' && m.size() == 10 && m[5] == '|' && z.size() == 10 && z[9] == '|'
@@ -2089,7 +2112,8 @@ struct App
 		TTF_SizeUTF8(fSmall, "Back", &bw, &bh);
 		drawText("Back", fSmall, sk.ink, back.x + (back.w - bw) / 2, back.y + (back.h - bh) / 2);
 		bool typing = mode == Mode::KEYS;
-		box(queryBox.x, queryBox.y, queryBox.w, queryBox.h, sk.bezel, typing ? sk.gold : sk.ring, sk.bw);
+		box(queryBox.x, queryBox.y, queryBox.w, queryBox.h, sk.bezel, typing ? sk.gold : sk.ring,
+			typing ? 2 * sk.bw : sk.bw);
 		std::string shown = query.empty() ? "Search YouTube" : query;
 		int qh = 0;
 		TTF_SizeUTF8(fBig, shown.c_str(), nullptr, &qh);
@@ -2132,10 +2156,10 @@ struct App
 			std::string pos = std::to_string(sel + 1) + " / " + std::to_string(shownItems);
 			int ch = 0;
 			TTF_SizeUTF8(fSmall, pos.c_str(), &counterW, &ch);
-			drawText(pos, fSmall, sk.ink, W * 96 / 100 - counterW, H * 255 / 1000);
+			drawText(pos, fSmall, sk.ink, W * 96 / 100 - counterW, H * 245 / 1000);
 			counterW += W * 3 / 100;
 		}
-		if (!status.empty()) drawText(status, fSmall, sk.soft, W * 4 / 100, H * 255 / 1000, W * 92 / 100 - counterW);
+		if (!status.empty()) drawText(status, fSmall, sk.soft, W * 4 / 100, H * 245 / 1000, W * 92 / 100 - counterW);
 
 		if (mode == Mode::KEYS) drawKeyboard(W, H, sk);
 		else if (mode == Mode::RESULTS && view == View::CHANNELS && !channelOpen) drawChannels(W, H, sk);
@@ -2149,10 +2173,12 @@ struct App
 		struct Hint { const char* key; const char* label; };
 		static const Hint keysH[] = { { "A", "Type" }, { "B", "Back" }, { "Y", "Search" }, { "L/R", "Tab" } };
 		static const Hint resultsH[] = { { "A", "Play" }, { "B", "Back" }, { "Y", "Search" }, { "L/R", "Tab" } };
+		static const Hint channelListH[] = { { "A", "Open" }, { "B", "Back" }, { "Y", "Search" }, { "L/R", "Tab" } };
 		static const Hint channelH[] = { { "A", "Play" }, { "B", "Back" }, { "L/R", "Tab" } };
-		bool inChannel = view == View::CHANNELS && channelOpen;
-		const Hint* hs = mode == Mode::KEYS ? keysH : inChannel ? channelH : resultsH;
-		int n = mode == Mode::KEYS || !inChannel ? 4 : 3;
+		bool channelList = view == View::CHANNELS && !channelOpen;
+		const Hint* hs = mode == Mode::KEYS ? keysH : channelList ? channelListH
+			: view == View::CHANNELS ? channelH : resultsH;
+		int n = view == View::CHANNELS && channelOpen ? 3 : 4;
 		int chipH = H * 42 / 1000, padX = W * 15 / 1000;
 		int x = W * 4 / 100, y = hintTop(H) + (hintH(H) - chipH) / 2;
 		for (int i = 0; i < n; i++)
@@ -2224,8 +2250,9 @@ struct App
 		{
 			const char* none = searching ? "Searching\u2026"
 				: view == View::RECENT ? "Nothing played yet. Play a video and it lands here."
+				: view == View::LOCAL ? "No music or video files on the card."
 				: "No results. B for the keyboard.";
-			drawText(none, fMed, sk.soft, W * 6 / 100, top);
+			drawText(none, fMed, sk.soft, W * 6 / 100, top, W * 86 / 100);
 			return;
 		}
 		// the map carries the visible page and its neighbours only
@@ -2291,7 +2318,7 @@ struct App
 		if (sel >= scroll + per) scroll = sel - per + 1;
 		if (channels.empty())
 		{
-			drawText("No channels yet. Search for videos or play something.", fMed, sk.soft, W * 6 / 100, top);
+			drawText("No channels yet. Search or play something.", fMed, sk.soft, W * 6 / 100, top, W * 86 / 100);
 			return;
 		}
 		int av = std::min(cardH - 2 * inset, H * 8 / 100);
