@@ -36,14 +36,6 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   - The meter is **bind-mounted on the unit's current boot**, not in the 0.5.5 image: do not reboot until the tests
     finish.
 
-- **Resume the last game at boot (implemented, awaiting the image).** A clean shutdown while a game runs leaves
-  `/data/banana/resume` (written by `bananad` from the menu's `/run/banana/game.path`); the next menu start sees it, gives
-  a 0.5 s any-key cancel window, then feeds the existing `/run/banana/launch` hook; three tries cap a game that wedges the
-  device, and a missing card/ROM clears the marker. A quit back to the menu clears both (unless the shutdown flag says
-  the exit *is* the shutdown). Host checks: the sleep test (marker on a battery-guard shutdown, none from the menu) and
-  five headless `resume` cases. On the unit: a restarted menu with a seeded marker launched the game, consumed the
-  marker and counted the try; quitting the game returned the panel and reset the count. Pending: a real shutdown →
-  power-on with the next image, and a physical key during the window.
 - **Languages: Spanish and German, Settings screen first.** The pipeline is in: the English string is the key,
   `tr()` in `ui/src/i18n.cpp` falls back to English, catalogs are JSON in `/usr/share/banana/lang/<code>.json` with a
   `/data/banana/lang/` override on the card (like a theme), and Settings > Display & sound gains a **Language** row
@@ -119,6 +111,17 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **Resume the last game at boot (0.5.8).** A clean shutdown while a game runs boots back into it (Quick resume
+  loads the state); a shutdown in the menu boots the menu. The menu writes `/run/banana/game.path` at launch, `bananad`
+  keeps it in `banana/resume` at shutdown, and the next menu start feeds the existing `/run/banana/launch` hook. The
+  cancel window is 0.5 s and ignores the power key — 0.5.6's window was cancelled by the very press that powered the
+  console on, so every real boot showed the menu (found from the unit's log, fixed in 0.5.8). Three launches cap a game
+  that wedges the device; a missing card/ROM clears the marker and logs. A pending resume skips the boot animation:
+  measured menu-ready **7.80 → 6.41 s** and launch **~9.8 → ~6.9 s** after power-on on the unit. A quit back to the menu
+  clears the marker and the tries count (unless `shutting-down` says the exit is the shutdown). Tests: the sleep test
+  (41 checks; marker on a battery-guard shutdown, none from the menu) and five headless `resume` cases; verified on the
+  unit with a real power cycle (`ready` → `launching`, tries 1, no cancel). Only the deliberate non-power cancel press
+  has not been done on hardware; its decision path is the headless cancel case.
 - [x] **Theme validation (0.5.x).** `tools/check-themes.py` validates every bundled theme against
   `docs/theme.schema.json` in `make test` (and CI): a small validator for the keywords the schema actually uses
   (`$ref`, `type`, `enum`, `pattern`, `properties`, `items`, `anyOf`, `oneOf`, `additionalProperties`, `required`),

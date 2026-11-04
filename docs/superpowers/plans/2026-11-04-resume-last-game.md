@@ -10,8 +10,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-04-resume-last-game-design.md`
 
-**Status:** Tasks 1-3 implemented (`aa78895`, `ae13ce9`, `0a9018c`); boot path and game-return verified on the unit.
-Pending: a real shutdown → power-on on the next image, and the physical any-key cancel press.
+**Status:** Done in 0.5.8. Tasks 1-3 (`aa78895`, `ae13ce9`, `0a9018c`), the boot-press fix and the speed-ups
+(`64ffce2`). Verified on the unit with a real shutdown → power-on: `resume: ready` → `resume: launching`, tries 1, no
+cancel; menu 6.41 s, launch ~6.9 s. Pending only a deliberate non-power cancel press on hardware.
 
 ## Global Constraints
 
