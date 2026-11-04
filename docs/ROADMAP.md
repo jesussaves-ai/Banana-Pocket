@@ -38,7 +38,7 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
 
 - **Resume the last game at boot (implemented, awaiting the image).** A clean shutdown while a game runs leaves
   `/data/banana/resume` (written by `bananad` from the menu's `/run/banana/game.path`); the next menu start sees it, gives
-  a 2 s any-key cancel window, then feeds the existing `/run/banana/launch` hook; three tries cap a game that wedges the
+  a 0.5 s any-key cancel window, then feeds the existing `/run/banana/launch` hook; three tries cap a game that wedges the
   device, and a missing card/ROM clears the marker. A quit back to the menu clears both (unless the shutdown flag says
   the exit *is* the shutdown). Host checks: the sleep test (marker on a battery-guard shutdown, none from the menu) and
   five headless `resume` cases. On the unit: a restarted menu with a seeded marker launched the game, consumed the

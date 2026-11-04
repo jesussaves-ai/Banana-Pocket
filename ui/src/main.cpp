@@ -1291,7 +1291,12 @@ int main(int argc, char** argv)
 		ready = true;
 		readyCv.notify_all();
 	});
-	playSplash(disp, be, o, variant, settings["splash"] != "off", ready, readyM, readyCv, sound, sigPipe[0]);
+	// A resume skips the boot animation: the game is the point, and the splash is a second or two of transition.
+	std::string resumeRom;
+	Resume resume = resumePlan(o.data, resumeRom);
+	if (resume == Resume::Ready) logf("resume: ready %s (any key cancels)", resumeRom.c_str());
+	else if (resume != Resume::None) resumeCancel(o.data);
+	playSplash(disp, be, o, variant, settings["splash"] != "off" && resume != Resume::Ready, ready, readyM, readyCv, sound, sigPipe[0]);
 	// the splash is done: free its layers (bgTop is a full screen) before the menu's idle loop, so they are not held
 	// for the whole session (the idle RSS budget)
 	gSplash = Splash();
@@ -1426,14 +1431,15 @@ int main(int argc, char** argv)
 		dirty = true;
 	};
 
-	std::string resumeRom;	// the interrupted game this boot may resume
-	double resumeDue = 0;	// the end of its any-key cancel window (0: none pending)
+	double resumeDue = 0;	// the end of the resume's any-key cancel window (0: none pending)
 	auto handle = [&](const InputEvent& ev)
 	{
-		if (resumeDue > 0)	// the first press or touch stays in the menu
+		// The first press or touch stays in the menu -- except the power key: the press (and release) that turned the
+		// console on arrives here too, and cancelling on it made every real boot skip the resume.
+		if (resumeDue > 0 && (ev.type == InputEvent::PRESS || ev.type == InputEvent::TOUCH_DOWN) && ev.key != Key::WAKE)
 		{
 			resumeCancel(o.data);
-			logf("resume: cancelled");
+			logf("resume: cancelled (%s)", ev.type == InputEvent::TOUCH_DOWN ? "touch" : "a key");
 			resumeDue = 0;
 		}
 		// the AMOLED guard: the first press or touch wakes the panel and is swallowed -- and, for a touch, its later
@@ -1656,12 +1662,7 @@ int main(int argc, char** argv)
 	bool launchSeen = true;
 	bool cheevosSeen = true;	// /run/banana/cheevos: the achievements a game just unlocked, read on this pass
 	bool shotWanted = false;	// /run/banana/screen.req: write the frame to screen.jpg on this pass (below)
-	{
-		std::string rom;
-		Resume plan = resumePlan(o.data, rom);
-		if (plan == Resume::Ready) { resumeRom = rom; resumeDue = nowMs() + 2000; logf("resume: ready %s (any key cancels)", rom.c_str()); }
-		else if (plan != Resume::None) resumeCancel(o.data);	// a card that changed, or a game that wedged us three times
-	}
+	if (resume == Resume::Ready) resumeDue = nowMs() + 500;	// a short window: the game is the point
 	while (!quit)
 	{
 		double now = nowMs();
