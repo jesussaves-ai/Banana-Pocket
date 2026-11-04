@@ -294,6 +294,8 @@ struct App
 	std::string status;
 	std::vector<Item> results;
 	int sel = 0, scroll = 0;
+	bool dirty = true;					// draw only when the frame can have changed (see markDirty())
+	void markDirty() { dirty = true; }
 	bool quit = false;					// the loop's own exit (B on an empty query): SDL_Quit() here would tear SDL
 										// down under a running loop, leaving a frozen/glitched window that never exits
 
@@ -485,6 +487,7 @@ struct App
 	// ---- search --------------------------------------------------------------------------------------------------
 	void startSearch()
 	{
+		markDirty();	// "Searching…"
 		if (query.empty() || searching) return;
 		searchDone = false;
 		searching = true;
@@ -517,6 +520,7 @@ struct App
 	void pollSearch()
 	{
 		if (!searchDone.exchange(false)) return;
+		markDirty();
 		if (searchThread.joinable()) searchThread.join();
 		std::lock_guard<std::mutex> l(searchLock);
 		searching = false;
@@ -948,6 +952,7 @@ struct App
 	}
 	void play(const Item& it)
 	{
+		markDirty();
 		if (mpv > 0) { status = "Already playing"; return; }
 		unlink(IPC_SOCK);
 		pendingSeek = 0;
@@ -1024,6 +1029,7 @@ struct App
 	// leaves the AudioReach frontend to time out, which is the EBUSY the next open would hit.
 	void stopPlayback()
 	{
+		markDirty();
 		saveProgress();	// where the viewer stopped, for the Recent tab
 		if (mpv > 0)
 		{
@@ -1101,6 +1107,7 @@ struct App
 	}
 	void move(int dx, int dy)
 	{
+		markDirty();
 		if (mode == Mode::KEYS)
 		{
 			if (dx != 0)
@@ -1431,6 +1438,7 @@ struct App
 					snprintf(b, sizeof b, "tap raw %d,%d -> %d,%d (surface %dx%d rot %d)", tDownX, tDownY, x, y, W, H, panelRot);
 					logLine(b);
 					// the PLAYING case drives mpv over IPC (there is no OSC); elsewhere it is the app's own UI
+					markDirty();
 					tapAt(x, y);
 				}
 			}
@@ -1497,6 +1505,7 @@ struct App
 			SDL_Event ev;
 			while (SDL_PollEvent(&ev))
 			{
+				markDirty();	// a key, the pad, a window resize: whatever it was, the frame may differ
 				if (ev.type == SDL_QUIT) alive = false;
 				else if (ev.type == SDL_CONTROLLERDEVICEADDED && !pad)
 				{
@@ -1593,10 +1602,11 @@ struct App
 				playingId.clear();
 				mode = Mode::RESULTS;
 				status = "Playback ended (B to go back)";
+				markDirty();
 			}
 
-			draw();
-			SDL_RenderPresent(ren);
+			// mpv owns the screen while a video plays: nothing app-side is visible, so draw nothing
+			if (dirty && mode != Mode::PLAYING) { draw(); SDL_RenderPresent(ren); dirty = false; }
 			SDL_Delay(8);
 		}
 		stopPlayback();
