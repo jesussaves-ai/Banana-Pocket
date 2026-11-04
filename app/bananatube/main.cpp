@@ -497,9 +497,12 @@ struct App
 	// the Pocket surface: a hard fill with a solid edge of `border` pixels (the theme draws no rounded corners)
 	void box(int x, int y, int w, int h, SDL_Color fill, SDL_Color edge, int border)
 	{
-		SDL_SetRenderDrawColor(ren, fill.r, fill.g, fill.b, fill.a);
-		SDL_Rect r { x, y, w, h };
-		SDL_RenderFillRect(ren, &r);
+		if (fill.a)
+		{
+			SDL_SetRenderDrawColor(ren, fill.r, fill.g, fill.b, fill.a);
+			SDL_Rect r { x, y, w, h };
+			SDL_RenderFillRect(ren, &r);
+		}
 		if (border <= 0 || edge.a == 0) return;
 		SDL_SetRenderDrawColor(ren, edge.r, edge.g, edge.b, edge.a);
 		SDL_Rect t { x, y, w, border }; SDL_RenderFillRect(ren, &t);
@@ -1349,8 +1352,13 @@ struct App
 		int rowW = 4 * aw + 3 * gap, x0 = (W - rowW) / 2, y = kTop(H) + ROWS * (kh + gap);
 		return SDL_Rect { x0 + c * (aw + gap), y, aw, ah };
 	}
-	int resultsTop(int H) const { return H * 26 / 100; }
-	int resultsRowH(int H) const { return std::max(56, H * 12 / 100); }
+	int resultsTop(int H) const { return contentTop(H); }
+	int resultsRowH(int H) const { return std::max(56, H * 14 / 100); }
+	int rowsPerPage(int H) const
+	{
+		int per = (contentBottom(H) - contentTop(H)) / resultsRowH(H);
+		return per < 1 ? 1 : per;
+	}
 	static bool inRect(const SDL_Rect& r, int x, int y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
 	// a tap (touch or pointer) at output-space (x,y): the top bar's Back / query, then the current screen's targets
@@ -1814,6 +1822,8 @@ struct App
 				ok = ok && t0.x >= fr.x && t3.x + t3.w <= fr.x + fr.w && t0.y + t0.h <= contentTop(H);
 				ok = ok && contentBottom(H) <= hintTop(H) && hint.y >= contentBottom(H);
 				ok = ok && hint.y + hint.h <= fr.y + fr.h;
+				ok = ok && resultsTop(H) == contentTop(H) && resultsRowH(H) == std::max(56, H * 14 / 100);
+				ok = ok && rowsPerPage(H) >= 4;
 			}
 			printf("bananatube selftest layout: %s\n", ok ? "ok" : "fail");
 		}
@@ -1983,8 +1993,7 @@ struct App
 	{
 		int W = 0, H = 0;
 		SDL_GetRendererOutputSize(ren, &W, &H);
-		int per = (H * 88 / 100 - resultsTop(H)) / resultsRowH(H);
-		return per < 1 ? 1 : per;
+		return rowsPerPage(H);
 	}
 
 	// ---- drawing -------------------------------------------------------------------------------------------------
@@ -2156,43 +2165,111 @@ struct App
 		}
 	}
 
-	void drawChannels(int W, int H, const Skin& sk)
+	void drawResults(int W, int H, const Skin& sk)
 	{
-		SDL_Color fg = sk.ink, dim = sk.soft, acc = sk.gold, selbg = sk.card;
 		int top = resultsTop(H);
 		int rowH = resultsRowH(H);
 		int per = resultsPerPage();
+		int gap = W * 1 / 100;
+		int cardH = rowH - gap;
+		int inset = std::max(4, W / 250);
+		if (sel < scroll) scroll = sel;
+		if (sel >= scroll + per) scroll = sel - per + 1;
+		if (searching || results.empty())
+		{
+			const char* none = searching ? "Searching\u2026"
+				: view == View::RECENT ? "Nothing played yet. Play a video and it lands here."
+				: "No results. B for the keyboard.";
+			drawText(none, fMed, sk.soft, W * 6 / 100, top);
+			return;
+		}
+		// the map carries the visible page and its neighbours only
+		int wf = std::max(0, scroll - 1), wl = std::min(static_cast<int>(results.size()), scroll + per + 1);
+		if (wf != thumbWinFirst || wl != thumbWinLast) pruneThumbs(wf, wl);
+		int thumbH = cardH - 2 * inset, thumbW = thumbH * 16 / 9;
+		if (thumbW > W * 32 / 100) { thumbW = W * 32 / 100; thumbH = thumbW * 9 / 16; }
+		for (int i = scroll; i < static_cast<int>(results.size()) && i < scroll + per; i++)
+		{
+			const Item& it = results[i];
+			int y = top + (i - scroll) * rowH;
+			bool on = i == sel;
+			box(W * 4 / 100, y, W * 92 / 100, cardH, sk.card, on ? sk.gold : sk.line, sk.bw);
+			if (on)
+			{
+				SDL_Rect bar { W * 4 / 100, y, std::max(6, W * 8 / 1000), cardH };
+				SDL_SetRenderDrawColor(ren, sk.gold.r, sk.gold.g, sk.gold.b, 255);
+				SDL_RenderFillRect(ren, &bar);
+			}
+			int tx = W * 6 / 100;
+			SDL_Rect tr { tx, y + inset, thumbW, thumbH };
+			SDL_Texture* t = thumb(it.id);
+			if (t)
+			{
+				SDL_RenderCopy(ren, t, nullptr, &tr);
+				box(tr.x, tr.y, tr.w, tr.h, SDL_Color { 0, 0, 0, 0 }, sk.line, 2);
+			}
+			else box(tr.x, tr.y, tr.w, tr.h, sk.ring, sk.line, sk.bw);
+			// the duration, on the picture's bottom-right corner (where a video's length belongs)
+			if (!it.duration.empty())
+			{
+				int dw = 0, dh = 0;
+				TTF_SizeUTF8(fSmall, it.duration.c_str(), &dw, &dh);
+				int bx = tr.x + tr.w - dw - W * 1 / 100, by = tr.y + tr.h - dh - W * 1 / 200;
+				box(bx - 6, by - 2, dw + 12, dh + 4, sk.bezel, SDL_Color { 0, 0, 0, 0 }, 0);
+				drawText(it.duration, fSmall, sk.ink, bx, by);
+			}
+			// a Recent row's resume point, on the picture's top-left corner
+			if (view == View::RECENT && it.resume > 0)
+			{
+				std::string rs = fmtTime(it.resume);
+				int rw = 0, rh = 0;
+				TTF_SizeUTF8(fSmall, rs.c_str(), &rw, &rh);
+				box(tr.x + 4, tr.y + 4, rw + 12, rh + 4, sk.gold, SDL_Color { 0, 0, 0, 0 }, 0);
+				drawText(rs, fSmall, sk.bg, tr.x + 10, tr.y + 6);
+			}
+			int textX = tr.x + tr.w + W * 2 / 100;
+			int textW = W * 94 / 100 - textX;
+			drawText(it.title, fMed, on ? sk.goldHi : sk.ink, textX, y + cardH * 12 / 100, textW);
+			drawText(it.uploader, fSmall, sk.soft, textX, y + cardH * 55 / 100, textW);
+		}
+	}
+
+	void drawChannels(int W, int H, const Skin& sk)
+	{
+		int top = resultsTop(H);
+		int rowH = resultsRowH(H);
+		int per = resultsPerPage();
+		int gap = W * 1 / 100;
+		int cardH = rowH - gap;
+		int inset = std::max(4, W / 250);
 		if (sel < scroll) scroll = sel;
 		if (sel >= scroll + per) scroll = sel - per + 1;
 		if (channels.empty())
 		{
-			drawText("No channels yet. Search for videos or play something.", fMed, dim, W * 6 / 100, top);
+			drawText("No channels yet. Search for videos or play something.", fMed, sk.soft, W * 6 / 100, top);
 			return;
 		}
-		int pad = W * 1 / 100;
+		int av = std::min(cardH - 2 * inset, H * 8 / 100);
 		for (int i = scroll; i < static_cast<int>(channels.size()) && i < scroll + per; i++)
 		{
 			int y = top + (i - scroll) * rowH;
 			bool on = i == sel;
-			panel(W * 4 / 100, y, W * 92 / 100, rowH - pad, on ? selbg : SDL_Color { 20, 24, 31, 255 },
-				on ? acc : SDL_Color { 46, 52, 64, 255 }, on ? 1 : 0);
+			box(W * 4 / 100, y, W * 92 / 100, cardH, sk.card, on ? sk.gold : sk.line, sk.bw);
 			if (on)
 			{
-				SDL_Rect bar { W * 4 / 100, y, std::max(6, W * 1 / 100), rowH - pad };
-				SDL_SetRenderDrawColor(ren, acc.r, acc.g, acc.b, 255);
+				SDL_Rect bar { W * 4 / 100, y, std::max(6, W * 8 / 1000), cardH };
+				SDL_SetRenderDrawColor(ren, sk.gold.r, sk.gold.g, sk.gold.b, 255);
 				SDL_RenderFillRect(ren, &bar);
 			}
 			const std::string& name = channels[i];
 			// a square avatar with the channel's first letter: no network round-trip for a channel row
-			int av = rowH - 2 * pad - rowH * 20 / 100;
-			SDL_Rect ar { W * 6 / 100, y + (rowH - pad - av) / 2, av, av };
-			panel(ar.x, ar.y, ar.w, ar.h, on ? acc : SDL_Color { 40, 46, 58, 255 },
-				on ? acc : SDL_Color { 64, 72, 88, 255 }, 0);
+			SDL_Rect ar { W * 6 / 100, y + (cardH - av) / 2, av, av };
+			box(ar.x, ar.y, ar.w, ar.h, sk.ring, sk.edge, sk.bw);
 			std::string initial = !name.empty() && static_cast<unsigned char>(name[0]) < 128
 				? std::string(1, static_cast<char>(toupper(static_cast<unsigned char>(name[0])))) : "@";
 			int iw = 0, ih = 0;
 			TTF_SizeUTF8(fBig, initial.c_str(), &iw, &ih);
-			drawText(initial, fBig, on ? fg : dim, ar.x + (ar.w - iw) / 2, ar.y + (ar.h - ih) / 2);
+			drawText(initial, fBig, sk.gold, ar.x + (ar.w - iw) / 2, ar.y + (ar.h - ih) / 2);
 			// how many of the two lists this channel appears in (unique videos)
 			std::vector<std::string> seen;
 			for (const Item& it : searchResults)
@@ -2210,85 +2287,13 @@ struct App
 					if (!dup) seen.push_back(it.id);
 				}
 			int tx = ar.x + ar.w + W * 2 / 100;
-			drawText(name, fMed, fg, tx, y + rowH * 12 / 100, W * 86 / 100 - tx);
-			drawText(std::to_string(seen.size()) + (seen.size() == 1 ? " video" : " videos"), fSmall, dim,
-				tx, y + rowH * 55 / 100, W * 86 / 100 - tx);
+			int tw = W * 94 / 100 - tx;
+			drawText(name, fMed, on ? sk.goldHi : sk.ink, tx, y + cardH * 12 / 100, tw);
+			drawText(std::to_string(seen.size()) + (seen.size() == 1 ? " video" : " videos"), fSmall, sk.soft,
+				tx, y + cardH * 55 / 100, tw);
 		}
 	}
 
-	void drawResults(int W, int H, const Skin& sk)
-	{
-		SDL_Color fg = sk.ink, dim = sk.soft, acc = sk.gold, selbg = sk.card;
-		int top = resultsTop(H);
-		int rowH = resultsRowH(H);
-		int per = resultsPerPage();
-		if (sel < scroll) scroll = sel;
-		if (sel >= scroll + per) scroll = sel - per + 1;
-		if (searching || results.empty())
-		{
-			const char* none = searching ? "Searching\u2026"
-				: view == View::RECENT ? "Nothing played yet. Play a video and it lands here."
-				: "No results. B for the keyboard.";
-			drawText(none, fMed, dim, W * 6 / 100, top);
-			return;
-		}
-		// the map carries the visible page and its neighbours only
-		int wf = std::max(0, scroll - 1), wl = std::min(static_cast<int>(results.size()), scroll + per + 1);
-		if (wf != thumbWinFirst || wl != thumbWinLast) pruneThumbs(wf, wl);
-		int pad = W * 1 / 100;
-		// the thumbnail is the card's full height (the old art was inset by the card's padding), in 16:9
-		int thumbH = rowH - pad, thumbW = thumbH * 16 / 9;
-		if (thumbW > W * 30 / 100) { thumbW = W * 30 / 100; thumbH = thumbW * 9 / 16; }
-		for (int i = scroll; i < static_cast<int>(results.size()) && i < scroll + per; i++)
-		{
-			const Item& it = results[i];
-			int y = top + (i - scroll) * rowH;
-			bool on = i == sel;
-			panel(W * 4 / 100, y, W * 92 / 100, rowH - pad, on ? selbg : SDL_Color { 20, 24, 31, 255 },
-				on ? acc : SDL_Color { 46, 52, 64, 255 }, on ? 1 : 0);
-			if (on)
-			{
-				// a solid bar down the left edge of the selected row, the mark that survives a small screen
-				SDL_Rect bar { W * 4 / 100, y, std::max(6, W * 1 / 100), rowH - pad };
-				SDL_SetRenderDrawColor(ren, acc.r, acc.g, acc.b, 255);
-				SDL_RenderFillRect(ren, &bar);
-			}
-			int tx = W * 6 / 100;
-			// the thumbnail (a 16:9 card at the left), or a placeholder until it is downloaded
-			SDL_Rect tr { tx, y, thumbW, thumbH };
-			SDL_Texture* t = thumb(it.id);
-			if (t) SDL_RenderCopy(ren, t, nullptr, &tr);
-			else
-			{
-				SDL_SetRenderDrawColor(ren, 34, 38, 48, 255);
-				SDL_RenderFillRect(ren, &tr);
-				SDL_SetRenderDrawColor(ren, 54, 60, 74, 255);
-				SDL_RenderDrawRect(ren, &tr);
-			}
-			// the duration, on the picture's bottom-right corner (where a video's length belongs)
-			if (!it.duration.empty())
-			{
-				int dw = 0, dh = 0;
-				TTF_SizeUTF8(fSmall, it.duration.c_str(), &dw, &dh);
-				int bx = tr.x + tr.w - dw - W * 1 / 100, by = tr.y + tr.h - dh - W * 1 / 200;
-				panel(bx - 6, by - 2, dw + 12, dh + 4, SDL_Color { 8, 9, 12, 220 }, SDL_Color { 0, 0, 0, 0 });
-				drawText(it.duration, fSmall, fg, bx, by);
-			}
-			// a Recent row's resume point, on the picture's top-left corner (not in the channel line)
-			if (view == View::RECENT && it.resume > 0)
-			{
-				std::string rs = fmtTime(it.resume);
-				int rw = 0, rh = 0;
-				TTF_SizeUTF8(fSmall, rs.c_str(), &rw, &rh);
-				panel(tr.x + 4, tr.y + 4, rw + 12, rh + 4, SDL_Color { 8, 9, 12, 220 }, acc);
-				drawText(rs, fSmall, acc, tr.x + 10, tr.y + 6);
-			}
-			int textX = tr.x + tr.w + W * 2 / 100;
-			int textW = W * 88 / 100 - textX;
-			drawText(it.title, fMed, fg, textX, y + rowH * 12 / 100, textW);
-			drawText(it.uploader, fSmall, dim, textX, y + rowH * 55 / 100, textW);
-		}
-	}
 };
 
 int main(int argc, char** argv)
