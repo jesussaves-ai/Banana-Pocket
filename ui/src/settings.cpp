@@ -186,8 +186,9 @@ namespace banana
 	}
 
 	// ---- the settings ------------------------------------------------------------------------------------------------
-	Settings::Settings(rnds::Backend* b, const std::string& a, const std::string& d, float scale, const std::string& variant)
-		: be(b), assets(a), data(d), s(scale), light(variant == "light")
+	Settings::Settings(rnds::Backend* b, const std::string& a, const std::string& d, float scale, const std::string& variant,
+		rnds::Source* source)
+		: be(b), assets(a), data(d), s(scale), light(variant == "light"), src(source)
 	{
 		R = rnds::Font::load(assets + "/fonts/PixelifySans-Regular.ttf");
 		M = rnds::Font::load(assets + "/fonts/PixelifySans-Medium.ttf");
@@ -326,7 +327,7 @@ namespace banana
 		add(S, "gear", "Update", "A new version of Banana, written to the other slot and run from the next restart; this one stays as it is until then. Over Wi-Fi, \"Check for updates\" downloads the newest release from GitHub; a package on the card in banana/updates (File sharing can copy one) works too.", "", "update", {}, {}, Item::PAGE);
 		add(S, "gear", "Back up settings", "Settings, accounts, the saves/states trees and RetroArch's controller remaps in one file in banana/backups on the card (File sharing can copy it off). Games and box art stay out of it. Press A twice.", "", "backup", { "" }, { "" }, Item::ACTION);
 		add(S, "gear", "Restore settings", "Unpacks the newest backup over the card's settings, saves and states, then restarts the menu so they are read. Press A twice.", "", "restore", { "" }, { "" }, Item::ACTION);
-		add(S, "picture", "Box art", "Covers, title screens, genres and years for your games, from libretro's free collections (no account, Wi-Fi needed). It keeps going in the background; games that already have art are skipped, so running it again only fetches what is new.",
+		add(S, "picture", "Box art", "Covers, title screens, genres and years for your games, from libretro's free collections (no account, Wi-Fi needed). It keeps going in the background; games that already have art are skipped, so running it again only fetches what is new. Starts only on the charger (or the USB cable), so a long scrape cannot flatten the battery.",
 			"", "scrape", {}, {}, Item::PAGE);
 		add(S, "picture", "Box art from", "libretro: libretro's collections. libretro + Twilight: TwilightBoxart (boxart.kirovair.com) for the covers libretro has none of. Twilight first: TwilightBoxart's covers where it has them. TwilightBoxart is asked one game a second.",
 			menu, "boxart_source", { "libretro", "libretro + Twilight", "Twilight first" }, { "libretro", "both", "twilight" });
@@ -2614,6 +2615,13 @@ namespace banana
 	void Settings::startScrape()
 	{
 		if (scraping()) return;
+		// the card holds thousands of games and the fetch is paced: a scrape can run a long time, so it starts only on
+		// power (the library's own read of the charger, the same one the burn-in guard uses)
+		if (src && !src->charging())
+		{
+			message = "Plug in the charger (or the USB cable) first: a scrape runs a long time and must not flatten the battery.";
+			return;
+		}
 		if (!wifiOn()) { message = "Wi-Fi is off: switch it on in Network first."; return; }
 		std::ofstream("/run/banana/scrape.status") << "running 0 0 |starting\n";
 		scrapeLine.clear();

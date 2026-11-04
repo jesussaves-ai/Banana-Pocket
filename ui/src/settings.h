@@ -22,7 +22,8 @@ namespace banana
 	class Settings
 	{
 	public:
-		Settings(rnds::Backend* be, const std::string& assets, const std::string& dataDir, float scale, const std::string& variant);
+		Settings(rnds::Backend* be, const std::string& assets, const std::string& dataDir, float scale, const std::string& variant,
+			rnds::Source* source = nullptr);	// the library, for the power state (the scrape starts only on the charger)
 		void setVariant(const std::string& variant);	// "dark" or "light"
 		// The pages' list is drawn on the one screen, and the selected setting's description and help go in the strip
 		// of panel below it. canvasH: the panel's height in the same CSS px (a 1240x1080 panel is 557)
@@ -158,6 +159,7 @@ namespace banana
 		Result pressSetup(Key k);
 		void renderSetup();
 		void setupDone();
+		rnds::Source* src = nullptr;
 		std::string wifiTool, wifiConf, backupTool;
 		bool sync = false;
 		wifi::Job scanJob, statusJob, backupJob;

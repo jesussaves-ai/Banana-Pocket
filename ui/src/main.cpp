@@ -550,7 +550,7 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 	};
 	ui.setHome(0);
 	// Settings builds its list in the constructor (which runs here), so the theme variant is set just after it
-	Settings settings(&be, o.assets, o.data, sc, variant);
+	Settings settings(&be, o.assets, o.data, sc, variant, &lib);
 	settings.setPanelHeight(canvasH);
 	settings.setSync(true);
 	settings.searchCount = [&](const std::string& q) { return lib.countMatches(q); };
@@ -1244,7 +1244,7 @@ int main(int argc, char** argv)
 	bool swallowTouch = false;	// the press that woke the panel: its touch-up must not land either
 	int lastMinute = -1;
 	float scale = single ? disp.width() / 640.0f : disp.height() / 480.0f;
-	Settings settingsView(&be, o.assets, o.data, scale, variant);
+	Settings settingsView(&be, o.assets, o.data, scale, variant, &lib);
 	settingsView.setPanelHeight(canvasH);
 	settingsView.searchCount = [&](const std::string& q) { return lib.countMatches(q); };
 	settingsView.setVariant(menuTheme());

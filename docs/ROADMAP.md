@@ -4,9 +4,9 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Library UX, the rest** -- collections/tags and a screenshot gallery; plus **"scrape missing art"** and a scraper
-   that only runs while charging or on the cable, so a long scrape cannot flatten a battery (the recent-played shelf,
-   multi-disc `.m3u` grouping and shoulder jump-to-letter are done, 0.5.x).
+1. **Library UX, the rest** -- collections/tags and a screenshot gallery. The scraper already skips games that have
+   art, and now starts only on the charger or the USB cable (a long scrape must not flatten the battery); the
+   recent-played shelf, multi-disc `.m3u` grouping and shoulder jump-to-letter are done, 0.5.x.
 2. **Local media / music player**, and porting BananaTube's newer settings screen.
 3. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
 4. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
