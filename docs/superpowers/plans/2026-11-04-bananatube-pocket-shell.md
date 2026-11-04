@@ -360,3 +360,16 @@ git commit -m "bananatube: the Pocket shell is verified and closed"
   Awaiting the one-pass visual confirmation.
 - Known minor (deferred): emoji in YouTube titles render as empty boxes (Pixelify/Inter carry no emoji glyphs); the
   previous Inter build showed the same tofu.
+
+## Final review fixes (2026-11-04)
+
+- The review's two Important findings are fixed: the Channels empty message measures/truncates (and the copy is
+  shorter) and the 1240 pass was redone at a true 1240x1080 surface with the 43/32 px faces, where the empty states and
+  the results were checked again. `drawText` now actually appends its ellipsis and trims UTF-8 correctly.
+- Also fixed in the same pass (re-graded by effect): the status line clears the first card, the Channels list's A chip
+  says Open, the typing well gets the spec's 2*bw ring, and the footer band clears the panel's bottom ring. Empty tabs
+  no longer repeat their message in the status line; Local says "No music or video files on the card."
+- `selftest textfit` opens the faces at 1080's sizes and checks the longest empty/status strings and the status
+  clearance; the suite is 27 checks and includes a Pixelify run. `make -s test` and `make -s agent-check` are green.
+- Deferred: emoji tofu (pre-existing), runtime font rescaling on a desktop window resize (the app is fullscreen at the
+  panel size; the device logs 1240x1080 at startup), and QEMU's EGL/screendump limits.

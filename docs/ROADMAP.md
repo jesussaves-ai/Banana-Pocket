@@ -58,9 +58,9 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   framed screen with the dot grid, a top strip with the banana mark and the *BananaTube* wordmark, four Pocket cards,
   a keyboard that fills the frame (abc/ABC Shift, gold Search), and button-chip hints. The player's mpv OSD takes the
   same palette and face; the app tile is gold. Design: `docs/superpowers/specs/2026-11-04-bananatube-pocket-shell-design.md`;
-  plan: `docs/superpowers/plans/2026-11-04-bananatube-pocket-shell.md`. Host renders verified the keyboard and results;
-  the headless QEMU image cannot start cage/SDL (no EGL on its virtio GPU), so the panel pass is on the unit. Idle CPU
-  stays 0.2 % of a core (4 ticks/20 s).
+  plan: `docs/superpowers/plans/2026-11-04-bananatube-pocket-shell.md`. Host renders at a true 1240x1080 (43/32 px
+  Pixelify) verified the keyboard, results and empty states; the headless QEMU image cannot start cage/SDL (no EGL on
+  its virtio GPU), so the panel pass is on the unit. Idle CPU stays 0.2 % of a core (4 ticks/20 s).
 - **Languages: Spanish and German, Settings screen first.** The pipeline is in: the English string is the key,
   `tr()` in `ui/src/i18n.cpp` falls back to English, catalogs are JSON in `/usr/share/banana/lang/<code>.json` with a
   `/data/banana/lang/` override on the card (like a theme), and Settings > Display & sound gains a **Language** row
