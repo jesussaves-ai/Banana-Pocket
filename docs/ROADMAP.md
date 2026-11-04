@@ -13,8 +13,13 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-3. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
-   and measure overnight drain; residual spurious wakes and panel/SD resume latency are still untracked.
+3. **Sleep leftovers / an Android-like sleep** -- the awake line now records the sleep's real cost (`battery 99% ->
+   95% (196 mAh in 7.0 h, 28 mA)`, from the gauge's `charge_counter`, plus whether the sleep had stray wakes), so a
+   night or a 3-4 h test is a measurement instead of a guess. Measured 2026-11-03: **≈0.6 %/h (~30 mA)** in `deep`,
+   with three spurious (no key, no cable) wakes; the 99->75 "drain" was the 2026-11-02 hang (100->74 in 15 h). Open:
+   what the ~30 mA is (Wi-Fi kept up vs downed, the USB gadget/PHY, the always-powered SD card, `deep` vs `s2idle`),
+   the spurious SD-host wake that cannot be disarmed from userspace, and keeping Wi-Fi associated across suspend while a
+   download is in flight (`sleep.d/10-wifi` always downs it).
 4. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
 5. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
 6. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).

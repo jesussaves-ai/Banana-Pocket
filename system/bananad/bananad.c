@@ -395,6 +395,7 @@ static int wake_key_press(void)
  * straight back to sleep, without running anything again. */
 static void shutdown_now(const char *why);
 static int battery_discharging_pct(void);
+static long battery_charge_uah(void);
 static int sleep_fallback;		/* 0 as configured; 1 devices one at a time; 2 also s2idle (a suspend failed) */
 
 static void sleep_log(const char *fmt, ...)
@@ -650,6 +651,8 @@ static void suspend_now(const char *why)
 	if (cfg.sleep_skip[0]) sleep_log("sleep %s: skipping '%s' (debug)", why, cfg.sleep_skip);
 	int cycles = 0, rtc_wakes = 0, failures = 0, spurious = 0;
 	int plugged0 = charger_online();
+	int pct0 = battery_discharging_pct();	/* -1 on the charger: a draining sleep is the one worth measuring */
+	long q0 = battery_charge_uah();
 	double asleep = 0;
 	const char *woke = "?";
 	int woke_key = 0, woke_cable = 0;
@@ -761,10 +764,23 @@ static void suspend_now(const char *why)
 	ignore_power_until = mono() + 1.0;
 	power_down = 0;
 	last_input = mono();
-	char wr[256];
+	char wr[256], pw[96] = "";
 	wake_reason(wr, sizeof wr, woke_key, woke_cable, wk0);
-	sleep_log("awake (%s) after %.0f s asleep%s%s, %s, game and menu back %.1f ms after the kernel", woke, asleep,
-		rtc_wakes ? ", battery checked" : "", asleep < 5.0 ? " (it did not take)" : "", wr, (t_back - t_wake) * 1000);
+	/* what the sleep cost: the gauge's own percentage either side. %/h only makes sense unplugged and over a real
+	 * stretch of sleep -- this is the number an "Android-like" sleep is judged by. */
+	int pct1 = battery_discharging_pct();
+	long q1 = battery_charge_uah();
+	if (pct0 >= 0 && pct1 >= 0)
+	{
+		if (asleep >= 180 && q0 > 0 && q1 > 0)
+			snprintf(pw, sizeof pw, ", battery %d%% -> %d%% (%.0f mAh in %.1f h, %.0f mA%s)", pct0, pct1,
+				(q0 - q1) / 1000.0, asleep / 3600.0, (q0 - q1) / 1000.0 / (asleep / 3600.0),
+				spurious ? "" : ", no stray wake");
+		else
+			snprintf(pw, sizeof pw, ", battery %d%% -> %d%%", pct0, pct1);
+	}
+	sleep_log("awake (%s) after %.0f s asleep%s%s, %s, game and menu back %.1f ms after the kernel%s", woke, asleep,
+		rtc_wakes ? ", battery checked" : "", asleep < 5.0 ? " (it did not take)" : "", wr, (t_back - t_wake) * 1000, pw);
 	sleep_note_resume(wr);
 }
 
@@ -1711,6 +1727,29 @@ static void handle(const struct input_event *e)
 }
 
 /* percent, or -1 when there is no battery or it is charging */
+/* the gauge's charge counter in uAh (-1 on the charger, like the percentage): the number a sleep is measured by --
+ * one capacity step is 1% of 5 Ah, far too coarse for a few hours */
+static long battery_charge_uah(void)
+{
+	if (charger_online()) return -1;
+	DIR *d = opendir("/sys/class/power_supply");
+	if (!d) return -1;
+	struct dirent *e;
+	long r = -1;
+	while ((e = readdir(d))) {
+		if (e->d_name[0] == '.') continue;
+		char p[320], s[32];
+		snprintf(p, sizeof p, "/sys/class/power_supply/%s/type", e->d_name);
+		read_str(p, s, sizeof s);
+		if (strcmp(s, "Battery")) continue;
+		snprintf(p, sizeof p, "/sys/class/power_supply/%s/charge_counter", e->d_name);
+		r = (long)read_int(p, -1);
+		break;
+	}
+	closedir(d);
+	return r;
+}
+
 static int battery_discharging_pct(void)
 {
 	/* (the gauge says "Discharging" while a charger charges it, see charger_online: plugged in at 2% must not

@@ -93,6 +93,7 @@ wake
 [ "$(gstate)" != T ] && ok "game running again after the wake" || bad "game still stopped"
 rm -f /run/banana/game.pid; sleep 0.1
 grep -q 'awake (power button)' /data/banana/logs/sleep.log && ok "sleep.log: $(tail -n1 /data/banana/logs/sleep.log | cut -c21-)" || bad "no wake in sleep.log"
+grep -q 'battery 50% -> 50%' /data/banana/logs/sleep.log && ok "the sleep's battery cost is in sleep.log" || bad "no battery change in sleep.log"
 stop
 
 echo "2. the battery guard: an RTC wake with the battery nearly empty shuts down cleanly"
