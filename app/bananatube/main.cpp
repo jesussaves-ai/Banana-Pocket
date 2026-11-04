@@ -79,7 +79,7 @@ namespace
 	const char* INNERTUBE_SEARCH = "https://www.youtube.com/youtubei/v1/search";
 
 	enum class Mode { KEYS, RESULTS, PLAYING };
-	enum class View { SEARCH, RECENT, CHANNELS };
+	enum class View { SEARCH, RECENT, CHANNELS, LOCAL };
 
 	// a SponsorBlock segment of the video playing: skipped (seeked past) once per playback
 	struct Skip { double s, e; std::string cat; bool done; };
@@ -88,6 +88,7 @@ namespace
 	{
 		std::string id, title, uploader, duration;
 		double resume = 0;		// where playback stopped, in seconds (0 = start; recent only)
+		bool local = false;		// id is a file on the card (the Local tab), not a YouTube id
 	};
 
 	// the on-screen keyboard: rows of keys, the last row the actions. A key is one UTF-8 string ("Shift" swaps the
@@ -302,6 +303,7 @@ struct App
 	std::vector<Item> recent;			// the last videos played, newest first (recentAdd)
 	std::vector<Item> searchResults;	// the last search's hits, kept while another tab is up
 	std::vector<std::string> channels;	// the unique uploaders of those two lists (Channels tab)
+	std::vector<Item> localItems;		// the music and video folders' files (Local tab)
 	View view = View::SEARCH;			// the active tab: Search, Recent, Channels
 	bool channelOpen = false;			// the Channels tab is showing one channel's videos
 	std::string channelName;			// that channel's name
@@ -429,6 +431,7 @@ struct App
 			for (auto& it : list)
 			{
 				if (thumbStop || thumbPending.load()) break;
+				if (it.local) continue;	// a file on the card has no i.ytimg.com thumbnail
 				std::string p = thumbPath(it.id);
 				struct stat st;
 				if (!stat(p.c_str(), &st) && st.st_size > 100) continue;
@@ -662,13 +665,60 @@ struct App
 		status = results.empty() ? "" : std::to_string(results.size()) + " results   SEL " + std::to_string(quality) + "p";
 		resetThumbs();
 	}
+	// the Local tab: the music and video folders' own files, one level down. Nothing is fetched and nothing is
+	// remembered: a file on the card is played where it lies (mpv takes the path), and only the card's own folders are
+	// read, so a missing one is simply empty.
+	static bool mediaName(const std::string& n)
+	{
+		static const char* ext[] = { ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".opus", ".aac",
+			".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi" };
+		std::string l = n;
+		std::transform(l.begin(), l.end(), l.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+		for (const char* x : ext)
+			if (l.size() > strlen(x) && l.compare(l.size() - strlen(x), strlen(x), x) == 0) return true;
+		return false;
+	}
+	void scanLocal(const std::string& dir, std::vector<Item>& out)
+	{
+		DIR* d = opendir(dir.c_str());
+		if (!d) return;
+		std::string label = dir.substr(dir.find_last_of('/') + 1);	// "music" / "videos"
+		while (dirent* e = readdir(d))
+		{
+			std::string n = e->d_name;
+			if (n.empty() || n[0] == '.' || !mediaName(n)) continue;
+			Item it;
+			it.id = dir + "/" + n;
+			it.title = n;
+			it.uploader = label;
+			it.local = true;
+			out.push_back(it);
+		}
+		closedir(d);
+	}
+	void showLocal()
+	{
+		view = View::LOCAL;
+		channelOpen = false;
+		localItems.clear();
+		scanLocal("/data/music", localItems);
+		scanLocal("/data/videos", localItems);
+		std::sort(localItems.begin(), localItems.end(), [](const Item& a, const Item& b) { return a.title < b.title; });
+		results = localItems;
+		sel = scroll = 0;
+		mode = Mode::RESULTS;	// an empty list still shows as the tab, with its own hint
+		status = localItems.empty() ? "No music or video files in /data/music or /data/videos"
+			: std::to_string(localItems.size()) + " files on the card   A plays one";
+		resetThumbs();	// no network thumbnails: a file on the card has none
+	}
 	void cycleTab(int dir)
 	{
-		int i = view == View::SEARCH ? 0 : view == View::RECENT ? 1 : 2;
-		i = (i + dir + 3) % 3;
+		int i = view == View::SEARCH ? 0 : view == View::RECENT ? 1 : view == View::CHANNELS ? 2 : 3;
+		i = (i + dir + 4) % 4;
 		if (i == 0) showSearchTab();
 		else if (i == 1) showRecent();
-		else showChannels();
+		else if (i == 2) showChannels();
+		else showLocal();
 	}
 	void qualityLoad()
 	{
@@ -870,10 +920,15 @@ struct App
 		unlink(IPC_SOCK);
 		pendingSeek = 0;
 		playingId.clear();
-		// yt-dlp resolves the stream here, so mpv needs no Lua hook of its own (the image's mpv has none)
+		// yt-dlp resolves the stream here, so mpv needs no Lua hook of its own (the image's mpv has none); a file on the
+		// card is already its own URL, and has no SponsorBlock to ask about
 		std::vector<std::string> urls;
-		if (!resolveStream(it.id, urls)) { status = "Could not load " + it.title; return; }
-		sbFetch(it.id);
+		if (it.local) urls = { it.id };
+		else
+		{
+			if (!resolveStream(it.id, urls)) { status = "Could not load " + it.title; return; }
+			sbFetch(it.id);
+		}
 		std::string url = urls[0];
 		const char* argv[] = {
 			"mpv",
@@ -931,7 +986,7 @@ struct App
 		pendingSeek = at > 5 ? at : 0;
 		lastResumeSave = SDL_GetTicks();
 		status = "Playing: " + it.title + (pendingSeek > 0 ? "   resume " + fmtTime(pendingSeek) : "");
-		recentAdd(it);	// the recent list (SELECT) keeps what actually played
+		if (!it.local) recentAdd(it);	// the recent list (SELECT) keeps what actually played (a local file has no video id)
 	}
 	// graceful stop: ask mpv to quit (so it releases ALSA cleanly), then TERM, then KILL. A hard kill mid-stream
 	// leaves the AudioReach frontend to time out, which is the EBUSY the next open would hit.
@@ -1100,7 +1155,7 @@ struct App
 	SDL_Rect queryRect(int W, int H) const { return SDL_Rect { W * 15 / 100, H * 4 / 100, W * 81 / 100, H * 10 / 100 }; }
 	SDL_Rect tabRect(int W, int H, int i) const
 	{
-		int tw = W * 24 / 100, gap = W * 2 / 100;
+		int tw = W * 22 / 100, gap = W * 2 / 100;
 		return SDL_Rect { W * 4 / 100 + i * (tw + gap), H * 15 / 100, tw, H * 7 / 100 };
 	}
 	int kTop(int H) const { return H * 26 / 100; }
@@ -1136,12 +1191,12 @@ struct App
 			return;
 		}
 		if (mode != Mode::PLAYING)
-			for (int i = 0; i < 3; i++)
+			for (int i = 0; i < 4; i++)
 				if (inRect(tabRect(W, H, i), x, y))
 				{
-					static const char* names[] = { "search", "recent", "channels" };
+					static const char* names[] = { "search", "recent", "channels", "local" };
 					logLine(std::string("tap -> tab ") + names[i]);
-					if (i == 0) showSearchTab(); else if (i == 1) showRecent(); else showChannels();
+					if (i == 0) showSearchTab(); else if (i == 1) showRecent(); else if (i == 2) showChannels(); else showLocal();
 					return;
 				}
 		if (mode == Mode::KEYS)
@@ -1537,6 +1592,25 @@ struct App
 			bool r2 = parseRecentLine("abc\tA Title\tSome One\t3:21", q) && q.resume == 0 && q.uploader == "Some One";
 			printf("bananatube selftest recent: %s\n", r1 && r2 ? "ok" : "fail");
 		}
+		{
+			// the Local tab's folder walk: media extensions only, file names as titles, one level
+			char tmpl[] = "/tmp/bt-local-XXXXXX";
+			char* d = mkdtemp(tmpl);
+			bool ok = false;
+			if (d)
+			{
+				const char* files[] = { "a.mp3", "b.MKV", "notes.txt" };
+				for (const char* f : files)
+					if (FILE* fp = fopen((std::string(d) + "/" + f).c_str(), "w")) fclose(fp);
+				std::vector<Item> got;
+				scanLocal(d, got);
+				std::sort(got.begin(), got.end(), [](const Item& a, const Item& b) { return a.title < b.title; });
+				ok = got.size() == 2 && got[0].local && got[1].local && got[0].title == "a.mp3" && got[1].title == "b.MKV";
+				for (const Item& g : got) remove(g.id.c_str());
+				rmdir(d);
+			}
+			printf("bananatube selftest local: %s\n", ok ? "ok" : "fail");
+		}
 		std::vector<Skip> seg = sbParse("[{\"segment\":[12.5,20.25],\"category\":\"sponsor\",\"UUID\":\"a\"},"
 			"{\"segment\":[0,3.5],\"category\":\"intro\"}]");
 		bool segOk = seg.size() == 2 && seg[0].s == 12.5 && seg[0].e == 20.25 && seg[0].cat == "sponsor" && seg[1].cat == "intro";
@@ -1668,21 +1742,22 @@ struct App
 		TTF_SizeUTF8(fBig, shown.c_str(), nullptr, &qh);
 		drawText(shown, fBig, query.empty() ? dim : fg, queryBox.x + W * 2 / 100,
 			queryBox.y + (queryBox.h - qh) / 2, queryBox.w - W * 4 / 100);
-		// the tab strip: Search (the keyboard and its hits), Recent (what actually played, kept on the card) and
-		// Channels (the uploaders either list mentions)
+		// the tab strip: Search (the keyboard and its hits), Recent (what actually played, kept on the card), Channels
+		// (the uploaders either list mentions) and Local (the music and video folders on the card)
 		if (mode != Mode::PLAYING)
 		{
-			static const char* tabNames[] = { "Search", "Recent", "Channels" };
-			for (int i = 0; i < 3; i++)
+			static const char* tabNames[] = { "Search", "Recent", "Channels", "Local" };
+			for (int i = 0; i < 4; i++)
 			{
 				SDL_Rect tr = tabRect(W, H, i);
-				bool on = i == 0 ? view == View::SEARCH : i == 1 ? view == View::RECENT : view == View::CHANNELS;
-				bool hot = (i == 1 && !recent.empty()) || (i == 2 && !channels.empty());
+				bool on = i == 0 ? view == View::SEARCH : i == 1 ? view == View::RECENT : i == 2 ? view == View::CHANNELS : view == View::LOCAL;
+				bool hot = (i == 1 && !recent.empty()) || (i == 2 && !channels.empty()) || (i == 3 && !localItems.empty());
 				panel(tr.x, tr.y, tr.w, tr.h, on ? acc : SDL_Color { 24, 28, 36, 255 },
 					on ? acc : SDL_Color { 54, 60, 74, 255 }, on ? 0 : 1);
 				std::string label = tabNames[i];
 				if (i == 1 && !recent.empty()) label += " " + std::to_string(recent.size());
 				if (i == 2 && !channels.empty()) label += " " + std::to_string(channels.size());
+				if (i == 3 && !localItems.empty()) label += " " + std::to_string(localItems.size());
 				int tw = 0, th = 0;
 				TTF_SizeUTF8(fMed, label.c_str(), &tw, &th);
 				drawText(label, fMed, on || hot ? fg : dim, tr.x + (tr.w - tw) / 2, tr.y + (tr.h - th) / 2);

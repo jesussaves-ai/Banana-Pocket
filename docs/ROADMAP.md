@@ -4,19 +4,18 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Local media / music player**, and porting BananaTube's newer settings screen.
-2. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
-3. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
-4. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
+1. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
+2. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+3. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-5. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
+4. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
    and measure overnight drain; residual spurious wakes and panel/SD resume latency are still untracked.
-6. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
-7. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-8. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-9. **Store / app catalog** (the Apps shelf only scans local folders).
+5. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
+6. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+7. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+8. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## Ideas (unscheduled)
 Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.
@@ -72,7 +71,8 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 *(Dropped: a quick-settings/performance overlay -- performance is fine and RetroArch's own OSD (`fps_show` /
 `statistics_show`, already rotated by its patches) covers FPS/CPU if wanted. And on 2026-11-04, by request: a screenshot
 gallery and collections/tags (auto genre shelves from the scraped `gamelist.xml` were proposed; not wanted). The
-library-UX item is closed: the scraper already skips games that have art, and now starts only on the charger or cable.)*
+library-UX item is closed: the scraper already skips games that have art, and now starts only on the charger or cable.
+Also dropped by request: porting BananaTube's newer settings screen (its in-app settings are kept as they are).)*
 
 ## Completed Baseline (0.4.9+)
 - **Core & CI:** End-to-end QEMU `virt` boot/update/test (`tools/qemu-boot.sh`), A/B OTA updates, first-time setup, `ksmbd`, `dropbear`, `ath10k_snoc`.
@@ -82,6 +82,13 @@ library-UX item is closed: the scraper already skips games that have art, and no
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **Local media in BananaTube (0.5.x).** A fourth tab, **Local**, lists `/data/music` and `/data/videos` (one
+  level, common audio/video extensions, by file name) and plays straight from the card: mpv takes the path, so there is
+  no yt-dlp resolve, no SponsorBlock lookup and no thumbnail fetch, and a local file is not written to Recent (a list of
+  video ids). A file added while the app runs appears the next time the tab is opened. The host selftest walks a temp
+  folder (extensions, file names, one level) and `run-banana-tube` checks it (22 checks). The other half of that
+  roadmap item, "porting BananaTube's newer settings screen", was dropped by request -- its in-app settings stay as
+  they are.
 - [x] **Controller remaps per core and per game -- RetroArch's own, not a Banana screen (0.5.4+).** No remap UI was
   built: RetroArch's *Settings > Input > RetroPad Binds > Save Remap File / Save Game Remap File* is the UI, and it
   already writes to the card (`input_remapping_directory = /data/retroarch/remaps`, `HOME`/`XDG_CONFIG_HOME` there) as

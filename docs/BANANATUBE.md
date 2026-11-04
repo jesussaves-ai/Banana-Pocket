@@ -44,10 +44,16 @@ mapping `run-port` uses: **A is the east button**).
 | SELECT | the Recent tab | the quality cap (720/480/360p, next video) | position / length / quality readout |
 | touch | tap a key / `Search`, or a tab | tap a row to focus, tap again to play, or a tab | zones: left/right seek, centre pause, top-left stop |
 
-**Tabs, recent and quality:** the results shelf has three tabs — **Search** (the keyboard and its hits), **Recent** (the
-last 30 videos that actually started playing) and **Channels** (the uploaders either list mentions, with a video count).
+**Tabs, recent and quality:** the results shelf has four tabs — **Search** (the keyboard and its hits), **Recent** (the
+last 30 videos that actually started playing), **Channels** (the uploaders either list mentions, with a video count)
+and **Local** (the music and video files on the card).
 Switch with L/R on the keyboard, SELECT (Recent), or a tap; A on a channel shows its videos from both lists, B walks
-back out. Recent rows remember where playback stopped (written every 10 s and on stop, shown as "resume m:ss"), and
+back out.
+
+**Local** lists the files in `/data/music` and `/data/videos` (one level, common audio/video extensions, by file name)
+and plays the chosen one straight from the card: mpv takes the path, so there is no yt-dlp call, no SponsorBlock lookup
+and no thumbnail; a local file is not added to Recent (which is a list of video ids). New files show up when the tab is
+opened again. Recent rows remember where playback stopped (written every 10 s and on stop, shown as "resume m:ss"), and
 re-opening one seeks there once mpv has the stream up; a finished video clears its position. Recent survives a reboot in
 `/data/banana/bananatube-recent.tsv`; the quality cap (720p default, 480p/360p for a weak link) is saved in
 `/data/banana/bananatube.conf` and applied by `yt-dlp -g` to the next video.
