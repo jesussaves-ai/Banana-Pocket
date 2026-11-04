@@ -1426,8 +1426,16 @@ int main(int argc, char** argv)
 		dirty = true;
 	};
 
+	std::string resumeRom;	// the interrupted game this boot may resume
+	double resumeDue = 0;	// the end of its any-key cancel window (0: none pending)
 	auto handle = [&](const InputEvent& ev)
 	{
+		if (resumeDue > 0)	// the first press or touch stays in the menu
+		{
+			resumeCancel(o.data);
+			logf("resume: cancelled");
+			resumeDue = 0;
+		}
 		// the AMOLED guard: the first press or touch wakes the panel and is swallowed -- and, for a touch, its later
 		// up too, so waking the screen can't launch a game or change a setting
 		if (swallowTouch && (ev.type == InputEvent::TOUCH_MOVE || ev.type == InputEvent::TOUCH_UP))
@@ -1586,8 +1594,10 @@ int main(int argc, char** argv)
 		if (pid > 0)
 		{
 			std::ofstream("/run/banana/game.pid") << pid << "\n";	// bananad: the game to pause before a sleep
+			std::ofstream("/run/banana/game.path") << rom << "\n";	// ... and to resume if a shutdown interrupts it
 			while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
 			unlink("/run/banana/game.pid");
+			unlink("/run/banana/game.path");
 		}
 		long secs = (long)((nowMs() - start) / 1000);
 		if (system("banana-perf ui") != 0) {}
@@ -1623,6 +1633,9 @@ int main(int argc, char** argv)
 		if (disp.isOpen()) irisFromGame(disp, be, *ui);
 		sound.setBgm(settings["bgm"] != "off");	// the ambient loop comes back with the menu
 		sound.warm();				// the game handed the DSP frontend back: have it open before the next press
+		// a game that ended because it was quit goes back to a menu the next boot should show too; one a shutdown
+		// stopped leaves the marker bananad wrote, for the next boot to resume
+		if (access("/run/banana/shutting-down", F_OK) != 0) resumeCancel(o.data);
 		guard.input(nowMs());			// the game's own time doesn't count as menu idle
 		dirty = true;
 		batteryDue = true;	// a step passed during the game shows now
@@ -1643,9 +1656,23 @@ int main(int argc, char** argv)
 	bool launchSeen = true;
 	bool cheevosSeen = true;	// /run/banana/cheevos: the achievements a game just unlocked, read on this pass
 	bool shotWanted = false;	// /run/banana/screen.req: write the frame to screen.jpg on this pass (below)
+	{
+		std::string rom;
+		Resume plan = resumePlan(o.data, rom);
+		if (plan == Resume::Ready) { resumeRom = rom; resumeDue = nowMs() + 2000; logf("resume: ready %s (any key cancels)", rom.c_str()); }
+		else if (plan != Resume::None) resumeCancel(o.data);	// a card that changed, or a game that wedged us three times
+	}
 	while (!quit)
 	{
 		double now = nowMs();
+		if (resumeDue > 0 && now >= resumeDue)
+		{
+			// the launch file the menu already watches; the game then owns the panel as usual
+			std::ofstream("/run/banana/launch") << resumeRom << "\n";
+			resumeTake(o.data);
+			logf("resume: launching %s", resumeRom.c_str());
+			resumeDue = 0;
+		}
 		// the burn-in guard: dim the panel to a night level after 90 s idle, turn it off after 180 s -- but never
 		// blank it while on the charger (a dark panel on the cable read as a sleep)
 		guard.setCharging(lib.charging());
@@ -1847,6 +1874,12 @@ int main(int argc, char** argv)
 			// ms until the burn-in guard's next step (dim at 90 s, blank at 180 s)
 			int g = guard.nextMs(now);
 			if (g >= 0 && (timeout < 0 || g < timeout)) timeout = g;
+		}
+		if (resumeDue > 0)
+		{
+			// the menu sleeps in poll() until a press: the resume deadline has to wake it, or it waits for one
+			int left = std::max(0, (int)(resumeDue - now)) + 1;
+			if (timeout < 0 || left < timeout) timeout = left;
 		}
 
 		// a fixed array, not a vector: this runs every pass (60/s while the menu animates) and the poll set is at
