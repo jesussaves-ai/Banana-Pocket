@@ -50,6 +50,7 @@ else
     printf '%s\n' "$out" | grep -q 'selftest cache: ok' && ok "text cache: a repeat costs nothing" || bad "text cache"
     printf '%s\n' "$out" | grep -q 'selftest bar: ok' && ok "player bar and quality cycle" || bad "player bar"
     printf '%s\n' "$out" | grep -q 'selftest thumbs: ok' && ok "thumbnails: bounded to the visible page" || bad "thumbnail bound"
+    printf '%s\n' "$out" | grep -q 'selftest layout: ok' && ok "layout: frame, tabs and rows fit" || bad "Pocket shell layout"
     printf '%s\n' "$out" | grep -q 'selftest recent: ok' && ok "recent file: the resume position (and old rows)" || bad "recent parse"
     printf '%s\n' "$out" | grep -q 'selftest quit: 1' && ok "B on an empty query quits" || bad "quit state"
 fi

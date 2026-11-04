@@ -71,7 +71,17 @@ static void onStopSignal(int) { g_stop = 1; }
 
 namespace
 {
-	const char* DEFAULT_FONT = "/usr/share/banana/banana/fonts/Inter-Regular.ttf";
+	const char* DEFAULT_FONT = "/usr/share/banana/rnds/fonts/PixelifySans-Regular.ttf";
+	const char* DEFAULT_FONT_MED = "/usr/share/banana/rnds/fonts/PixelifySans-Medium.ttf";
+	const char* FALLBACK_FONT = "/usr/share/banana/banana/fonts/Inter-Regular.ttf";
+	const char* FALLBACK_FONT_MED = "/usr/share/banana/banana/fonts/Inter-SemiBold.ttf";
+	// the theme's pixel faces, or Inter when this is not a Banana image (the host selftest)
+	TTF_Font* openFont(const std::string& path, int px, const char* fallback)
+	{
+		TTF_Font* f = TTF_OpenFont(path.c_str(), px);
+		if (!f && fallback) f = TTF_OpenFont(fallback, px);
+		return f;
+	}
 	const char* CACHE_DIR = "/data/banana/cache/tube";
 	// YouTube's public web InnerTube key (the one its own web client ships): the search endpoint needs it. It is not
 	// a secret and is not per-user; a failure just falls back to yt-dlp.
@@ -286,6 +296,26 @@ struct App
 	TTF_Font* fSmall = nullptr;
 	SDL_GameController* pad = nullptr;
 	std::string fontPath = DEFAULT_FONT;
+	std::string fontPathMed = DEFAULT_FONT_MED;
+
+	// The Pocket palette (system/rootfs/usr/share/banana/themes/pocket.json), one place for every draw function.
+	// Gold is focus/active/brand only; the ground, cards and text stay brown-black, butter and olive.
+	struct Skin
+	{
+		SDL_Color bg, bezel, ring, panel, card, line, edge, ink, soft, gold, goldHi, dot;
+		int bw;
+	};
+	static Skin skin(int W)
+	{
+		int bw = std::max(2, W / 310);
+		return { { 0x17, 0x14, 0x0d, 255 }, { 0x0b, 0x09, 0x06, 255 }, { 0x34, 0x2c, 0x19, 255 },
+			{ 0x20, 0x1b, 0x11, 255 }, { 0x2a, 0x23, 0x15, 255 }, { 0x4a, 0x3d, 0x18, 255 },
+			{ 0x8c, 0x73, 0x28, 255 }, { 0xff, 0xef, 0xb2, 255 }, { 0xbf, 0xa9, 0x63, 255 },
+			{ 0xff, 0xd2, 0x1e, 255 }, { 0xff, 0xe8, 0x73, 255 }, { 0x24, 0x1f, 0x14, 255 }, bw };
+	}
+	SDL_Texture* backdrop = nullptr;	// the frame and dot grid, baked once per output size
+	int backdropW = 0, backdropH = 0;
+	SDL_Texture* logo = nullptr;		// the OS banana mark beside the wordmark
 
 	Mode mode = Mode::KEYS;
 	int keyRow = 1, keyCol = 0;
@@ -463,6 +493,19 @@ struct App
 			SDL_Rect o { x - i, y - i, w + 2 * i, h + 2 * i };
 			SDL_RenderDrawRect(ren, &o);
 		}
+	}
+	// the Pocket surface: a hard fill with a solid edge of `border` pixels (the theme draws no rounded corners)
+	void box(int x, int y, int w, int h, SDL_Color fill, SDL_Color edge, int border)
+	{
+		SDL_SetRenderDrawColor(ren, fill.r, fill.g, fill.b, fill.a);
+		SDL_Rect r { x, y, w, h };
+		SDL_RenderFillRect(ren, &r);
+		if (border <= 0 || edge.a == 0) return;
+		SDL_SetRenderDrawColor(ren, edge.r, edge.g, edge.b, edge.a);
+		SDL_Rect t { x, y, w, border }; SDL_RenderFillRect(ren, &t);
+		t = { x, y + h - border, w, border }; SDL_RenderFillRect(ren, &t);
+		t = { x, y, border, h }; SDL_RenderFillRect(ren, &t);
+		t = { x + w - border, y, border, h }; SDL_RenderFillRect(ren, &t);
 	}
 
 	// ---- thumbnails ----------------------------------------------------------------------------------------------
@@ -1279,12 +1322,19 @@ struct App
 
 	// ---- shared layout geometry (draw and touch use the SAME rects, so a tap can never land beside what is drawn) --
 	// the top bar: Back, the search field, and the tab strip under them
-	SDL_Rect backRect(int W, int H) const { return SDL_Rect { W * 3 / 100, H * 4 / 100, W * 11 / 100, H * 10 / 100 }; }
-	SDL_Rect queryRect(int W, int H) const { return SDL_Rect { W * 15 / 100, H * 4 / 100, W * 81 / 100, H * 10 / 100 }; }
+	int brandH(int H) const { return H * 7 / 100; }
+	int contentTop(int H) const { return H * 285 / 1000; }
+	int contentBottom(int H) const { return H * 88 / 100; }
+	int hintTop(int H) const { return H * 895 / 1000; }
+	int hintH(int H) const { return H * 7 / 100; }
+	SDL_Rect frameRect(int W, int H) const { return SDL_Rect { W * 2 / 100, H * 8 / 100, W * 96 / 100, H * 89 / 100 }; }
+	SDL_Rect hintRect(int W, int H) const { return SDL_Rect { W * 4 / 100, hintTop(H), W * 92 / 100, hintH(H) }; }
+	SDL_Rect backRect(int W, int H) const { return SDL_Rect { W * 4 / 100, H * 95 / 1000, W * 10 / 100, H * 7 / 100 }; }
+	SDL_Rect queryRect(int W, int H) const { return SDL_Rect { W * 15 / 100, H * 95 / 1000, W * 81 / 100, H * 7 / 100 }; }
 	SDL_Rect tabRect(int W, int H, int i) const
 	{
-		int tw = W * 20 / 100, gap = W * 1 / 100;
-		return SDL_Rect { W * 4 / 100 + i * (tw + gap), H * 15 / 100, tw, H * 7 / 100 };
+		int gap = W * 15 / 1000, tw = (W * 92 / 100 - 3 * gap) / 4;
+		return SDL_Rect { W * 4 / 100 + i * (tw + gap), H * 175 / 1000, tw, H * 65 / 1000 };
 	}
 	int kTop(int H) const { return H * 26 / 100; }
 	SDL_Rect keyRect(int W, int H, int r, int c) const
@@ -1555,9 +1605,9 @@ struct App
 		if (!ren) { logLine(std::string("no renderer: ") + SDL_GetError()); return 1; }
 		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 
-		fBig = TTF_OpenFont(fontPath.c_str(), 40);
-		fMed = TTF_OpenFont(fontPath.c_str(), 30);
-		fSmall = TTF_OpenFont(fontPath.c_str(), 22);
+		fBig = openFont(fontPathMed, 40, FALLBACK_FONT_MED);
+		fMed = openFont(fontPathMed, 30, FALLBACK_FONT_MED);
+		fSmall = openFont(fontPath, 22, FALLBACK_FONT);
 		if (!fBig || !fMed || !fSmall) { logLine(std::string("no font ") + fontPath + ": " + TTF_GetError()); return 1; }
 		{
 			int W = 0, H = 0;
@@ -1565,15 +1615,16 @@ struct App
 			if (H > 0)
 			{
 				TTF_CloseFont(fBig); TTF_CloseFont(fMed); TTF_CloseFont(fSmall);
-				fBig = TTF_OpenFont(fontPath.c_str(), std::max(16, H * 5 / 100));
-				fMed = TTF_OpenFont(fontPath.c_str(), std::max(13, H * 4 / 100));
-				fSmall = TTF_OpenFont(fontPath.c_str(), std::max(10, H * 3 / 100));
+				fBig = openFont(fontPathMed, std::max(16, H * 5 / 100), FALLBACK_FONT_MED);
+				fMed = openFont(fontPathMed, std::max(13, H * 4 / 100), FALLBACK_FONT_MED);
+				fSmall = openFont(fontPath, std::max(10, H * 3 / 100), FALLBACK_FONT);
 				if (!fBig || !fMed || !fSmall) { logLine("no font at the scaled size"); return 1; }
 			}
 		}
 
 		if (std::getenv("BANANA_TUBE_SELFTEST")) return selftest();
 
+		loadLogo();
 		signal(SIGTERM, onStopSignal);
 		signal(SIGINT, onStopSignal);
 		signal(SIGHUP, onStopSignal);
@@ -1722,6 +1773,8 @@ struct App
 		if (touchFd >= 0) { close(touchFd); touchFd = -1; }
 		clearTextCache();
 		for (auto& kv : thumbTex) if (kv.second) SDL_DestroyTexture(kv.second);
+		if (backdrop) { SDL_DestroyTexture(backdrop); backdrop = nullptr; }
+		if (logo) { SDL_DestroyTexture(logo); logo = nullptr; }
 		return 0;
 	}
 
@@ -1741,6 +1794,28 @@ struct App
 			ok = ok && textMisses == m0 + 2;
 			printf("bananatube selftest cache: %s\n", ok ? "ok" : "fail");
 			clearTextCache();
+		}
+		{
+			// the Pocket shell: the frame, the header and the tab strip fit at both sizes
+			bool ok = true;
+			for (const auto& size : { std::pair<int, int> { 1240, 1080 }, std::pair<int, int> { 1024, 768 } })
+			{
+				int W = size.first, H = size.second;
+				SDL_Rect fr = frameRect(W, H), back = backRect(W, H), q = queryRect(W, H), hint = hintRect(W, H);
+				SDL_Rect t0 = tabRect(W, H, 0), t3 = tabRect(W, H, 3);
+				ok = ok && fr.x >= 0 && fr.y >= 0 && fr.x + fr.w <= W && fr.y + fr.h <= H;
+				ok = ok && back.x >= fr.x && q.x + q.w <= fr.x + fr.w;
+				ok = ok && back.y + back.h <= t0.y && q.y + q.h <= t0.y;
+				for (int i = 0; i < 3; i++)
+				{
+					SDL_Rect a = tabRect(W, H, i), b = tabRect(W, H, i + 1);
+					ok = ok && a.x + a.w <= b.x;
+				}
+				ok = ok && t0.x >= fr.x && t3.x + t3.w <= fr.x + fr.w && t0.y + t0.h <= contentTop(H);
+				ok = ok && contentBottom(H) <= hintTop(H) && hint.y >= contentBottom(H);
+				ok = ok && hint.y + hint.h <= fr.y + fr.h;
+			}
+			printf("bananatube selftest layout: %s\n", ok ? "ok" : "fail");
 		}
 		{
 			// the position bar and the quality cycle (the player's OSD text)
@@ -1913,32 +1988,96 @@ struct App
 	}
 
 	// ---- drawing -------------------------------------------------------------------------------------------------
+	// The frame and dot grid never change: bake them into one texture so a dirty frame costs a single copy (A1).
+	void ensureBackdrop(int W, int H, const Skin& sk)
+	{
+		if (backdrop && W == backdropW && H == backdropH) return;
+		if (backdrop) { SDL_DestroyTexture(backdrop); backdrop = nullptr; }
+		SDL_Surface* s = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, SDL_PIXELFORMAT_ARGB8888);
+		if (!s) { logLine("no backdrop surface"); return; }
+		auto fill = [s](int x, int y, int w, int h, SDL_Color c)
+		{
+			SDL_Rect r { x, y, w, h };
+			SDL_FillRect(s, &r, SDL_MapRGBA(s->format, c.r, c.g, c.b, c.a));
+		};
+		fill(0, 0, W, H, sk.bg);
+		fill(0, 0, W, brandH(H), sk.bezel);
+		fill(0, brandH(H) - sk.bw, W, sk.bw, sk.ring);
+		SDL_Rect fr = frameRect(W, H);
+		fill(fr.x, fr.y, fr.w, fr.h, sk.bezel);
+		fill(fr.x + sk.bw, fr.y + sk.bw, fr.w - 2 * sk.bw, fr.h - 2 * sk.bw, sk.ring);
+		int in = 2 * sk.bw;
+		int px = fr.x + in, py = fr.y + in, pw = fr.w - 2 * in, ph = fr.h - 2 * in;
+		fill(px, py, pw, ph, sk.panel);
+		for (int y = py + 8; y < py + ph - 2; y += 16)
+			for (int x = px + 8; x < px + pw - 2; x += 16)
+				fill(x, y, 2, 2, sk.dot);
+		SDL_Rect hr = hintRect(W, H);
+		fill(hr.x, hr.y, hr.w, hr.h, sk.bezel);
+		fill(hr.x, hr.y, hr.w, sk.bw, sk.ring);
+		backdrop = SDL_CreateTextureFromSurface(ren, s);
+		SDL_FreeSurface(s);
+		if (!backdrop) { logLine("no backdrop texture"); return; }
+		backdropW = W;
+		backdropH = H;
+	}
+	void loadLogo()
+	{
+		struct stat st;
+		const char* p = !stat("/usr/share/banana/banana/banana-48.png", &st)
+			? "/usr/share/banana/banana/banana-48.png" : "/usr/share/banana/banana/banana-32.png";
+		SDL_Surface* s = IMG_Load(p);
+		if (!s) return;
+		logo = SDL_CreateTextureFromSurface(ren, s);
+		SDL_FreeSurface(s);
+	}
+
 	void draw()
 	{
 		int W = 0, H = 0;
 		SDL_GetRendererOutputSize(ren, &W, &H);
-		SDL_SetRenderDrawColor(ren, 12, 14, 18, 255);
-		SDL_RenderClear(ren);
-		SDL_Color fg { 236, 238, 242, 255 }, dim { 150, 156, 166, 255 }, acc { 224, 64, 47, 255 }, selbg { 40, 46, 58, 255 };
+		Skin sk = skin(W);
+		ensureBackdrop(W, H, sk);
+		if (backdrop) SDL_RenderCopy(ren, backdrop, nullptr, nullptr);
+		else { SDL_SetRenderDrawColor(ren, sk.bg.r, sk.bg.g, sk.bg.b, 255); SDL_RenderClear(ren); }
 
-		// the top bar: a Back button (B's target) and the search field (a tap reopens the keyboard). The rects are the
-		// same ones tapAt() hit-tests, so a finger lands on exactly what is drawn.
+		// the brand strip: the OS banana mark, the BananaTube wordmark and the quality cap
+		{
+			int ls = H * 45 / 1000, lx = W * 25 / 1000;
+			if (logo)
+			{
+				SDL_Rect lr { lx, (brandH(H) - ls) / 2, ls, ls };
+				SDL_RenderCopy(ren, logo, nullptr, &lr);
+				lx += ls + W * 12 / 1000;
+			}
+			int bw1 = 0, wh = 0;
+			TTF_SizeUTF8(fMed, "Banana", &bw1, &wh);
+			drawText("Banana", fMed, sk.gold, lx, (brandH(H) - wh) / 2);
+			drawText("Tube", fMed, sk.ink, lx + bw1, (brandH(H) - wh) / 2);
+			std::string cap = std::to_string(quality) + "p";
+			int qw = 0, qh = 0;
+			TTF_SizeUTF8(fSmall, cap.c_str(), &qw, &qh);
+			int pad = W * 15 / 1000, ch = H * 35 / 1000;
+			int cx = W - W * 25 / 1000 - (qw + 2 * pad);
+			box(cx, (brandH(H) - ch) / 2, qw + 2 * pad, ch, sk.card, sk.edge, sk.bw);
+			drawText(cap, fSmall, sk.gold, cx + pad, (brandH(H) - qh) / 2);
+		}
+
+		// the header: Back (B's target) and the search well; the rects are the same ones tapAt() hit-tests
 		SDL_Rect back = backRect(W, H), queryBox = queryRect(W, H);
-		panel(back.x, back.y, back.w, back.h, SDL_Color { 30, 34, 44, 255 }, SDL_Color { 60, 66, 80, 255 });
+		box(back.x, back.y, back.w, back.h, sk.card, sk.edge, sk.bw);
 		int bw = 0, bh = 0;
-		TTF_SizeUTF8(fMed, "Back", &bw, &bh);
-		drawText("Back", fMed, fg, back.x + (back.w - bw) / 2, back.y + (back.h - bh) / 2);
-		// the field reads as the live one while the keyboard is up
+		TTF_SizeUTF8(fSmall, "Back", &bw, &bh);
+		drawText("Back", fSmall, sk.ink, back.x + (back.w - bw) / 2, back.y + (back.h - bh) / 2);
 		bool typing = mode == Mode::KEYS;
-		panel(queryBox.x, queryBox.y, queryBox.w, queryBox.h, SDL_Color { 22, 26, 34, 255 },
-			typing ? acc : SDL_Color { 60, 66, 80, 255 }, typing ? 2 : 0);
+		box(queryBox.x, queryBox.y, queryBox.w, queryBox.h, sk.bezel, typing ? sk.gold : sk.ring, sk.bw);
 		std::string shown = query.empty() ? "Search YouTube" : query;
 		int qh = 0;
 		TTF_SizeUTF8(fBig, shown.c_str(), nullptr, &qh);
-		drawText(shown, fBig, query.empty() ? dim : fg, queryBox.x + W * 2 / 100,
+		drawText(shown, fBig, query.empty() ? sk.soft : sk.ink, queryBox.x + W * 2 / 100,
 			queryBox.y + (queryBox.h - qh) / 2, queryBox.w - W * 4 / 100);
-		// the tab strip: Search (the keyboard and its hits), Recent (what actually played, kept on the card), Channels
-		// (the uploaders either list mentions) and Local (the music and video folders on the card)
+
+		// the four tabs; the active one is gold, counts ride inline when they fit
 		if (mode != Mode::PLAYING)
 		{
 			static const char* tabNames[] = { "Search", "Recent", "Channels", "Local" };
@@ -1947,51 +2086,50 @@ struct App
 				SDL_Rect tr = tabRect(W, H, i);
 				bool on = i == 0 ? view == View::SEARCH : i == 1 ? view == View::RECENT : i == 2 ? view == View::CHANNELS : view == View::LOCAL;
 				bool hot = (i == 1 && !recent.empty()) || (i == 2 && !channels.empty()) || (i == 3 && !localItems.empty());
-				panel(tr.x, tr.y, tr.w, tr.h, on ? acc : SDL_Color { 24, 28, 36, 255 },
-					on ? acc : SDL_Color { 54, 60, 74, 255 }, on ? 0 : 1);
 				std::string label = tabNames[i];
-				if (i == 1 && !recent.empty()) label += " " + std::to_string(recent.size());
-				if (i == 2 && !channels.empty()) label += " " + std::to_string(channels.size());
-				if (i == 3 && !localItems.empty()) label += " " + std::to_string(localItems.size());
+				std::string count = i == 1 && !recent.empty() ? std::to_string(recent.size())
+					: i == 2 && !channels.empty() ? std::to_string(channels.size())
+					: i == 3 && !localItems.empty() ? std::to_string(localItems.size()) : "";
+				if (!count.empty())
+				{
+					int cw = 0, chh = 0;
+					TTF_SizeUTF8(fMed, (label + " " + count).c_str(), &cw, &chh);
+					if (cw + W * 2 / 100 <= tr.w) label += " " + count;
+				}
+				box(tr.x, tr.y, tr.w, tr.h, on ? sk.gold : sk.card, on ? sk.goldHi : sk.line, sk.bw);
 				int tw = 0, th = 0;
 				TTF_SizeUTF8(fMed, label.c_str(), &tw, &th);
-				drawText(label, fMed, on || hot ? fg : dim, tr.x + (tr.w - tw) / 2, tr.y + (tr.h - th) / 2);
+				drawText(label, fMed, on ? sk.bg : hot ? sk.ink : sk.soft, tr.x + (tr.w - tw) / 2,
+					tr.y + (tr.h - th) / 2);
 			}
-			// the active quality cap, right-aligned on the tab row (SELECT on a list cycles it)
-			std::string q = std::to_string(quality) + "p";
-			int qw = 0, qh = 0;
-			TTF_SizeUTF8(fMed, q.c_str(), &qw, &qh);
-			drawText(q, fMed, dim, W * 96 / 100 - qw, H * 15 / 100 + (H * 7 / 100 - qh) / 2);
 		}
+
 		// the results' position ("3 / 24") on the right of the status line, so a long list is never a guess
 		int counterW = 0;
 		int shownItems = listSize();
-		if (mode == Mode::RESULTS && shownItems > 0 && sel >= shownItems) sel = shownItems - 1;	// a list that shrank under the cursor
+		if (mode == Mode::RESULTS && shownItems > 0 && sel >= shownItems) sel = shownItems - 1;
 		if (mode == Mode::RESULTS && shownItems > 0)
 		{
 			std::string pos = std::to_string(sel + 1) + " / " + std::to_string(shownItems);
 			int ch = 0;
 			TTF_SizeUTF8(fSmall, pos.c_str(), &counterW, &ch);
-			drawText(pos, fSmall, fg, W * 96 / 100 - counterW, H * 23 / 100);
+			drawText(pos, fSmall, sk.ink, W * 96 / 100 - counterW, H * 255 / 1000);
 			counterW += W * 3 / 100;
 		}
-		if (!status.empty()) drawText(status, fSmall, dim, W * 4 / 100, H * 23 / 100, W * 92 / 100 - counterW);
+		if (!status.empty()) drawText(status, fSmall, sk.soft, W * 4 / 100, H * 255 / 1000, W * 92 / 100 - counterW);
 
-		if (mode == Mode::KEYS) drawKeyboard(W, H, fg, dim, acc, selbg);
-		else if (mode == Mode::RESULTS && view == View::CHANNELS && !channelOpen) drawChannels(W, H, fg, dim, acc, selbg);
-		else drawResults(W, H, fg, dim, acc, selbg);
+		if (mode == Mode::KEYS) drawKeyboard(W, H, sk);
+		else if (mode == Mode::RESULTS && view == View::CHANNELS && !channelOpen) drawChannels(W, H, sk);
+		else drawResults(W, H, sk);
 
-		// the controls band at the foot: a darker strip, so the hint reads as a bar, not as stray text
-		panel(0, H * 91 / 100, W, H - H * 91 / 100, SDL_Color { 8, 10, 14, 255 }, SDL_Color { 8, 10, 14, 255 });
-		SDL_Color hint { 150, 156, 166, 255 };
-		const char* help = mode == Mode::PLAYING ? "A pause   D-pad seek   L2/R2 hold   L/R chapter   Y quality   SEL where   START full   X undo skip   B stop"
-			: mode == Mode::RESULTS ? "A play   B back   X channel   L/R tab   L2/R2 page   SEL quality   Y search   START search"
-			: "A type   B back   L/R tab   SEL quality   START or Y search";
-		drawText(help, fSmall, hint, W * 4 / 100, H * 94 / 100, W * 92 / 100);
+		drawHints(W, H, sk);
 	}
+	// filled by Task 4; the band itself is part of the backdrop
+	void drawHints(int, int, const Skin&) {}
 
-	void drawKeyboard(int W, int H, SDL_Color fg, SDL_Color dim, SDL_Color acc, SDL_Color selbg)
+	void drawKeyboard(int W, int H, const Skin& sk)
 	{
+		SDL_Color fg = sk.ink, dim = sk.soft, acc = sk.gold;
 		const char* (*keys)[11] = upper ? UPPER : LOWER;
 		for (int r = 0; r < ROWS; r++)
 			for (int c = 0; c < COLS; c++)
@@ -2018,8 +2156,9 @@ struct App
 		}
 	}
 
-	void drawChannels(int W, int H, SDL_Color fg, SDL_Color dim, SDL_Color acc, SDL_Color selbg)
+	void drawChannels(int W, int H, const Skin& sk)
 	{
+		SDL_Color fg = sk.ink, dim = sk.soft, acc = sk.gold, selbg = sk.card;
 		int top = resultsTop(H);
 		int rowH = resultsRowH(H);
 		int per = resultsPerPage();
@@ -2077,8 +2216,9 @@ struct App
 		}
 	}
 
-	void drawResults(int W, int H, SDL_Color fg, SDL_Color dim, SDL_Color acc, SDL_Color selbg)
+	void drawResults(int W, int H, const Skin& sk)
 	{
+		SDL_Color fg = sk.ink, dim = sk.soft, acc = sk.gold, selbg = sk.card;
 		int top = resultsTop(H);
 		int rowH = resultsRowH(H);
 		int per = resultsPerPage();
@@ -2157,7 +2297,7 @@ int main(int argc, char** argv)
 	for (int i = 1; i < argc; i++)
 	{
 		std::string a = argv[i];
-		if (a == "--font" && i + 1 < argc) app.fontPath = argv[++i];
+		if (a == "--font" && i + 1 < argc) { app.fontPath = argv[++i]; app.fontPathMed = app.fontPath; }
 		else if (a == "--help") { printf("banana-tube [--font FILE]\n"); return 0; }
 	}
 	curl_global_init(CURL_GLOBAL_DEFAULT);
