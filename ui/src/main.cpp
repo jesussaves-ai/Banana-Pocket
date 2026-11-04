@@ -19,6 +19,7 @@
 #include "soft.h"
 #include "splash.h"
 #include "settings.h"
+#include "i18n.h"
 #include "settings_defaults.h"
 #include "theme.h"
 #include "zip.h"
@@ -1129,6 +1130,7 @@ int main(int argc, char** argv)
 	// the card's settings.conf made whole (missing keys added, invalid values put back): first boot and after an update
 	normalizeSettings(o.data);
 	auto settings = readSettings(o.data);
+	i18nInit(o.data);	// the Settings screen's language, before it is built
 	if (!o.theme.empty()) settings["theme"] = "file:" + o.theme;	// --theme: the theme being made (headless render)
 	// banana/themes on the card, for themes of one's own: the image's README and examples to start from (once)
 	if (access((o.data + "/themes").c_str(), F_OK) != 0 && access("/usr/share/banana/themes", F_OK) == 0)

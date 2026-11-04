@@ -8,7 +8,7 @@ CXXFLAGS ?= -O2
 override CXXFLAGS += -std=c++17 -Wall -Wno-unused-function
 override LDLIBS += -lpthread
 
-SRC = src/main.cpp src/soft.cpp src/kms.cpp src/input.cpp src/library.cpp src/sound.cpp src/splash.cpp src/settings.cpp src/settings_defaults.cpp src/wifi.cpp src/zip.cpp src/theme.cpp src/json.cpp src/expr.cpp src/layout.cpp rnds/RndsRaster.cpp rnds/RndsUI.cpp
+SRC = src/main.cpp src/soft.cpp src/kms.cpp src/input.cpp src/library.cpp src/sound.cpp src/splash.cpp src/settings.cpp src/settings_defaults.cpp src/wifi.cpp src/zip.cpp src/theme.cpp src/json.cpp src/i18n.cpp src/expr.cpp src/layout.cpp rnds/RndsRaster.cpp rnds/RndsUI.cpp
 PKGS = freetype2 libdrm zlib
 ifeq ($(ALSA),1)
 PKGS += alsa
@@ -32,7 +32,8 @@ install:
 	install -D -m 755 banana-scrape $(DESTDIR)/usr/bin/banana-scrape
 	# (the folders' contents: "cp -r dir dst" into a dst that is there from a build before nests a copy in it, and
 	# the files in use were never replaced)
-	mkdir -p $(DESTDIR)/usr/share/banana/rnds $(DESTDIR)/usr/share/banana/splash $(DESTDIR)/usr/share/banana/banana
+	mkdir -p $(DESTDIR)/usr/share/banana/rnds $(DESTDIR)/usr/share/banana/splash $(DESTDIR)/usr/share/banana/banana $(DESTDIR)/usr/share/banana/lang
+	cp -r assets/lang/. $(DESTDIR)/usr/share/banana/lang/
 	cp -r assets/rnds/. $(DESTDIR)/usr/share/banana/rnds/
 	cp -r assets/splash/. $(DESTDIR)/usr/share/banana/splash/
 	cp -r assets/banana/. $(DESTDIR)/usr/share/banana/banana/	# (fonts/: Inter, the layout themes' "inter" faces)

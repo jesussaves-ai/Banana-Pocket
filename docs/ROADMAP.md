@@ -13,9 +13,8 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-3. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-4. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-5. **Store / app catalog** (the Apps shelf only scans local folders).
+3. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+4. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## In progress
 
@@ -35,6 +34,15 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
     associated across suspend (`sleep.d/10-wifi` currently always downs it) — "works instantly" is mostly this.
   - The meter is **bind-mounted on the unit's current boot**, not in the 0.5.5 image: do not reboot until the tests
     finish.
+
+- **Languages: Spanish and German, Settings screen first.** The pipeline is in: the English string is the key,
+  `tr()` in `ui/src/i18n.cpp` falls back to English, catalogs are JSON in `/usr/share/banana/lang/<code>.json` with a
+  `/data/banana/lang/` override on the card (like a theme), and Settings > Display & sound gains a **Language** row
+  (English / Español / Deutsch) that switches at once. The whole main Settings list is translated — group names, row
+  names, help strip, values, buttons, the toasts whose text is catalogued — 121 strings per language, informal
+  (tú/du). `tools/check-lang.py` runs in `make test` (stale or misspelled keys fail, coverage is printed) and the
+  headless menu test loads the German catalog. Next: the Settings sub-pages, the menu chrome, system/app names,
+  date/time formats, then another language or two.
 
 ## Ideas (unscheduled)
 Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.

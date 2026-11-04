@@ -2,6 +2,7 @@
 #include "settings.h"
 #include "settings_defaults.h"
 #include "json.h"
+#include "i18n.h"
 #include "theme.h"
 #include <algorithm>
 #include <dlfcn.h>
@@ -277,6 +278,7 @@ namespace banana
 			add(D, "picture", "Theme", "ROCKNIXDS Pixel's two palettes, dark or light for daylight; or a theme of your own: a .json in banana/themes on the card (banana/themes/README.txt says how).",
 				menu, "theme", names, values);
 		}
+		add(D, "gear", "Language", "The language of the Settings screen: English, Spanish or German. The other screens follow in a later update.", menu, "lang", { "English", "Español", "Deutsch" }, { "en", "es", "de" });
 		add(D, "picture", "Brightness", "The panel's backlight. F + volume changes it anywhere, in games too.", "", "",
 			{ "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%" }, { "100", "200", "300", "400", "500", "600", "700", "800", "900", "1000" }, Item::BRIGHTNESS);
 		add(D, "music", "Volume", "The speakers or the headphones, whichever is playing. The volume keys change it anywhere.", "", "",
@@ -499,8 +501,9 @@ namespace banana
 		int n = 0;
 		for (int i = groupStart(g); i < groupEnd(g) && n < 2; i++, n++)
 		{
-			std::string l = items[i].label;
-			for (auto& ch : l) ch = (char)std::tolower((unsigned char)ch);
+			std::string l = tr(items[i].label);
+			// the English hint is lower case; German lower-cases its nouns into nonsense, so leave other languages be
+			if (i18nCode() == "en") for (auto& ch : l) ch = (char)std::tolower((unsigned char)ch);
 			h += (n ? ", " : "") + l;
 		}
 		return h;
@@ -699,6 +702,7 @@ namespace banana
 			setVariant(it.values[at]);
 			return THEME;
 		}
+		if (it.key == "lang") { i18nSet(it.values[at]); return CHANGED; }
 		return CHANGED;
 	}
 
@@ -1234,15 +1238,15 @@ namespace banana
 		SPal p = pal(light);
 		int g0 = std::max(0, std::min(gsel, (int)groups.size() - 1));
 		std::string all;
-		for (int i = groupStart(g0); i < groupEnd(g0); i++) all += (all.empty() ? "" : ", ") + items[i].label;
+		for (int i = groupStart(g0); i < groupEnd(g0); i++) all += (all.empty() ? "" : ", ") + tr(items[i].label);
 
 		be->beginScreen(0);
 		box("screen", false, 0, 0, 640, 480);
 		box("bubble", false, 18, 14, 604, 54);
-		text("Settings", true, 22, 38, 28, p.ink);
-		const char* sub = "Choose a group";
-		float sw = text(sub, true, 17, 0, 0, p.muted, false, 0, true);
-		text(sub, true, 17, 602 - sw, 31, p.muted);
+		text(tr("Settings"), true, 22, 38, 28, p.ink);
+		std::string sub = tr("Choose a group");
+		float sw = text(sub.c_str(), true, 17, 0, 0, p.muted, false, 0, true);
+		text(sub.c_str(), true, 17, 602 - sw, 31, p.muted);
 		advance();
 		aGroup = -1;	// (the list starts still when a group opens)
 		int gcount = std::min<int>((int)groups.size(), 6);
@@ -1255,10 +1259,10 @@ namespace banana
 			bool on = std::fabs(g % 3 - aCol) < 0.5f && std::fabs(g / 3 - aRow) < 0.5f;
 			float x = tileX(g), y = tileY(g);
 			iconCentred(items[groupStart(g)].icon, x + 98, y + 22, 2);
-			std::string label = fit(groups[g], true, 19, 180);
+			std::string label = fit(tr(groups[g]), true, 19, 180);
 			float lw = text(label, true, 19, 0, 0, p.ink, false, 0, true);
 			text(label, true, 19, x + 98 - lw / 2, y + 84, on ? p.onPick : p.ink);
-			std::string hint = fit(groupHint(g), false, 14, 176);
+			std::string hint = fit(tr(groupHint(g)), false, 14, 176);
 			float hw = text(hint, false, 14, 0, 0, p.muted, false, 0, true);
 			text(hint, false, 14, x + 98 - hw / 2, y + 114, on ? p.onPickAccent : p.muted);
 			if (on)
@@ -1272,11 +1276,11 @@ namespace banana
 				text(cb, true, 14, x + 196 - bw2 - 10 + 8, y + 14, p.kbdInk);
 			}
 		}
-		float bw = faceWidth("B", "Close");
-		face("B", "Close", 18, bw);
-		float aw = faceWidth("A", "Open");
-		face("A", "Open", 622 - aw, aw);
-		footer(groups[g0] + ": " + all + ".", p.muted);
+		float bw = faceWidth("B", tr("Close"));
+		face("B", tr("Close"), 18, bw);
+		float aw = faceWidth("A", tr("Open"));
+		face("A", tr("Open"), 622 - aw, aw);
+		footer(tr(groups[g0]) + ": " + all + ".", p.muted);
 		be->endScreen();
 	}
 
@@ -1293,7 +1297,7 @@ namespace banana
 		int gb = groupStart(groupOf(sel)), ge = groupEnd(groupOf(sel));
 
 		// what the selected setting does: in the strip under the list
-		std::string help = cur.help;
+		std::string help = tr(cur.help);
 		if (cur.kind == Item::INFO) help = about;
 		if (cur.key == "wifi") help = "Wi-Fi: " + wifiInfo + ". Network, below, joins one; networks can also be written in banana/wifi.conf on a computer (see banana/README.txt).";
 		if (cur.key == "ssh")
@@ -1325,7 +1329,7 @@ namespace banana
 		box("screen", false, 0, 0, 640, 480);
 		box("bubble", false, 18, 14, 604, 54);
 		icon(items[gb].icon, 36, 25, 1);
-		text(cur.section, true, 22, 84, 28, p.ink);
+		text(tr(cur.section), true, 22, 84, 28, p.ink);
 		char count[32];
 		snprintf(count, sizeof count, "%02d / %02d", sel - gb + 1, ge - gb);
 		float cw = text(count, true, 17, 0, 0, p.muted, false, 0, true);
@@ -1344,18 +1348,19 @@ namespace banana
 			float y = 82 + (i - aTop) * 64;
 			// the row's own icon (the same picture/music/moon/... the group tiles draw), so the list reads at a glance
 			icon(it.icon, 34, y + 12, 1);
-			text(it.label, true, 20, 84, y + 16, on ? p.onPick : p.muted);
+			text(tr(it.label), true, 20, 84, y + 16, on ? p.onPick : p.muted);
 			std::string v;
 			if (it.kind == Item::CHOICE || it.kind == Item::BRIGHTNESS || it.kind == Item::VOLUME) v = it.names[it.at];
-			else if (it.kind == Item::ACTION) v = armed == i ? "Press A again" : "";
+			else if (it.kind == Item::ACTION) v = armed == i ? tr("Press A again") : "";
 			else if (it.kind == Item::INFO) v = "";
 			// a page's row: Network the network it is on; Update the packages waiting on the card; the others nothing
-			else if (it.kind == Item::PAGE && it.key == "network") v = wstat.connected ? fit(wstat.ssid, true, 19, 300) : (wifiOn() ? "Choose" : "");
+			else if (it.kind == Item::PAGE && it.key == "network") v = wstat.connected ? fit(wstat.ssid, true, 19, 300) : (wifiOn() ? tr("Choose") : "");
 			else if (it.kind == Item::PAGE && it.key == "update") v = updatesWaiting();
 			else if (it.kind == Item::PAGE && it.key == "scrape") v = scrapeShort();
 			else if (it.kind == Item::PAGE && it.key == "states")
-				v = states.empty() ? "None" : std::to_string(states.size()) + (states.size() == 1 ? " state" : " states");
+				v = states.empty() ? tr("None") : std::to_string(states.size()) + (states.size() == 1 ? tr(" state") : tr(" states"));
 			if (v.empty()) continue;
+			v = tr(v);	// the row's own name for it (Dark/Light, On/Off, ...), not what is stored
 			float vw = text(v, true, 19, 0, 0, p.ink, false, 0, true);
 			Color vc = on ? (armed == i ? p.onPickAccent : p.onPick) : p.muted;
 			// the value's own plate (not on the pick: the raised yellow plate is framing enough there)
@@ -1383,9 +1388,9 @@ namespace banana
 			arrow(false, 556 - vw - 2 - std::round(13 / 2.0f + 1), y + 21, vc);
 		}
 		be->popClip();
-		float bw = faceWidth("B", "Back");
-		face("B", "Back", 18, bw);
-		std::string act = cur.kind == Item::ACTION ? (armed == sel ? "Confirm" : cur.label) : cur.kind == Item::INFO ? "" : cur.key == "scrape" ? (scraping() ? "" : "Start") : cur.kind == Item::PAGE ? "Open" : "Change";
+		float bw = faceWidth("B", tr("Back"));
+		face("B", tr("Back"), 18, bw);
+		std::string act = cur.kind == Item::ACTION ? (armed == sel ? tr("Confirm") : tr(cur.label)) : cur.kind == Item::INFO ? "" : cur.key == "scrape" ? (scraping() ? "" : tr("Start")) : cur.kind == Item::PAGE ? tr("Open") : tr("Change");
 		if (!act.empty())
 		{
 			float aw = faceWidth("A", act);
@@ -2404,7 +2409,7 @@ namespace banana
 	{
 		// onto the queue rather than straight up: a game can unlock several achievements in a row, and the account
 		// check can land while one is still showing. drawToast runs them, one at a time.
-		toasts.push_back({ l1, l2, badge, accent, icon, ms });
+		toasts.push_back({ tr(l1), tr(l2), badge, accent, icon, ms });
 		if (toasts.size() > 24)
 			toasts.erase(toasts.begin());	// the oldest *waiting* one goes; never the one showing
 	}

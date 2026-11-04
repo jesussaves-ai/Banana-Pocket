@@ -158,15 +158,16 @@ for size in 640x480 1024x768; do
     ls "$FX/states/DeSmuME/" 2>/dev/null | grep -q 'Banana Kart DS.state.bak-' || { echo "FAIL $size: no backup was made"; fail=1; }
     [ -s "$OUT/$size-xgame-top.png" ] || { echo "FAIL $size: no xgame shot"; fail=1; }
     for s in states states2; do [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }; done
-    # Background Music: the Display & sound row (the fifth) toggles settings.conf's bgm, off then back on
+    # Background Music: the Display & sound row (the sixth, after Theme and Language) toggles settings.conf's bgm,
+    # off then back on
     grep -q '^bgm = ' "$FX/data/settings.conf" && sed -i 's/^bgm = .*/bgm = on/' "$FX/data/settings.conf" || printf 'bgm = on\n' >> "$FX/data/settings.conf"
     blog=$OUT/$size-bgm.log
     run_bgm() { "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
         --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" --script "$1" 2>> "$blog" ||
         { echo "FAIL $size: banana-ui (bgm) exited $?"; fail=1; }; }
-    run_bgm "home 0; press start; press a; press down; press down; press down; press down; press right; shot bgm-off"
+    run_bgm "home 0; press start; press a; press down; press down; press down; press down; press down; press right; shot bgm-off"
     grep -q '^bgm = off' "$FX/data/settings.conf" || { echo "FAIL $size: Background Music Off didn't save: $(grep '^bgm' "$FX/data/settings.conf")"; fail=1; }
-    run_bgm "home 0; press start; press a; press down; press down; press down; press down; press right; shot bgm-on"
+    run_bgm "home 0; press start; press a; press down; press down; press down; press down; press down; press right; shot bgm-on"
     grep -q '^bgm = on' "$FX/data/settings.conf" || { echo "FAIL $size: Background Music On didn't save: $(grep '^bgm' "$FX/data/settings.conf")"; fail=1; }
     for s in bgm-off bgm-on; do [ -s "$OUT/$size-$s-top.png" ] || { echo "FAIL $size: no $s shot"; fail=1; }; done
     # the AMOLED burn-in guard follows bananad.conf: 2 min idle dims the panel to 30%, 90 s later it blanks, and the
@@ -239,6 +240,13 @@ for size in 640x480 1024x768; do
     grep -q 'ssid="BadKey"' "$FX/data/wifi.conf" && { echo "FAIL $size: a 3-character WEP key was accepted"; fail=1; }
     grep -q 'wifi-scan WEP: secured=1 wep=1 unsupported=0' "$rlog" || { echo "FAIL $size: WEP scan flags are wrong"; fail=1; }
     grep -q 'wifi-scan WPA2-PSK-CCMP: secured=1 wep=0 unsupported=0' "$rlog" || { echo "FAIL $size: WPA scan flags are wrong"; fail=1; }
+    # the Settings screen in German: the catalog in ui/assets/lang loads (BANANA_LANG_DIR) and the menu draws with it
+    sed -i '/^lang = /d' "$FX/data/settings.conf"; echo 'lang = de' >> "$FX/data/settings.conf"
+    BANANA_LANG_DIR="$HERE/assets/lang" "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
+        --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" --script "home 0; press start; wait 300; shot settings-de" \
+        2>> "$rlog" || { echo "FAIL $size: banana-ui (german) exited $?"; fail=1; }
+    grep -q 'i18n: de (1[0-9][0-9] strings' "$rlog" || { echo "FAIL $size: the German catalog did not load"; fail=1; }
+    sed -i '/^lang = /d' "$FX/data/settings.conf"; echo 'lang = en' >> "$FX/data/settings.conf"
     # a layout theme (the image's pocket.json, the handheld's own): every screen drawn from its JSON, home ->
     # library -> a launch, and a tap on a system. It is the single-panel layout, so it runs at its own 640x557.
     # The menu reads the theme from the card's settings.conf (--theme is the real launcher's), so point it at the
