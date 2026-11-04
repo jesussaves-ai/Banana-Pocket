@@ -349,6 +349,7 @@ struct App
 	std::mutex thumbMx;
 	std::condition_variable thumbCv;
 	std::atomic<bool> thumbPending { false };
+	std::atomic<unsigned> thumbGeneration { 0 };	// a picture landed: the loop redraws the row that was waiting
 	bool thumbStop = false;
 
 	// ---- text ----------------------------------------------------------------------------------------------------
@@ -474,7 +475,7 @@ struct App
 				std::string bytes = curlBody(url, nullptr, &ok, 12);
 				if (!ok || bytes.size() < 100) continue;
 				std::string tmp = p + ".part";
-				if (FILE* f = fopen(tmp.c_str(), "wb")) { fwrite(bytes.data(), 1, bytes.size(), f); fclose(f); rename(tmp.c_str(), p.c_str()); }
+				if (FILE* f = fopen(tmp.c_str(), "wb")) { fwrite(bytes.data(), 1, bytes.size(), f); fclose(f); rename(tmp.c_str(), p.c_str()); thumbGeneration++; }
 			}
 		}
 	}
@@ -1605,6 +1606,11 @@ struct App
 				markDirty();
 			}
 
+			{
+				static unsigned seenGen = 0;	// a thumbnail arriving is the one change with no input behind it
+				unsigned g = thumbGeneration.load();
+				if (g != seenGen) { seenGen = g; markDirty(); }
+			}
 			// mpv owns the screen while a video plays: nothing app-side is visible, so draw nothing
 			if (dirty && mode != Mode::PLAYING) { draw(); SDL_RenderPresent(ren); dirty = false; }
 			SDL_Delay(8);
