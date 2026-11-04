@@ -26,6 +26,13 @@ ui/banana-ui --headless /tmp/shot- --size 640x480 --assets ui/assets/rnds --bana
 Each `shot` writes `<prefix><name>-top.png` and `-bot.png`. Theme errors are printed as `banana-ui: theme: ...`. With
 `"debug": true` in the theme they are also shown in red on the top screen.
 
+The bundled themes are also checked against `docs/theme.schema.json` by `make test` (and CI):
+`tools/check-themes.py` reads them the way the menu does (comments and trailing commas are fine), validates the
+schema's keywords, and fails on a keyword the checker does not implement — so a new constraint in the schema cannot be
+silently ignored. `tools/check-themes.py --selftest` proves the checker itself still catches a wrong type and an
+out-of-enum value. A theme of your own is checked the same way by copying it into the themes folder and running the
+script.
+
 ## The file
 
 ```jsonc

@@ -83,6 +83,8 @@ ui:
 
 test: ui
 	tools/check-systems.py
+	tools/check-themes.py --selftest
+	tools/check-themes.py
 	system/tests/run-retroarch-test.sh
 	system/tests/rpc-thermals-test.sh
 	system/tests/run-banana-tube-test.sh

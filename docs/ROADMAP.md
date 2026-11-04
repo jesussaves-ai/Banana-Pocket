@@ -20,10 +20,9 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
    what the ~30 mA is (Wi-Fi kept up vs downed, the USB gadget/PHY, the always-powered SD card, `deep` vs `s2idle`),
    the spurious SD-host wake that cannot be disarmed from userspace, and keeping Wi-Fi associated across suspend while a
    download is in flight (`sleep.d/10-wifi` always downs it).
-4. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
-5. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-6. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-7. **Store / app catalog** (the Apps shelf only scans local folders).
+4. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+5. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+6. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## Ideas (unscheduled)
 Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.
@@ -91,6 +90,13 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **Theme validation (0.5.x).** `tools/check-themes.py` validates every bundled theme against
+  `docs/theme.schema.json` in `make test` (and CI): a small validator for the keywords the schema actually uses
+  (`$ref`, `type`, `enum`, `pattern`, `properties`, `items`, `anyOf`, `oneOf`, `additionalProperties`, `required`),
+  with comments and trailing commas stripped the way the menu's parser allows them. A schema keyword it does not
+  implement is an error, so the check cannot silently skip a constraint, and `--selftest` proves it catches a wrong
+  type and an out-of-enum value. The other half of the item, live theme reload, already worked: `Settings::THEME`
+  rebuilds the menu in place (layout and colour themes both).
 - [x] **WEP networks (0.5.x).** The scan's `[WEP]` flag now means "secured, key_mgmt=NONE + wep_key0" instead of
   "unsupported": A joins it, the password keyboard takes the key (5 or 13 printable characters, or 10/26 hex digits --
   quotes and backslashes refused so the quoted conf stays valid), and `banana/wifi.conf` gets `key_mgmt=NONE`,
