@@ -302,6 +302,10 @@ struct App
 	pid_t mpv = -1;
 	int ipc = -1;
 	bool paused = false;				// the play/pause the indicators show (toggled with the command we send)
+	bool stalled = false, stallShown = false;	// mpv is waiting on the network: a buffering indicator
+	int bufPct = 100;					// cache-buffering-state (0..100)
+	Uint32 lastBufAsk = 0;				// when the two buffering properties were last asked
+	Item playingItem;					// what Y reloads at another quality
 	std::vector<Item> recent;			// the last videos played, newest first (recentAdd)
 	std::vector<Item> searchResults;	// the last search's hits, kept while another tab is up
 	std::vector<std::string> channels;	// the unique uploaders of those two lists (Channels tab)
@@ -323,6 +327,8 @@ struct App
 	long lastDurAsk = 0;
 	static constexpr long POS_REQ = 7;	// request_id of the time-pos question
 	static constexpr long DUR_REQ = 8;	// request_id of the duration question
+	static constexpr long BUF_REQ = 9;	// paused-for-cache
+	static constexpr long CACHE_REQ = 10;	// cache-buffering-state
 	static std::string fmtTime(double t)
 	{
 		int s = static_cast<int>(t < 0 ? 0 : t);
@@ -334,6 +340,31 @@ struct App
 	{
 		if (!havePos || dur <= 0) return "";
 		return fmtTime(pos) + " / " + fmtTime(dur);
+	}
+	// A text bar for mpv's OSD (the app cannot draw over the video): | where playback is, - around it.
+	static std::string barText(double at, double total, int cells = 12)
+	{
+		if (total <= 0) return std::string(cells, '-');
+		int k = (int)(at / total * cells);
+		if (k < 0) k = 0;
+		if (k > cells - 1) k = cells - 1;
+		std::string s;
+		for (int i = 0; i < cells; i++) s += i == k ? '|' : '-';
+		return s;
+	}
+	static int nextQuality(int q) { return q == 720 ? 480 : q == 480 ? 360 : 720; }
+	// "03:21 / 12:04" with the bar under it; the empty readout before mpv knows the length
+	std::string whereTag(double at) const
+	{
+		if (dur <= 0) return fmtTime(at > 0 ? at : 0);
+		double t = at < 0 ? 0 : at > dur ? dur : at;
+		return fmtTime(t) + " / " + fmtTime(dur) + "\n" + barText(t, dur);
+	}
+	// the same for a seek: say where it landed (the polled position is the base for the target)
+	void seekInd(const char* label, double delta)
+	{
+		double target = dur > 0 ? std::min(dur, std::max(0.0, pos + delta)) : pos + delta;
+		showInd(std::string(label) + "  " + whereTag(target), 900);
 	}
 
 	std::mutex searchLock;
@@ -792,6 +823,19 @@ struct App
 		}
 		else status = "Quality: " + std::to_string(quality) + "p (next video)";
 	}
+	// Y in the player: a resolved stream cannot change quality in place, so stop, re-resolve at the next cap and
+	// replay from where it was (play()'s resume path does the seek once mpv is up)
+	void reloadQuality()
+	{
+		if (mode != Mode::PLAYING || playingItem.id.empty()) return;
+		Item again = playingItem;
+		again.resume = pos;
+		stopPlayback();
+		quality = nextQuality(quality);
+		qualitySave();
+		showInd("Reloading at " + std::to_string(quality) + "p\u2026", 1500);
+		play(again);
+	}
 	// ---- mpv -----------------------------------------------------------------------------------------------------
 	void ipcSend(const std::string& command)
 	{
@@ -878,8 +922,26 @@ struct App
 			banana::JPtr r = banana::parseJson(line);
 			if (!r || !r->isObj()) continue;
 			long id = static_cast<long>(r->num("request_id", -1));
-			if (id != POS_REQ && id != DUR_REQ) continue;
+			if (id != POS_REQ && id != DUR_REQ && id != BUF_REQ && id != CACHE_REQ) continue;
 			const banana::JVal* d = r->get("data");
+			if (id == BUF_REQ)
+			{
+				bool st = d && (d->kind == banana::JVal::BOOL ? d->b : d->isNum() && d->n != 0);
+				if (st && !stallShown) { stallShown = true; showInd("Buffering" + std::string(bufPct < 100 ? " " + std::to_string(bufPct) + "%" : "\u2026"), 1200); }
+				else if (!st && stallShown) { stallShown = false; showInd("Playing   " + whereTag(pos), 700); }
+				stalled = st;
+				continue;
+			}
+			if (id == CACHE_REQ)
+			{
+				if (d && d->isNum())
+				{
+					int p = (int)d->n;
+					if (stalled && p / 10 != bufPct / 10) showInd("Buffering " + std::to_string(p) + "%", 1200);
+					bufPct = p;
+				}
+				continue;
+			}
 			bool ok = d && d->isNum();
 			if (id == POS_REQ) { havePos = ok; if (ok) pos = d->n; if (ok && pendingSeek > 0) applyPendingSeek(); }
 			else if (ok) dur = d->n;
@@ -898,6 +960,12 @@ struct App
 		{
 			lastDurAsk = now;
 			ipcSend("{\"command\":[\"get_property\",\"duration\"],\"request_id\":8}");
+		}
+		if (now - lastBufAsk >= 500)	// stalled on the network, or filling mpv's cache again
+		{
+			lastBufAsk = now;
+			ipcSend("{\"command\":[\"get_property\",\"paused-for-cache\"],\"request_id\":9}");
+			ipcSend("{\"command\":[\"get_property\",\"cache-buffering-state\"],\"request_id\":10}");
 		}
 		if (now - lastResumeSave >= 10000 && havePos)	// the resume point, every 10 s (flash-friendly)
 		{
@@ -989,9 +1057,10 @@ struct App
 			"--fullscreen", "--keep-open=no", "--force-window=yes",
 			"--msg-level=all=warn",
 		};
-		// the start-of-playback card: the quality that was picked and the zones, in one line (mpv's only OSD here)
-		std::string osdMsg = "--osd-playing-msg=A play/pause   " + std::to_string(quality) +
-			"p   (touch: sides seek -/+10s, centre pause, top-left stop)";
+		// the start-of-playback card: the video, the cap, and the whole pad map (mpv's only OSD here)
+		std::string title = it.title.size() > 52 ? it.title.substr(0, 50) + "\u2026" : it.title;
+		std::string osdMsg = "--osd-playing-msg=" + title + "   " + std::to_string(quality) +
+			"p\nA pause   B stop   D-pad seek   L/R chapter   L2/R2 hold   Y quality   SEL where   START full";
 		// a DASH pair: the video is the file, the audio its own stream
 		std::string audio = urls.size() > 1 ? "--audio-file=" + urls[1] : std::string();
 		std::vector<char*> av;
@@ -1017,6 +1086,7 @@ struct App
 		havePos = false;
 		ipcBuf.clear();
 		playingId = it.id;
+		playingItem = it;
 		// a video re-opened from Search resumes where its Recent row stopped, not from the top
 		double at = it.resume;
 		if (at <= 0)
@@ -1102,8 +1172,7 @@ struct App
 			connectIpc();
 			ipcSend("{\"command\":[\"cycle\",\"pause\"]}");
 			paused = !paused;
-			std::string tag = timeTag();
-			showInd((paused ? "||  Paused" : ">  Playing") + (tag.empty() ? "" : "   " + tag), 900);
+			showInd((paused ? "||  Paused" : ">  Playing") + std::string("   ") + whereTag(pos), 900);
 		}
 	}
 	void move(int dx, int dy)
@@ -1140,8 +1209,8 @@ struct App
 		else if (mode == Mode::PLAYING)
 		{
 			connectIpc();
-			if (dy != 0) { ipcSend(dy < 0 ? "{\"command\":[\"seek\",\"10\"]}" : "{\"command\":[\"seek\",\"-10\"]}"); showInd(dy < 0 ? ">>  +10s" : "<<  -10s"); }
-			if (dx != 0) { ipcSend(dx < 0 ? "{\"command\":[\"seek\",\"-60\"]}" : "{\"command\":[\"seek\",\"60\"]}"); showInd(dx < 0 ? "<<  -60s" : ">>  +60s"); }
+			if (dy != 0) { ipcSend(dy < 0 ? "{\"command\":[\"seek\",\"10\"]}" : "{\"command\":[\"seek\",\"-10\"]}"); seekInd(dy < 0 ? ">> +10" : "<< -10", dy < 0 ? 10 : -10); }
+			if (dx != 0) { ipcSend(dx < 0 ? "{\"command\":[\"seek\",\"-60\"]}" : "{\"command\":[\"seek\",\"60\"]}"); seekInd(dx < 0 ? "<< -60" : ">> +60", dx < 0 ? -60 : 60); }
 		}
 	}
 	// The L2/R2 triggers (read as axes; SDL sends no button for them): a tap seeks 10 s, holding R2 plays at 2x, holding
@@ -1162,7 +1231,7 @@ struct App
 		{
 			t.down = false;
 			if (t.fast) { ipcSend("{\"command\":[\"set_property\",\"speed\",1]}"); showInd(">  1x", 700); }
-			else if (!t.held) { ipcSend(dir > 0 ? "{\"command\":[\"seek\",\"10\"]}" : "{\"command\":[\"seek\",\"-10\"]}"); showInd(dir > 0 ? ">>  +10s" : "<<  -10s"); }
+			else if (!t.held) { ipcSend(dir > 0 ? "{\"command\":[\"seek\",\"10\"]}" : "{\"command\":[\"seek\",\"-10\"]}"); seekInd(dir > 0 ? ">> +10" : "<< -10", dir * 10.0); }
 			t.held = t.fast = false;
 			return;
 		}
@@ -1291,11 +1360,10 @@ struct App
 			//   the rest        play / pause
 			connectIpc();
 			if (x < W * 18 / 100 && y < H * 18 / 100) { logLine("player -> stop"); stopPlayback(); mode = Mode::RESULTS; status = "Stopped"; }
-			else if (x < W * 28 / 100) { logLine("player -> seek -10"); ipcSend("{\"command\":[\"seek\",\"-10\"]}"); showInd("<<  -10s"); }
-			else if (x > W * 72 / 100) { logLine("player -> seek +10"); ipcSend("{\"command\":[\"seek\",\"10\"]}"); showInd(">>  +10s"); }
+			else if (x < W * 28 / 100) { logLine("player -> seek -10"); ipcSend("{\"command\":[\"seek\",\"-10\"]}"); seekInd("<< -10", -10); }
+			else if (x > W * 72 / 100) { logLine("player -> seek +10"); ipcSend("{\"command\":[\"seek\",\"10\"]}"); seekInd(">> +10", 10); }
 			else { logLine("player -> play/pause"); ipcSend("{\"command\":[\"cycle\",\"pause\"]}"); paused = !paused;
-				std::string tag = timeTag();
-				showInd((paused ? "||  Paused" : ">  Playing") + (tag.empty() ? "" : "   " + tag), 900); }
+				showInd((paused ? "||  Paused" : ">  Playing") + std::string("   ") + whereTag(pos), 900); }
 		}
 	}
 
@@ -1527,7 +1595,7 @@ struct App
 						}
 						else page(-1);
 						break;
-					case SDL_CONTROLLER_BUTTON_Y: if (mode == Mode::RESULTS) { view = View::SEARCH; channelOpen = false; results = searchResults; mode = Mode::KEYS; status = ""; } else if (mode == Mode::KEYS) startSearch(); break;
+					case SDL_CONTROLLER_BUTTON_Y: if (mode == Mode::RESULTS) { view = View::SEARCH; channelOpen = false; results = searchResults; mode = Mode::KEYS; status = ""; } else if (mode == Mode::KEYS) startSearch(); else if (mode == Mode::PLAYING) reloadQuality(); break;
 					case SDL_CONTROLLER_BUTTON_START:
 						if (mode == Mode::PLAYING) { connectIpc(); ipcSend("{\"command\":[\"cycle\",\"fullscreen\"]}"); }
 						else startSearch();
@@ -1536,7 +1604,7 @@ struct App
 						if (mode == Mode::PLAYING)
 						{
 							connectIpc();
-							if (havePos && dur > 0) showInd(fmtTime(pos) + " / " + fmtTime(dur) + "   " + std::to_string(quality) + "p", 2200);
+							if (havePos && dur > 0) showInd(whereTag(pos) + "\n" + std::to_string(quality) + "p", 2200);
 							else showInd("Loading\u2026", 900);
 						}
 						else if (mode == Mode::RESULTS) cycleQuality();
@@ -1642,6 +1710,14 @@ struct App
 			ok = ok && textMisses == m0 + 2;
 			printf("bananatube selftest cache: %s\n", ok ? "ok" : "fail");
 			clearTextCache();
+		}
+		{
+			// the position bar and the quality cycle (the player's OSD text)
+			std::string a = barText(0, 100, 10), m = barText(50, 100, 10), z = barText(100, 100, 10);
+			bool ok = a.size() == 10 && a[0] == '|' && m.size() == 10 && m[5] == '|' && z.size() == 10 && z[9] == '|'
+				&& barText(10, 0, 8).size() == 8 && barText(200, 100, 10)[9] == '|';
+			ok = ok && nextQuality(720) == 480 && nextQuality(480) == 360 && nextQuality(360) == 720;
+			printf("bananatube selftest bar: %s\n", ok ? "ok" : "fail");
 		}
 		Item it;
 		bool ok = splitLine("abc123\tA Title\tSome One\t3:21", it) && it.id == "abc123" && it.duration == "3:21";
@@ -1851,7 +1927,7 @@ struct App
 		// the controls band at the foot: a darker strip, so the hint reads as a bar, not as stray text
 		panel(0, H * 91 / 100, W, H - H * 91 / 100, SDL_Color { 8, 10, 14, 255 }, SDL_Color { 8, 10, 14, 255 });
 		SDL_Color hint { 150, 156, 166, 255 };
-		const char* help = mode == Mode::PLAYING ? "A pause   L2/R2 seek (hold R2 2x)   L1/R1 chapter   X undo skip   START full   SEL time   B stop"
+		const char* help = mode == Mode::PLAYING ? "A pause   D-pad seek   L2/R2 hold   L/R chapter   Y quality   SEL where   START full   X undo skip   B stop"
 			: mode == Mode::RESULTS ? "A play   B back   X channel   L/R page   SEL quality   Y search   START search"
 			: "A type   B back   L/R tab   SEL recent   START or Y search";
 		drawText(help, fSmall, hint, W * 4 / 100, H * 94 / 100, W * 92 / 100);

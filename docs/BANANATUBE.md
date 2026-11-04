@@ -36,12 +36,12 @@ mapping `run-port` uses: **A is the east button**).
 | A | type the key / `Shift` / `Search` | play the chosen video | play / pause |
 | B | clear, then quit | back to the keyboard | stop and go back |
 | X | backspace | the chosen video's channel | undo the last SponsorBlock skip |
-| Y | run the search | back to the keyboard (search) | — |
+| Y | run the search | back to the keyboard (search) | quality: 720 → 480 → 360p, reloaded at the same position |
 | L / R | switch tab | a page back / forward | previous / next chapter |
 | L2 | — | — | tap: back 10 s; hold: scrub back 10 s every 0.25 s |
 | R2 | — | — | tap: forward 10 s; hold: play at 2x |
 | START | run the search | a new search | full screen |
-| SELECT | the Recent tab | the quality cap (720/480/360p, next video) | position / length / quality readout |
+| SELECT | the Recent tab | the quality cap (720/480/360p, next video) | position / length bar / quality readout |
 | touch | tap a key / `Search`, or a tab | tap a row to focus, tap again to play, or a tab | zones: left/right seek, centre pause, top-left stop |
 
 **Tabs, recent and quality:** the results shelf has four tabs — **Search** (the keyboard and its hits), **Recent** (the
@@ -49,6 +49,12 @@ last 30 videos that actually started playing), **Channels** (the uploaders eithe
 and **Local** (the music and video files on the card).
 Switch with L/R on the keyboard, SELECT (Recent), or a tap; A on a channel shows its videos from both lists, B walks
 back out.
+
+**Player feedback:** the app draws nothing while a video plays (mpv owns the screen), so everything is mpv's text OSD:
+the start card names the video, the cap and the whole pad map; every seek, pause and SELECT shows `03:21 / 12:04` over a
+12-cell bar (`----|-------`); and a stall shows `Buffering 47%` (mpv's `paused-for-cache`/`cache-buffering-state`, polled
+twice a second) until playback recovers. **Y** re-resolves at the next cap and replays from the same position (a ~2 s
+reload is the cost of a seamless switch this stack cannot do), saving the cap like the browse screen's SELECT.
 
 **Local** lists the files in `/data/music` and `/data/videos` (one level, common audio/video extensions, by file name)
 and plays the chosen one straight from the card: mpv takes the path, so there is no yt-dlp call, no SponsorBlock lookup

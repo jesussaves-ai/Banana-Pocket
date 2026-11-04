@@ -40,6 +40,13 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   - The meter is **bind-mounted on the unit's current boot**, not in the 0.5.5 image: do not reboot until the tests
     finish.
 
+- **BananaTube player OSD (Track B1 + Y quality, implemented, pending the unit).** While a video plays the app is
+  hidden behind mpv, so the player now uses mpv's text OSD for everything: position (`03:21 / 12:04` over a 12-cell
+  bar) on seek/pause/SELECT, a throttled `Buffering N%` from `paused-for-cache`/`cache-buffering-state`, a start card
+  with the title, cap and the whole pad map, and **Y** cycles the quality cap (stop → re-resolve → replay at the same
+  position, ~2 s). Design: `docs/superpowers/specs/2026-11-04-bananatube-player-osd-design.md`; plan:
+  `docs/superpowers/plans/2026-11-04-bananatube-player-osd.md`. Selftests: bar (start/middle/end/dur 0) and the quality
+  cycle (24 checks).
 - **BananaTube idle frames (Track A1, approved).** The app redraws the whole window every 8 ms and renders a fresh TTF
   texture for every visible string, even with nothing happening. A `dirty` flag gates drawing (none at all while mpv
   owns the screen), a bounded text-texture cache ends the per-frame allocation, and the thumbnail worker wakes the loop

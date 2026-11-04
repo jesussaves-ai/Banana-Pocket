@@ -48,6 +48,7 @@ else
     printf '%s\n' "$out" | grep -q 'selftest channels: ok' && ok "channels: one channel's videos, B walks out" || bad "channels tab"
     printf '%s\n' "$out" | grep -q 'selftest local: ok' && ok "local tab: the music/video folders" || bad "local tab"
     printf '%s\n' "$out" | grep -q 'selftest cache: ok' && ok "text cache: a repeat costs nothing" || bad "text cache"
+    printf '%s\n' "$out" | grep -q 'selftest bar: ok' && ok "player bar and quality cycle" || bad "player bar"
     printf '%s\n' "$out" | grep -q 'selftest recent: ok' && ok "recent file: the resume position (and old rows)" || bad "recent parse"
     printf '%s\n' "$out" | grep -q 'selftest quit: 1' && ok "B on an empty query quits" || bad "quit state"
 fi
