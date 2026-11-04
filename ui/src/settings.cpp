@@ -1611,6 +1611,19 @@ namespace banana
 			}
 			return MOVED;
 		}
+		case Key::L: case Key::R:	// a saved network's place in the list wpa_supplicant tries
+		{
+			if (!n || !nets[nsel].saved) return NONE;
+			std::string name = nets[nsel].ssid;
+			bool up = k == Key::L;
+			if (!wifi::bump(wifiConf, name, up ? -1 : 1))
+			{
+				message = name + " is already the " + (up ? "first" : "last") + " one tried.";
+				return MOVED;
+			}
+			message = name + (up ? ": higher priority from now on." : ": lower priority from now on.");
+			return MOVED;
+		}
 		case Key::X:
 			message.clear();
 			if (!wifiEnabled)
@@ -1787,7 +1800,7 @@ namespace banana
 		std::string help = message;
 		if (help.empty())
 			help = !wifiEnabled ? "Wi-Fi is switched off. X switches it on and searches."
-				: "A joins the network chosen, with its password typed on the keyboard (or by touch). X searches again, Y forgets a saved network. Passwords are kept in banana/wifi.conf on the card.";
+				: "A joins the network chosen, with its password typed on the keyboard (or by touch). X searches again, Y forgets a saved network, and L/R move a saved one up or down the list wpa_supplicant tries. Passwords are kept in banana/wifi.conf on the card.";
 		help = st + ". " + help;
 
 		be->beginScreen(0);

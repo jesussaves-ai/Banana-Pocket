@@ -187,6 +187,48 @@ namespace banana
 			return writeConf(conf, out);
 		}
 
+		// one block's text with its priority line replaced (or added before the closing brace)
+		static std::string withPriority(const std::string& text, int p)
+		{
+			std::string out, ln;
+			std::stringstream ss(text);
+			while (std::getline(ss, ln))
+			{
+				std::string t = trim(ln);
+				if (t.compare(0, 9, "priority=") == 0) continue;
+				if (t == "}") out += "\tpriority=" + std::to_string(p) + "\n";
+				out += ln + "\n";
+			}
+			return out;
+		}
+
+		bool bump(const std::string& conf, const std::string& ssid, int dir)
+		{
+			std::string head;
+			std::vector<Block> blocks;
+			readConf(conf, head, blocks);
+			int at = -1;
+			for (int i = 0; i < (int)blocks.size() && at < 0; i++) if (blocks[i].ssid == ssid) at = i;
+			if (at < 0) return false;
+			int best = -1, bestD = 0;
+			for (int i = 0; i < (int)blocks.size(); i++)
+			{
+				if (i == at) continue;
+				int d = blocks[i].priority - blocks[at].priority;
+				if (dir < 0 ? d <= 0 : d >= 0) continue;	// only a block above (up) or below (down)
+				int ad = d < 0 ? -d : d;
+				if (best < 0 || ad < (bestD < 0 ? -bestD : bestD)) { best = i; bestD = d; }
+			}
+			if (best < 0) return false;
+			int p = blocks[at].priority;
+			blocks[at].priority = blocks[best].priority;
+			blocks[best].priority = p;
+			std::string out = head;
+			for (int i = 0; i < (int)blocks.size(); i++)
+				out += (i == at || i == best) ? withPriority(blocks[i].text, blocks[i].priority) : blocks[i].text;
+			return writeConf(conf, out);
+		}
+
 		bool forget(const std::string& conf, const std::string& ssid)
 		{
 			std::string head;

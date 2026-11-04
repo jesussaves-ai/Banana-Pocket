@@ -614,6 +614,14 @@ static int runHeadless(const Options& o, Host& lib, const std::string& variant, 
 			lib.testPower.charging = ch == "charging";
 			if (low.check(lib.power(), shutdownPercent(o.data), now)) logf("battery %d%%: notice %s", lib.testPower.percent, low.showing(now) ? low.title.c_str() : "hidden");
 		}
+		else if (op == "wifi")
+		{
+			// wifi <ssid> <up|down>: move a saved network in the card's wifi.conf (test only; the Network page's L/R)
+			std::string ssid, d;
+			cs >> ssid >> d;
+			bool ok = wifi::bump(o.data + "/wifi.conf", ssid, d == "up" ? -1 : 1);
+			logf("wifi %s %s: %s", ssid.c_str(), d.c_str(), ok ? "ok" : "no change");
+		}
 		else if (op == "toast")
 		{
 			// toast <glyph>|<title>|<body>|<badge>: queue a pop-up as an achievement (with the badge RetroArch

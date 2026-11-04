@@ -219,6 +219,15 @@ for size in 640x480 1024x768; do
         { echo "FAIL $size: banana-ui (backup rows) exited $?"; fail=1; }
     grep -qx create "$bmark" 2>/dev/null || { echo "FAIL $size: Back up did not run the tool"; fail=1; }
     grep -qx restore "$bmark" 2>/dev/null || { echo "FAIL $size: Restore did not run the tool"; fail=1; }
+    # saved-network priority: the Network page's L/R swaps a saved network's place in wifi.conf (higher/lower),
+    # and a network that is not saved is left alone
+    printf 'network={\n\tssid="Home"\n\tpsk="12345678"\n\tpriority=1\n}\nnetwork={\n\tssid="Cafe"\n\tpsk="12345678"\n\tpriority=2\n}\n' > "$FX/data/wifi.conf"
+    "$HERE/banana-ui" --headless "$OUT/$size-" --single --size 640x557 --assets "$HERE/assets/rnds" \
+        --systems "$HERE/tests/systems.conf" --roms "$FX/roms" --data "$FX/data" --script "wifi Home up; wifi Nobody up" \
+        2>> "$rlog" || { echo "FAIL $size: banana-ui (wifi priority) exited $?"; fail=1; }
+    grep -A3 'ssid="Home"' "$FX/data/wifi.conf" | grep -q 'priority=2' || { echo "FAIL $size: Home did not move up"; fail=1; }
+    grep -A3 'ssid="Cafe"' "$FX/data/wifi.conf" | grep -q 'priority=1' || { echo "FAIL $size: Cafe did not move down"; fail=1; }
+    grep -q 'wifi Nobody up: no change' "$rlog" || { echo "FAIL $size: an unsaved network changed the file"; fail=1; }
     # a layout theme (the image's pocket.json, the handheld's own): every screen drawn from its JSON, home ->
     # library -> a launch, and a tap on a system. It is the single-panel layout, so it runs at its own 640x557.
     # The menu reads the theme from the card's settings.conf (--theme is the real launcher's), so point it at the

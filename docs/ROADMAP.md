@@ -4,7 +4,10 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+1. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), static IP, hotspot. **Saved-network
+   priority is done**: L/R on a network in Settings > Network moves a saved one up or down in `wifi.conf` (the list
+   wpa_supplicant tries); the rest is still open (802.1X needs an identity/certificate screen, static IP needs address
+   fields, hotspot needs hostapd, which the image does not carry).
 2. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
@@ -82,6 +85,10 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **Saved-network priority (0.5.x).** Settings > Network's L/R moves the selected saved network one place up
+  (higher priority, tried first) or down by swapping the two `priority=` values in `banana/wifi.conf`; every other
+  byte of the file is kept, and a network that is not saved is left alone. Tested through the headless menu (the
+  `wifi <ssid> <up|down>` script verb) against a two-block fixture, with the "not saved changes nothing" case.
 - [x] **Local media in BananaTube (0.5.x).** A fourth tab, **Local**, lists `/data/music` and `/data/videos` (one
   level, common audio/video extensions, by file name) and plays straight from the card: mpv takes the path, so there is
   no yt-dlp resolve, no SponsorBlock lookup and no thumbnail fetch, and a local file is not written to Recent (a list of
