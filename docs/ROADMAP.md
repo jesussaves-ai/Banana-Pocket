@@ -4,22 +4,19 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Library UX, the rest** -- collections/tags and a screenshot gallery. The scraper already skips games that have
-   art, and now starts only on the charger or the USB cable (a long scrape must not flatten the battery); the
-   recent-played shelf, multi-disc `.m3u` grouping and shoulder jump-to-letter are done, 0.5.x.
-2. **Local media / music player**, and porting BananaTube's newer settings screen.
-3. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
-4. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
-5. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
+1. **Local media / music player**, and porting BananaTube's newer settings screen.
+2. **Accessibility** (colour-blind palettes, larger type), an **in-menu log viewer**, and a **battery time-remaining** estimate with a graceful low-battery shutdown.
+3. **Wi-Fi management depth** -- WEP/802.1X (currently `unsupported`), saved-network priority, static IP, hotspot.
+4. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
    unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
    cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
    repeatable gate instead of a manual read.
-6. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
+5. **Sleep leftovers** -- keep Wi-Fi across suspend while a download is in flight (`sleep.d/10-wifi` always downs it),
    and measure overnight drain; residual spurious wakes and panel/SD resume latency are still untracked.
-7. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
-8. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
-9. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
-10. **Store / app catalog** (the Apps shelf only scans local folders).
+6. **Theme validation & live reload** (small): `make test` validates every bundled theme against `docs/theme.schema.json`, and Settings re-applies the active theme without a restart.
+7. **i18n** -- no locale layer (BananaLinux ships Simplified Chinese).
+8. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a bespoke path (no BlueZ/DBus in the stack).
+9. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## Ideas (unscheduled)
 Not commitments: sketches to weigh against the list above. Each one builds on something the image already has.
@@ -72,8 +69,10 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 ## Maintenance
 - **Agent DX:** `make agent-check` (quiet syntax + host compile + the fast suite, 4 lines on success) and `make agent-map` (regenerates the source map) were added 0.5.x; keep the `AGENTS.md` Source Map fresh when core files move.
 
-*(Dropped: a quick-settings/performance overlay. Performance is fine and RetroArch's own OSD -- `fps_show` /
-`statistics_show`, already rotated by its patches -- covers FPS/CPU if wanted, so there is nothing to build.)*
+*(Dropped: a quick-settings/performance overlay -- performance is fine and RetroArch's own OSD (`fps_show` /
+`statistics_show`, already rotated by its patches) covers FPS/CPU if wanted. And on 2026-11-04, by request: a screenshot
+gallery and collections/tags (auto genre shelves from the scraped `gamelist.xml` were proposed; not wanted). The
+library-UX item is closed: the scraper already skips games that have art, and now starts only on the charger or cable.)*
 
 ## Completed Baseline (0.4.9+)
 - **Core & CI:** End-to-end QEMU `virt` boot/update/test (`tools/qemu-boot.sh`), A/B OTA updates, first-time setup, `ksmbd`, `dropbear`, `ath10k_snoc`.
