@@ -1,6 +1,14 @@
 {
  "name": "Deutsch",
  "strings": {
+  "1 package": "1 Paket",
+  " packages": " Pakete",
+  "Starting": "Startet",
+  "Not yet": "Noch nicht",
+  "No connection": "Keine Verbindung",
+  "Didn't work": "Hat nicht geklappt",
+  " of ": " von ",
+  " found": " gefunden",
   "Display & sound": "Bild & Ton",
   "Sleep & power": "Schlaf & Energie",
   "RetroArch": "RetroArch",

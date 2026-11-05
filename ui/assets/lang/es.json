@@ -1,6 +1,14 @@
 {
  "name": "Español",
  "strings": {
+  "1 package": "1 paquete",
+  " packages": " paquetes",
+  "Starting": "Iniciando",
+  "Not yet": "Aún no",
+  "No connection": "Sin conexión",
+  "Didn't work": "No funcionó",
+  " of ": " de ",
+  " found": " encontrados",
   "Display & sound": "Pantalla y sonido",
   "Sleep & power": "Suspensión y energía",
   "RetroArch": "RetroArch",

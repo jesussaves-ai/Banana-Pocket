@@ -140,7 +140,7 @@ namespace banana
 			}
 			closedir(d);
 		}
-		v = n == 0 ? "" : n == 1 ? "1 package" : std::to_string(n) + " packages";
+		v = n == 0 ? "" : n == 1 ? tr("1 package") : std::to_string(n) + tr(" packages");
 		return v;
 	}
 
@@ -2655,10 +2655,10 @@ namespace banana
 		std::istringstream in(scrapeLine);
 		std::string state;
 		in >> state;
-		if (state == "running") { int a = 0, b = 0; in >> a >> b; return b ? std::to_string(a) + " / " + std::to_string(b) : "Starting"; }
-		if (state == "done") { int a = 0, b = 0; in >> a >> b; return std::to_string(a) + " of " + std::to_string(b) + " found"; }
-		if (state == "error") return scrapeLine.find("connection") != std::string::npos ? "No connection" : "Didn't work";
-		return "Not yet";
+		if (state == "running") { int a = 0, b = 0; in >> a >> b; return b ? std::to_string(a) + " / " + std::to_string(b) : tr("Starting"); }
+		if (state == "done") { int a = 0, b = 0; in >> a >> b; return std::to_string(a) + tr(" of ") + std::to_string(b) + tr(" found"); }
+		if (state == "error") return scrapeLine.find("connection") != std::string::npos ? tr("No connection") : tr("Didn't work");
+		return tr("Not yet");
 	}
 
 }

@@ -8,7 +8,7 @@
 #   - every en key must still appear in ui/src (reworded English would otherwise silently fall back forever);
 #   - a missing translation is coverage, not a failure (the menu falls back to English);
 #   - a catalog must have a "name" and string values, or the row and the loader would show nothing.
-import glob, json, os, sys
+import glob, json, os, re, sys
 
 def load(path):
     with open(path, encoding="utf-8") as f:
@@ -56,6 +56,12 @@ def main(argv):
         missing = [k for k in en if k not in strings]
         print("  %-3s %-10s %3d/%3d strings%s" % (code, name, len(strings), len(en),
             "" if not missing else "  (%d still English)" % len(missing)))
+    # a literal handed to tr() has to be a key, or that row can never be translated. This is the check that was
+    # missing when the update and box-art values shipped English-only: they were composed in C++ and only reached
+    # tr() as a variable, so nothing could see them. (The lookbehind keeps str("id")-style accessors out.)
+    for lit in sorted(set(re.findall(r'(?<![A-Za-z0-9_])tr\(\s*"((?:[^"\\]|\\.)*)"', src))):
+        if lit not in en:
+            errors.append("ui/src: tr(\"%s\") is not a key in en.json" % lit)
     for e in errors:
         print("FAIL " + e)
     print("check-lang: %d catalog(s), %d problem(s)" % (len(catalogs), len(errors)))
