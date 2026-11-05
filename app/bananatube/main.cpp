@@ -577,7 +577,7 @@ struct App
 		status = "Searching\u2026";
 		view = View::SEARCH;
 		channelOpen = false;
-		results.clear();
+		setResults({});
 		sel = scroll = 0;
 		std::string q = query;
 		if (searchThread.joinable()) searchThread.join();
@@ -755,7 +755,7 @@ struct App
 		view = View::CHANNELS;
 		channelOpen = false;
 		buildChannels();
-		results.clear();
+		setResults({});
 		sel = scroll = 0;
 		mode = Mode::RESULTS;	// an empty list still shows as the tab, with its own hint
 		status = channels.empty() ? "" : std::to_string(channels.size()) + " channels   A opens one";
@@ -766,25 +766,33 @@ struct App
 		view = View::CHANNELS;
 		channelOpen = true;
 		channelName = name;
-		results.clear();
-		auto add = [this, &name](const Item& it)
+		std::vector<Item> list;
+		auto add = [&list, &name](const Item& it)
 		{
 			if (it.uploader != name) return;
-			for (const Item& o : results) if (o.id == it.id) return;
-			results.push_back(it);
+			for (const Item& o : list) if (o.id == it.id) return;
+			list.push_back(it);
 		};
 		for (const Item& it : searchResults) add(it);
 		for (const Item& it : recent) add(it);
+		setResults(std::move(list));
 		sel = scroll = 0;
 		mode = Mode::RESULTS;
 		status = "Channel: " + name + "   " + std::to_string(results.size()) + " videos   B back";
 		resetThumbs();
 	}
+	// every write to the shared results goes through here: the thumbnail worker copies the vector under this lock, so
+	// an unlocked clear() or assignment could tear it under the worker (the search tab, the channels, the recent list)
+	void setResults(std::vector<Item> v)
+	{
+		std::lock_guard<std::mutex> lk(searchLock);
+		results = std::move(v);
+	}
 	void showRecent()
 	{
 		view = View::RECENT;
 		channelOpen = false;
-		results = recent;
+		setResults(recent);
 		sel = scroll = 0;
 		mode = Mode::RESULTS;	// an empty list still shows as the tab, with its own hint
 		status = "Recent   SEL " + std::to_string(quality) + "p";
@@ -794,7 +802,7 @@ struct App
 	{
 		view = View::SEARCH;
 		channelOpen = false;
-		results = searchResults;
+		setResults(searchResults);
 		sel = scroll = 0;
 		mode = results.empty() ? Mode::KEYS : Mode::RESULTS;
 		status = results.empty() ? "" : std::to_string(results.size()) + " results   SEL " + std::to_string(quality) + "p";
@@ -839,7 +847,7 @@ struct App
 		scanLocal("/data/music", localItems);
 		scanLocal("/data/videos", localItems);
 		std::sort(localItems.begin(), localItems.end(), [](const Item& a, const Item& b) { return a.title < b.title; });
-		results = localItems;
+		setResults(localItems);
 		sel = scroll = 0;
 		mode = Mode::RESULTS;	// an empty list still shows as the tab, with its own hint
 		status = localItems.empty() ? "" : std::to_string(localItems.size()) + " files on the card   A plays one";
@@ -869,10 +877,16 @@ struct App
 	}
 	void qualitySave()
 	{
-		FILE* f = fopen(CONF_FILE, "w");
+		// a temp file and a rename, like recentSave: a power cut mid-write must not leave a truncated cap behind
+		const char* tmp = CONF_FILE ".new";
+		FILE* f = fopen(tmp, "w");
 		if (!f) return;
 		fprintf(f, "# banana-tube: the playback quality cap in pixels (Select on the results cycles it)\nquality = %d\n", quality);
-		fclose(f);
+		fflush(f);
+		fsync(fileno(f));
+		bool ok = !ferror(f) && fclose(f) == 0;
+		if (ok) rename(tmp, CONF_FILE);
+		else unlink(tmp);
 	}
 	// 720 -> 480 -> 360 -> 720: the a613 holds 720 comfortably; the lower caps are for a weak link
 	void cycleQuality()
@@ -908,7 +922,21 @@ struct App
 	{
 		if (ipc < 0) return;
 		std::string msg = command + "\n";
-		if (write(ipc, msg.data(), msg.size()) < 0) {}
+		// the socket is non-blocking: a short write would leave half a JSON line in it and every reply after it would
+		// be out of step, so the rest is written -- waiting briefly for mpv to drain instead of dropping it
+		size_t off = 0;
+		while (off < msg.size())
+		{
+			ssize_t n = write(ipc, msg.data() + off, msg.size() - off);
+			if (n > 0) { off += (size_t)n; continue; }
+			if (n < 0 && errno == EINTR) continue;
+			if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+			{
+				struct pollfd p { ipc, POLLOUT, 0 };
+				if (poll(&p, 1, 200) > 0) continue;
+			}
+			return;		// mpv is gone, or is not reading: this command is over
+		}
 	}
 	// a transient on-screen indicator, drawn by mpv over the video (its window covers ours): it hides itself after
 	// `ms`, so a tap or a d-pad seek shows what it did without a control bar to hide
@@ -972,7 +1000,10 @@ struct App
 			if (!s.empty()) urls.push_back(s);
 		}
 		pclose(p);
-		return !urls.empty() && urls.size() <= 2;
+		// yt-dlp can name a third URL (a backup audio track): the player takes the first video and the first audio,
+		// so the extra lines are ignored rather than failing the whole play
+		if (urls.size() > 2) urls.resize(2);
+		return !urls.empty();
 	}
 	// mpv's replies (the time-pos asked for by sbTick), read on every pass so the socket never backs up
 	void pollIpc()
@@ -1195,6 +1226,9 @@ struct App
 		fprintf(stderr, "banana-tube: %s\n", s.c_str());
 		fflush(stderr);
 	}
+	// a tap is a routine event, and every one of them used to be a log line; they are for BANANA_TUBE_TOUCH_DEBUG now
+	void tapLog(const char* s) { if (getenv("BANANA_TUBE_TOUCH_DEBUG")) logLine(s); }
+	void tapLog(const std::string& s) { if (getenv("BANANA_TUBE_TOUCH_DEBUG")) logLine(s); }
 
 	// ---- input actions -------------------------------------------------------------------------------------------
 	void back()
@@ -1371,15 +1405,15 @@ struct App
 	// a tap (touch or pointer) at output-space (x,y): the top bar's Back / query, then the current screen's targets
 	void tapAt(int x, int y)
 	{
-		if (getenv("BANANA_TUBE_TOUCH_DEBUG")) { char b[64]; snprintf(b, sizeof b, "tap %d %d (mode %d)", x, y, (int)mode); logLine(b); }
+		if (getenv("BANANA_TUBE_TOUCH_DEBUG")) { char b[64]; snprintf(b, sizeof b, "tap %d %d (mode %d)", x, y, (int)mode); tapLog(b); }
 		int W = 0, H = 0;
 		SDL_GetRendererOutputSize(ren, &W, &H);
 		SDL_Rect backBtn = backRect(W, H);
 		SDL_Rect queryBox = queryRect(W, H);
-		if (inRect(backBtn, x, y)) { logLine("tap -> Back"); back(); return; }
+		if (inRect(backBtn, x, y)) { tapLog("tap -> Back"); back(); return; }
 		if (inRect(queryBox, x, y))
 		{
-			logLine("tap -> query box");
+			tapLog("tap -> query box");
 			if (mode != Mode::PLAYING) { view = View::SEARCH; channelOpen = false; mode = Mode::KEYS; }
 			return;
 		}
@@ -1388,7 +1422,7 @@ struct App
 				if (inRect(tabRect(W, H, i), x, y))
 				{
 					static const char* names[] = { "search", "recent", "channels", "local" };
-					logLine(std::string("tap -> tab ") + names[i]);
+					tapLog(std::string("tap -> tab ") + names[i]);
 					if (i == 0) showSearchTab(); else if (i == 1) showRecent(); else if (i == 2) showChannels(); else showLocal();
 					return;
 				}
@@ -1401,12 +1435,12 @@ struct App
 					{
 						char b[64];
 						snprintf(b, sizeof b, "tap -> key r%d c%d '%s'", r, c, keys[r][c]);
-						logLine(b);
+						tapLog(b);
 						keyRow = r; keyCol = c; activate(); return;
 					}
 			static const char* acts[] = { "Space", "Del", "Shift", "Search" };
 			for (int c = 0; c < 4; c++)
-				if (inRect(actRect(W, H, c), x, y)) { logLine(std::string("tap -> action ") + acts[c]); keyRow = ROWS; keyCol = c; activate(); return; }
+				if (inRect(actRect(W, H, c), x, y)) { tapLog(std::string("tap -> action ") + acts[c]); keyRow = ROWS; keyCol = c; activate(); return; }
 		}
 		else if (mode == Mode::RESULTS)
 		{
@@ -1427,7 +1461,7 @@ struct App
 				{
 					char b[64];
 					snprintf(b, sizeof b, "tap -> result %d (sel %d)", idx, sel);
-					logLine(b);
+					tapLog(b);
 					if (idx == sel) play(results[idx]);	// a tap on the focused row plays it
 					else sel = idx;						// a first tap just focuses
 					return;
@@ -1443,10 +1477,10 @@ struct App
 			//   right 28%       seek +10 s
 			//   the rest        play / pause
 			connectIpc();
-			if (x < W * 18 / 100 && y < H * 18 / 100) { logLine("player -> stop"); stopPlayback(); mode = Mode::RESULTS; status = "Stopped"; }
-			else if (x < W * 28 / 100) { logLine("player -> seek -10"); ipcSend("{\"command\":[\"seek\",\"-10\"]}"); seekInd("<< -10", -10); }
-			else if (x > W * 72 / 100) { logLine("player -> seek +10"); ipcSend("{\"command\":[\"seek\",\"10\"]}"); seekInd(">> +10", 10); }
-			else { logLine("player -> play/pause"); ipcSend("{\"command\":[\"cycle\",\"pause\"]}"); paused = !paused;
+			if (x < W * 18 / 100 && y < H * 18 / 100) { tapLog("player -> stop"); stopPlayback(); mode = Mode::RESULTS; status = "Stopped"; }
+			else if (x < W * 28 / 100) { tapLog("player -> seek -10"); ipcSend("{\"command\":[\"seek\",\"-10\"]}"); seekInd("<< -10", -10); }
+			else if (x > W * 72 / 100) { tapLog("player -> seek +10"); ipcSend("{\"command\":[\"seek\",\"10\"]}"); seekInd(">> +10", 10); }
+			else { tapLog("player -> play/pause"); ipcSend("{\"command\":[\"cycle\",\"pause\"]}"); paused = !paused;
 				showInd((paused ? "||  Paused" : ">  Playing") + std::string("   ") + whereTag(pos), 900); }
 		}
 	}
@@ -1550,7 +1584,8 @@ struct App
 	{
 		if (type == EV_ABS && (code == ABS_MT_POSITION_X || code == ABS_X)) { tX = value; tXse = true; return false; }
 		if (type == EV_ABS && (code == ABS_MT_POSITION_Y || code == ABS_Y)) { tY = value; tYse = true; return false; }
-		if (type == EV_ABS && code == ABS_MT_TRACKING_ID) { if (value < 0) tDown = false; return false; }
+		// a finger: some panels report only the tracking id (a lift is the negative one), so both set the state
+		if (type == EV_ABS && code == ABS_MT_TRACKING_ID) { tDown = value >= 0; return false; }
 		if (type == EV_KEY && code == BTN_TOUCH) { tDown = value != 0; return false; }
 		if (type != EV_SYN || code != SYN_REPORT) return false;
 		if (tDown)
@@ -1589,7 +1624,7 @@ struct App
 				{
 					char b[96];
 					snprintf(b, sizeof b, "tap raw %d,%d -> %d,%d (surface %dx%d rot %d)", tDownX, tDownY, x, y, W, H, panelRot);
-					logLine(b);
+					tapLog(b);
 					// the PLAYING case drives mpv over IPC (there is no OSC); elsewhere it is the app's own UI
 					markDirty();
 					tapAt(x, y);
@@ -1684,7 +1719,7 @@ struct App
 						}
 						else page(-1);
 						break;
-					case SDL_CONTROLLER_BUTTON_Y: if (mode == Mode::RESULTS) { view = View::SEARCH; channelOpen = false; results = searchResults; mode = Mode::KEYS; status = ""; } else if (mode == Mode::KEYS) startSearch(); else if (mode == Mode::PLAYING) reloadQuality(); break;
+					case SDL_CONTROLLER_BUTTON_Y: if (mode == Mode::RESULTS) { view = View::SEARCH; channelOpen = false; setResults(searchResults); mode = Mode::KEYS; status = ""; } else if (mode == Mode::KEYS) startSearch(); else if (mode == Mode::PLAYING) reloadQuality(); break;
 					case SDL_CONTROLLER_BUTTON_START:
 						if (mode == Mode::PLAYING) { connectIpc(); ipcSend("{\"command\":[\"cycle\",\"fullscreen\"]}"); }
 						else startSearch();
