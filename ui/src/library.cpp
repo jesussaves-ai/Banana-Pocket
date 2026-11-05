@@ -138,6 +138,9 @@ namespace banana
 		};
 		while ((at = x.find("<game", at)) != std::string::npos)
 		{
+			// "<gameList>" is the document's root, not a game: an element name ends at '>' or whitespace
+			char after = at + 5 < x.size() ? x[at + 5] : '\0';
+			if (after != '>' && after != ' ' && after != '\t' && after != '\n' && after != '\r') { at += 5; continue; }
 			size_t end = x.find("</game>", at);
 			if (end == std::string::npos) break;
 			std::string b = x.substr(at, end - at);
@@ -1177,11 +1180,11 @@ namespace banana
 		return lib < (int)shelves.size() && shelves[lib].favorites ? "Nothing here yet" : "No games yet";
 	}
 
-	// the bottom bar's hints for Banana's own buttons: SELECT searches (main.cpp), X on a DS game picks its emulator
+	// the bottom bar's hints for Banana's own buttons: SELECT searches (main.cpp), X on a game opens its options
 	std::vector<std::pair<std::string, std::string>> Library::hints(bool library, int /*sys*/, int game)
 	{
 		std::vector<std::pair<std::string, std::string>> r;
-		if (library && game >= 0 && game < gameCount() && systemOf(game).id == "nds") r.push_back({ "X", "Options" });	// (the game page: its emulator and shader)
+		if (library && game >= 0 && game < gameCount()) r.push_back({ "X", "Options" });	// the game page: its emulator and shader
 		r.push_back({ "SELECT", "Search" });
 		return r;
 	}

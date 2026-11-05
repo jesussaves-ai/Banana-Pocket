@@ -1842,7 +1842,10 @@ int main(int argc, char** argv)
 		bool rescanCan;
 		{
 			std::lock_guard<std::mutex> l(worker.uiLock);
-			rescanCan = roms.due > 0 && !settingsView.isOpen() && ui->view() == rnds::UI::HOME;	// else the next press brings it
+			// the two views the rescan above covers: in the library the menu would otherwise sit in poll() until an
+			// unrelated key, so a ROM copied in while it is open would not appear on its own
+			rescanCan = roms.due > 0 && !settingsView.isOpen() &&
+				(ui->view() == rnds::UI::HOME || ui->view() == rnds::UI::LIBRARY);
 		}
 		if (rescanCan)
 		{

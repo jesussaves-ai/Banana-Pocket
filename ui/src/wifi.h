@@ -59,7 +59,7 @@ namespace banana
 		private:
 			std::thread th;
 			std::atomic<bool> done{ false };
-			bool active = false;
+			std::atomic<bool> active{ false };
 			std::mutex m;
 			std::string result;
 		};
