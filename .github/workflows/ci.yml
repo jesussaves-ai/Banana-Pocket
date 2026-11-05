@@ -38,14 +38,13 @@ jobs:
         run: sudo system/bananad/tests/sleep-test.sh
       - name: Shell scripts parse
         run: |
-          # /usr/bin and the sleep.d hooks hold only scripts; usr/libexec/banana holds data too, so it is *.sh there
-          for f in system/rootfs/etc/init.d/* system/rootfs/usr/bin/* system/rootfs/usr/libexec/banana/*.sh \
+          # parse by shebang: usr/libexec/banana holds the extension-less helpers plus any data, and only the
+          # scripts are ours to check
+          for f in system/rootfs/etc/init.d/* system/rootfs/usr/bin/* system/rootfs/usr/libexec/banana/* \
                    system/rootfs/etc/banana/sleep.d/* system/tests/*.sh system/bananad/tests/*.sh \
                    buildroot/board/retroid-pocket-classic/*.sh tools/*.sh; do
-            sh -n "$f" || exit 1
-          done
-          # not .sh: the helpers there have no extension, so parse them by name
-          for f in system/rootfs/usr/libexec/banana/update system/rootfs/usr/libexec/banana/update-check; do
+            [ -f "$f" ] || continue
+            head -c 2 "$f" 2>/dev/null | grep -q '#!' || continue
             sh -n "$f" || exit 1
           done
       - name: Buildroot defconfigs keep every option

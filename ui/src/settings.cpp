@@ -2656,7 +2656,7 @@ namespace banana
 		std::string state;
 		in >> state;
 		if (state == "running") { int a = 0, b = 0; in >> a >> b; return b ? std::to_string(a) + " / " + std::to_string(b) : tr("Starting"); }
-		if (state == "done") { int a = 0, b = 0; in >> a >> b; return std::to_string(a) + tr(" of ") + std::to_string(b) + tr(" found"); }
+		if (state == "done") { int a = 0, b = 0; in >> a >> b; return std::to_string(a) + tr(" of ") + std::to_string(b) + tr(b == 1 ? " found" : " found (plural)"); }
 		if (state == "error") return scrapeLine.find("connection") != std::string::npos ? tr("No connection") : tr("Didn't work");
 		return tr("Not yet");
 	}

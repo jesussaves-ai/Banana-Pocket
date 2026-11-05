@@ -253,8 +253,9 @@ static void hooks_run(const char *when)
  * the file was written: a reused pid always did. The process's age comes from /proc/uptime (monotonic); the file's is
  * a wall-clock difference, which a step of the clock (ntpd at Wi-Fi, hwclock) inflates -- and an inflated age reads
  * as a reused pid, so a running game would look gone. A pidfile cannot be older than the boot, so a file age beyond
- * the uptime means the clock moved, not the file: it is ignored. The 3 s slack covers the write/exec gap and the
- * file's coarse timestamp. */
+ * the uptime means the clock moved, not the file: it is read as "written at boot", which still refuses a process
+ * that began well after it. (Reading it as zero would let a stale file whose pid was reused pass for the whole
+ * boot.) The 3 s slack covers the write/exec gap and the file's coarse timestamp. */
 static unsigned long long proc_start_ticks(int pid)
 {
 	char path[64], buf[512];
@@ -287,7 +288,7 @@ static pid_t pid_of(const char *pidfile)
 		if (sscanf(b, "%lf", &up) != 1) up = 0;
 		double age = up - (double)start / (double)hz;	/* how long the process has run, seconds */
 		double file = (double)time(NULL) - (double)st.st_mtime;	/* how long ago the file was written */
-		if (up > 0 && file > up + 5.0) file = 0;	/* older than the boot: the clock stepped, so it says nothing */
+		if (up > 0 && file > up + 5.0) file = up;	/* older than the boot: the clock stepped, so it says nothing */
 		if (up > 0 && age < file - 3.0) return 0;	/* it began after the file named it: a reused pid */
 	}
 	return p;

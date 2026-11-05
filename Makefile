@@ -139,6 +139,8 @@ agent-check:
 	@for f in system/rootfs/etc/init.d/* system/rootfs/usr/bin/* system/rootfs/usr/libexec/banana/* \
 	          system/rootfs/etc/banana/sleep.d/* system/tests/*.sh system/bananad/tests/*.sh \
 	          buildroot/board/retroid-pocket-classic/*.sh tools/*.sh; do \
+	    [ -f "$$f" ] || continue; \
+	    head -c 2 "$$f" 2>/dev/null | grep -q '#!' || continue; \
 	    sh -n "$$f" || { echo "FAIL sh -n $$f"; exit 1; }; done; echo "sh: OK"
 	@$(MAKE) -s -C ui host >/dev/null 2>/tmp/agent-ui.log || { echo "FAIL ui build"; tail -n 5 /tmp/agent-ui.log; exit 1; }; echo "ui: OK"
 	@if [ -f /usr/include/alsa/asoundlib.h ]; then \
