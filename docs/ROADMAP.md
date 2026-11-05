@@ -9,13 +9,9 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
    character (10/26-hex) key on the same keyboard and is written as `key_mgmt=NONE` + `wep_key0`. What is left:
    802.1X needs an identity/certificate screen, static IP needs address fields, hotspot needs hostapd (not in the
    image -- I would drop it).
-2. **On-device self-test** (`tools/rpc-selftest.sh`): one script that walks the `docs/RPC-TEST.md` checklist on the
-   unit -- panel/rotation, touch axes, every button, the audio route (speaker + jack), a Wi-Fi join, adb over the
-   cable, a suspend/resume -- and prints a pass/fail table with a log tail. Turns the hardware checklist into a
-   repeatable gate instead of a manual read.
-3. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a
+2. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a
    bespoke path (no BlueZ/DBus in the stack).
-4. **Store / app catalog** (the Apps shelf only scans local folders).
+3. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## In progress
 
@@ -80,8 +76,8 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 - **Play next queue.** Queue a few results with a long A press or SELECT, show "up next" in the player OSD, and start
   the next one when the current video ends; a single toggle keeps autoplay from draining the battery unasked.
 - **Field diagnostics bundle.** One Settings button that packs the logs, the sound-server log, `dmesg` tail and
-  `settings.conf` (with secrets stripped) into `/data/banana/backups` for a bug report. Complements the on-device
-  self-test in item 8.
+  `settings.conf` (with secrets stripped) into `/data/banana/backups` for a bug report. Complements `make sound-test`
+  and the `tools/rpc-*.sh` probes.
 - **Offline update cache.** Keep the last good update package on the card until the new slot boots once, so a failed
   update can be reapplied without Wi-Fi.
 
@@ -121,6 +117,15 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **The on-device self-test: dropped, the pieces already exist (2026-11-05).** A `tools/rpc-selftest.sh` that
+  walks the `docs/RPC-TEST.md` checklist was going to be the next thing built; looking at the checklist against what
+  is already in the tree, it would be mostly a driver around existing parts, so it is closed instead. The audio route
+  end to end is `make sound-test` (14 checks: server, ALSA default, sink, AW88166 gain, the AudioReach graph, a real
+  client, the menu handover); `tools/rpc-thermals.sh`, `rpc-usb-trace.sh`, `rpc-hang-watch.sh`, `rpc-gpu-probe*` and
+  `rpc-screen.sh` cover heat/fan, the USB gadget across a plug, a hang and a frame; and the remaining boxes (version
+  and slot, panel size and rotation from banana-ui's log, Wi-Fi state, UDC state, `/data` free space, the update
+  packages on the card) read straight off the unit with one ssh. `docs/RPC-TEST.md` stays the human checklist -- the
+  parts a script cannot judge (does a game run, does a save survive a reboot) are the parts that need eyes anyway.
 - [x] **BananaTube: the Pocket shell, the player OSD and a near-free idle (0.5.9).** Three tracks in one release.
   **Pocket shell:** the client wears the OS's own theme -- `#17140d` ground, butter ink and olive metadata, banana-gold
   focus, Pixelify Sans (Medium titles/wordmark, Regular body, Inter fallback), a crisp framed screen with the dot grid,
