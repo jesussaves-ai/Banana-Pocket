@@ -24,21 +24,18 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   `96% -> 94% (105 mAh in 2.8 h, 37 mA)` in `deep` — about **140 mW**, where an Android-class standby is 5–20 mW. The
   spurious wakes (3–5 a night, the SD host's IRQ, no key or cable) cost well under 1 mAh together, so this is a steady
   state, not wake churn; the 99→75 in the field notes was the 2026-11-02 hang (100→74 in 15 h).
-  - **Running:** test 1 — the sound server (PipeWire/WirePlumber) is stopped before sleeping, to see whether the
-    AudioReach graph (pinned `session.suspend-timeout-seconds = 0`) keeps the ADSP awake. Read: the next
-    `battery … (mAh in H h, mA)` line against the 37–42 mA baseline.
-  - **Queued, one variable per sleep:** (2) unbind `ath10k_snoc`/WPSS instead of only downing the supplicant;
-    (3) stop the USB gadget/PHY; (4) a `s2idle` sleep for comparison, to know what `deep` is worth. If none moves it,
-    the floor is the platform's S2R depth (firmware) and the remaining wins are on the wake side.
-  - **Audio at sleep (measured win, hook in):** stopping the sound server around the sleep costs 8-13 mA of the
-    drain (37-42 → 29 mA) because the keep-alive keeps the AudioReach graph instantiated. `sleep.d/20-sound` stops it in
-    `pre` and starts it in the background in `post`; the next overnight sleep measures the result, with `make sound-test`
-    after the wake to prove the chain comes back.
+  - **Done — test 1, the sound server (measured win).** The overnight sleep with `sleep.d/20-sound` (stop
+    PipeWire/WirePlumber in `pre`, restart in the background in `post`) held **25–29 mA**, against the 37–42 mA
+    baseline: 3.3 h at 29 mA, 8.0 h at **26 mA** (206 mAh), 2.0 h at 27 mA. The AudioReach graph pinned by
+    `session.suspend-timeout-seconds = 0` was keeping the ADSP awake. `make sound-test` after the wake: all 14 checks
+    pass (DSP graph RUNNING, amp at 81 %), so the chain comes back on its own.
+  - **Queued, one variable per sleep:** (2) stop the USB gadget/PHY; (3) a `s2idle` sleep for comparison, to know what
+    `deep` is worth. If none moves it, the floor is the platform's S2R depth (firmware) and the remaining wins are on
+    the wake side. (Unbinding `ath10k_snoc`/WPSS was tried and rejected: 69 mA over 0.4 h, no win.)
   - **Wake side:** 57–60 ms from the kernel's resume to a drawn menu; the kernel's own resume is ~1.05 s; Wi-Fi coming
     back is the slow part (the post hook reconnects in the background). Measure it, then consider keeping the link
     associated across suspend (`sleep.d/10-wifi` currently always downs it) — "works instantly" is mostly this.
-  - The meter is **bind-mounted on the unit's current boot**, not in the 0.5.5 image: do not reboot until the tests
-    finish.
+  - The meter (`battery_charge_uah`, the awake line) is in the 0.5.8 image.
 
 - **BananaTube player OSD (Track B1 + Y quality, implemented, pending the unit).** While a video plays the app is
   hidden behind mpv, so the player now uses mpv's text OSD for everything: position (`03:21 / 12:04` over a 12-cell
