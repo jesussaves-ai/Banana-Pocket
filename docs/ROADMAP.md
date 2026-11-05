@@ -38,7 +38,9 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   - **Wake side:** 57–60 ms from the kernel's resume to a drawn menu; the kernel's own resume is ~1.05 s; Wi-Fi coming
     back is the slow part (the post hook reconnects in the background). Measure it, then consider keeping the link
     associated across suspend (`sleep.d/10-wifi` currently always downs it) — "works instantly" is mostly this.
-  - The meter (`battery_charge_uah`, the awake line) is in the image (0.5.8+); the unit runs **0.5.9, slot b**.
+  - The meter (`battery_charge_uah`, the awake line) is in the image (0.5.8+); the `30-usb` hook now ships in the
+    image (0.5.10), so the unit's bind-mounted copy goes away with the update. The unit runs **0.5.9, slot b**;
+    0.5.10 is published and waiting in Settings > System > Check for updates.
 
 - **BananaTube: what is left of the YouTube work.** A1 (idle frames), A2 (cards, keyboard, thumbnail bound), B1 (player
   OSD + Y quality) and the Pocket shell all shipped in 0.5.9. Left: **captions** (Track B3 -- yt-dlp's subtitle path
@@ -50,7 +52,7 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   `tr()` in `ui/src/i18n.cpp` falls back to English, catalogs are JSON in `/usr/share/banana/lang/<code>.json` with a
   `/data/banana/lang/` override on the card (like a theme), and Settings > Display & sound gains a **Language** row
   (English / Español / Deutsch) that switches at once. The whole main Settings list is translated — group names, row
-  names, help strip, values, buttons, the toasts whose text is catalogued — 121 strings per language, informal
+  names, help strip, values, buttons, the toasts whose text is catalogued — 130 strings per language, informal
   (tú/du). `tools/check-lang.py` runs in `make test` (stale or misspelled keys fail, coverage is printed) and the
   headless menu test loads the German catalog. Next: the Settings sub-pages, the menu chrome, system/app names,
   date/time formats, then another language or two.
@@ -102,6 +104,9 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
 - **Update packages pile up:** `/data/banana/updates` held 31 packages, 6.9 GB on 2026-11-03 -- nothing prunes them.
   Proposed: after a successful boot into the new slot, keep the two newest and delete the rest (the one just applied is
   no longer needed once its slot booted).
+- **`rcK` transfer mode wants one real card handover (0.5.10).** The shutdown path that leaves the card to a computer
+  (`usb-msc.mode = rw`, `/data` unmounted) is reasoned from code and the sleep tests; the refused-handover branch is the
+  one to try on hardware with a real card before trusting it.
 
 ## Maintenance
 - **Agent DX:** `make agent-check` (quiet syntax + host compile + the fast suite, 4 lines on success) and `make agent-map` (regenerates the source map) were added 0.5.x; keep the `AGENTS.md` Source Map fresh when core files move.
@@ -121,7 +126,7 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
-- [x] **The hardening sweep (2026-11-05).** A full read of the tree for bugs, dead weight and doc drift, then one
+- [x] **The hardening sweep (0.5.10, 2026-11-05).** A full read of the tree for bugs, dead weight and doc drift, then one
   pass over all of it. **Daemon:** `update`, `update-check` and `backup` write `/run/banana/awake.pid`, so a 200 MB
   slot write, a release download or a whole-card tar can no longer be idle-suspended; `rcK` runs `usb-msc off` so a
   card handed to a computer comes back before shutdown unmounts it; the wake reason distinguishes a real cable plug
@@ -137,15 +142,18 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
   non-blocking socket. **UI:** X offers a game's options for every system (it worked, only NDS advertised it),
   `readGamelist` no longer matches the root `<gameList>`, the library rescans a newly copied ROM without waiting for
   a keypress, and `wifi::Job`'s `active` is atomic. **i18n:** the update and box-art row values are catalog keys
-  (es/de 129/129) and `tools/check-lang.py` now fails on a literal passed to `tr()` that is not a key -- the rule
+  (es/de 130/130) and `tools/check-lang.py` now fails on a literal passed to `tr()` that is not a key -- the rule
   that was missing when they shipped English-only. **Dead weight:** `etc/fstab`, `accounts.conf.example`,
   `tools/make-console.py`, `tools/qemu-e2e.sh`, `docs/img/readme/`, `docs/img/boot-animation.gif` and the stray
   `bgm.wav` are gone; `autosleep_minutes` ships 0 (the slate default), `sleep_debug` is commented out as card-only.
   **CI:** a core's own patch triggers the cores job, the `sh -n` glob no longer trips on a non-shell file, and
   `make test` builds bananad. ~20 docs corrected to the code (the mono amp, SwanStation at 4x, the lease/blend/test
-  list/volume law, the Makefile inputs, BANANATUBE's touch.conf and harness). Deferred, with the reasoning in
-  `docs/superpowers/specs/2026-11-05-hardening-sweep-design.md`: the second canvas and the bottom-screen path are the
-  headless dual-mode renderer's tested path, not dead code.
+  list/volume law, the Makefile inputs, BANANATUBE's touch.conf and harness). **Review:** a whole-branch read before the
+  tag found one critical (the first `rcK` fix could remount `/data` while a computer was still writing it) and four
+  important (a double `wifi down`, an untranslatable count phrase, a `pid_of` clamp that disabled the reuse guard, and
+  an `sh -n` glob that parsed 2 of 22 helpers); all are fixed in the last commit. Released as **0.5.10**. Deferred,
+  with the reasoning in `docs/superpowers/specs/2026-11-05-hardening-sweep-design.md`: the second canvas and the
+  bottom-screen path are the headless dual-mode renderer's tested path, not dead code.
 - [x] **The on-device self-test: dropped, the pieces already exist (2026-11-05).** A `tools/rpc-selftest.sh` that
   walks the `docs/RPC-TEST.md` checklist was going to be the next thing built; looking at the checklist against what
   is already in the tree, it would be mostly a driver around existing parts, so it is closed instead. The audio route
