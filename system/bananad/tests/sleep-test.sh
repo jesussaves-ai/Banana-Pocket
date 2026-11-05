@@ -48,6 +48,36 @@ for b in backlight0 backlight1; do mkdir -p /sys/class/backlight/$b; echo 255 > 
 mkfifo /sys/power/state /dev/input/event0
 exec 3<>/dev/input/event0       # a writer that stays, so bananad's poll doesn't see a hang-up
 
+# the sleep.d hooks' world. In the image /usr/libexec/banana holds the helpers they call; on this host it does not,
+# so every hook would take its "[ -x ... ] || exit 0" guard and no-op -- which is what let a broken hook ship. The
+# three the hooks use are stand-ins that record what they were asked, so the hooks themselves are what is tested.
+# 10-wifi also needs an interface and a wpa pid, 30-usb a bound UDC.
+# the path has to exist to be a mount point, and /usr is read-only here: cover /usr with a private tmpfs and bind the
+# host's own bin/lib back in (python3 and the shell keep working). A host that has /usr/libexec (Debian/Ubuntu, CI)
+# skips this.
+if [ ! -d /usr/libexec ]; then
+    # /usr is read-only and has no libexec: build the tree in /run (writable), bind the host's own bin/lib into it,
+    # then bind that over /usr -- the mount points exist before /usr is covered, so nothing is lost
+    mkdir -p /run/newusr/libexec/banana
+    for b in bin lib lib64 sbin; do
+        if [ -d /usr/$b ]; then mkdir -p /run/newusr/$b; mount --bind /usr/$b /run/newusr/$b; fi
+    done
+    mount --rbind /run/newusr /usr      # rbind: a plain bind would not carry the bin/lib mounts above
+fi
+mkdir -p /usr/libexec/banana
+for h in wifi sound-server usb-gadget; do
+    {
+        echo '#!/bin/sh'
+        echo 'printf "%s%s\n" "$(basename "$0")" "${1:+ $*}" >> /run/test/hook-calls'
+    } > /usr/libexec/banana/$h
+    chmod +x /usr/libexec/banana/$h
+done
+mkdir -p /sys/class/net/wlan0
+: > /run/banana/wpa.pid
+mount -t tmpfs none /sys/kernel
+mkdir -p /sys/kernel/config/usb_gadget/banana
+echo a600000.usb > /sys/kernel/config/usb_gadget/banana/UDC
+
 pass=0 fail=0
 ok() { pass=$((pass + 1)); echo "  ok: $*"; }
 bad() { fail=$((fail + 1)); echo "  FAIL: $*"; }
@@ -94,6 +124,20 @@ wake
 rm -f /run/banana/game.pid; sleep 0.1
 grep -q 'awake (power button)' /data/banana/logs/sleep.log && ok "sleep.log: $(tail -n1 /data/banana/logs/sleep.log | cut -c21-)" || bad "no wake in sleep.log"
 grep -q 'battery 50% -> 50%' /data/banana/logs/sleep.log && ok "the sleep's battery cost is in sleep.log" || bad "no battery change in sleep.log"
+stop
+
+echo "1b. the sleep.d hooks run around the sleep (the daemon's handover to Wi-Fi, sound and USB)"
+rm -f /run/test/hook-calls
+start
+power
+asleep && ok "suspended for the hook check" || bad "no suspend for the hook check"
+wake
+sleep 0.8                       # the post hooks are backgrounded
+pre=$(grep -E '^(wifi|sound-server|usb-gadget) down$' /run/test/hook-calls 2>/dev/null | tr '\n' ' ')
+[ "$pre" = "wifi down sound-server down usb-gadget down " ] && ok "the pre hooks ran, in name order" || bad "pre hooks: '${pre:-none}'"
+grep -qx 'wifi up' /run/test/hook-calls 2>/dev/null && ok "the post hook brought Wi-Fi back" || bad "no wifi up"
+grep -qx 'sound-server up' /run/test/hook-calls 2>/dev/null && ok "the post hook brought the sound server back" || bad "no sound-server up"
+grep -qx 'usb-gadget' /run/test/hook-calls 2>/dev/null && ok "the post hook bound the USB gadget again" || bad "no usb-gadget re-bind"
 stop
 
 echo "2. the battery guard: an RTC wake with the battery nearly empty shuts down cleanly"
