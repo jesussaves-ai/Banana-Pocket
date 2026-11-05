@@ -1,0 +1,26 @@
+#!/bin/sh
+# The USB gadget goes down for a sleep. While a cable is in the port it is a USB device (NCM network + adb), and a
+# bound UDC keeps the controller and its PHY clocks alive through suspend; unbinding it for the sleep is the second
+# variable of the drain study (test 1, the sound server, held 25-29 mA against the 37-42 mA baseline). Charging does
+# not need the gadget -- VBUS is the PMIC's -- and a cable plugged in while asleep still wakes the SoC (the charger's
+# own IRQ), so the port comes back on its own. A marker in /run/banana remembers that *this* hook took it down, so a
+# port already in host mode (an OTG adapter with a device in it) is left alone; /run is tmpfs, so the marker is gone
+# after a reboot.
+#
+# The post hooks are run in the background (bananad), and usb-gadget is idempotent, so the link catches up invisibly.
+# Named 30- so it runs after 20-sound and before 90-timing (the hooks run in name order).
+[ -x /usr/libexec/banana/usb-gadget ] || exit 0
+G=/sys/kernel/config/usb_gadget/banana
+case $1 in
+pre)
+    [ -n "$(cat $G/UDC 2>/dev/null)" ] || exit 0	# nothing bound (host mode, or no UDC): nothing to take down
+    : > /run/banana/usb-was-up
+    /usr/libexec/banana/usb-gadget down
+    ;;
+post)
+    [ -f /run/banana/usb-was-up ] || exit 0
+    rm -f /run/banana/usb-was-up
+    /usr/libexec/banana/usb-gadget
+    ;;
+esac
+exit 0
