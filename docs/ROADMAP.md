@@ -38,29 +38,14 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
   - **Wake side:** 57–60 ms from the kernel's resume to a drawn menu; the kernel's own resume is ~1.05 s; Wi-Fi coming
     back is the slow part (the post hook reconnects in the background). Measure it, then consider keeping the link
     associated across suspend (`sleep.d/10-wifi` currently always downs it) — "works instantly" is mostly this.
-  - The meter (`battery_charge_uah`, the awake line) is in the 0.5.8 image.
+  - The meter (`battery_charge_uah`, the awake line) is in the image (0.5.8+); the unit runs **0.5.9, slot b**.
 
-- **BananaTube player OSD (Track B1 + Y quality, implemented, pending the unit).** While a video plays the app is
-  hidden behind mpv, so the player now uses mpv's text OSD for everything: position (`03:21 / 12:04` over a 12-cell
-  bar) on seek/pause/SELECT, a throttled `Buffering N%` from `paused-for-cache`/`cache-buffering-state`, a start card
-  with the title, cap and the whole pad map, and **Y** cycles the quality cap (stop → re-resolve → replay at the same
-  position, ~2 s). Design: `docs/superpowers/specs/2026-11-04-bananatube-player-osd-design.md`; plan:
-  `docs/superpowers/plans/2026-11-04-bananatube-player-osd.md`. Selftests: bar (start/middle/end/dur 0) and the quality
-  cycle (24 checks).
-- **BananaTube idle frames (Track A1, approved).** The app redraws the whole window every 8 ms and renders a fresh TTF
-  texture for every visible string, even with nothing happening. A `dirty` flag gates drawing (none at all while mpv
-  owns the screen), a bounded text-texture cache ends the per-frame allocation, and the thumbnail worker wakes the loop
-  when a picture lands. Design: `docs/superpowers/specs/2026-11-04-bananatube-idle-frames-design.md`; plan:
-  `docs/superpowers/plans/2026-11-04-bananatube-idle-frames.md`. Track A2's cards, focus and keyboard are in (the Pocket
-  shell below). Tracks B/C: player OSD done, continuity later.
-- **BananaTube Pocket shell (visual rehaul, done in 0.5.9).** The client wears the OS's own Pocket
-  theme: the `#17140d` brown-black ground, butter ink and olive metadata, banana-gold focus, Pixelify Sans, a crisp
-  framed screen with the dot grid, a top strip with the banana mark and the *BananaTube* wordmark, four Pocket cards,
-  a keyboard that fills the frame (abc/ABC Shift, gold Search), and button-chip hints. The player's mpv OSD takes the
-  same palette and face; the app tile is gold. Design: `docs/superpowers/specs/2026-11-04-bananatube-pocket-shell-design.md`;
-  plan: `docs/superpowers/plans/2026-11-04-bananatube-pocket-shell.md`. Host renders at a true 1240x1080 (43/32 px
-  Pixelify) verified the keyboard, results and empty states; the headless QEMU image cannot start cage/SDL (no EGL on
-  its virtio GPU), so the panel pass is on the unit. Idle CPU stays 0.2 % of a core (4 ticks/20 s).
+- **BananaTube: what is left of the YouTube work.** A1 (idle frames), A2 (cards, keyboard, thumbnail bound), B1 (player
+  OSD + Y quality) and the Pocket shell all shipped in 0.5.9. Left: **captions** (Track B3 -- yt-dlp's subtitle path
+  into mpv's `--sub-file`, no new dependency) and the three unscheduled Ideas below -- a **Subscriptions** tab from the
+  channels' saved `browseId`s (no account), an **offline shelf** (a yt-dlp download queue with progress and a local mpv
+  path) and a **play-next queue** in the player OSD. Designs/plans: `docs/superpowers/specs/2026-11-04-bananatube-*`
+  and `docs/superpowers/plans/2026-11-04-bananatube-*`.
 - **Languages: Spanish and German, Settings screen first.** The pipeline is in: the English string is the key,
   `tr()` in `ui/src/i18n.cpp` falls back to English, catalogs are JSON in `/usr/share/banana/lang/<code>.json` with a
   `/data/banana/lang/` override on the card (like a theme), and Settings > Display & sound gains a **Language** row
@@ -136,6 +121,27 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **BananaTube: the Pocket shell, the player OSD and a near-free idle (0.5.9).** Three tracks in one release.
+  **Pocket shell:** the client wears the OS's own theme -- `#17140d` ground, butter ink and olive metadata, banana-gold
+  focus, Pixelify Sans (Medium titles/wordmark, Regular body, Inter fallback), a crisp framed screen with the dot grid,
+  a brand strip with the banana mark and the *BananaTube* wordmark, four Pocket cards per page (duration chip on the
+  thumbnail, gold resume chip), a keyboard that fills the frame (Shift shows `abc`/`ABC`, Search gets a gold ring while
+  the query is non-empty), and button-chip hints; the mpv OSD takes the same palette and face and the app tile is gold.
+  **Player OSD (B1 + Y):** while a video plays the app draws nothing (mpv owns the screen), so every cue is mpv text --
+  `03:21 / 12:04` over a 12-cell bar on seek/pause/SELECT, a throttled `Buffering N%` from
+  `paused-for-cache`/`cache-buffering-state` (polled twice a second, 10 % buckets), a start card with the title, the cap
+  and the whole pad map, and **Y** cycles the quality cap (stop → re-resolve → replay from the same position, ~2 s,
+  announced). The pad had been dead in the player: SDL2 drops joystick events while the app is unfocused and mpv's
+  window has the focus, so `SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is what made A/B/d-pad/L/R/L2/R2/Y/SELECT/START
+  work there; OSD font 90 → 40 px, four tabs that no longer run under the quality badge, L/R switch tabs, L2/R2 page
+  the list, SELECT cycles the quality cap everywhere. **Idle (A1/A2):** a `dirty` flag gates drawing (nothing at all
+  while mpv owns the screen), a bounded 256-entry text-texture cache ends the per-frame TTF allocation, the thumbnail
+  worker wakes the loop when a picture lands, and the thumbnail texture map is pruned to the visible page ±1 -- idle
+  CPU **65 % → 0.2 % of a core** (654 → 2 ticks/10 s; 3–4 ticks/20 s on the unit). Selftests: cache, local, thumbs,
+  bar/quality cycle, layout at 1080 and 768, textfit (`run-banana-tube`, 27 checks). Verified on the unit at 0.5.9
+  (`surface 1240x1080`, pad opened) and by host renders at a true 1240x1080; the headless QEMU image cannot start
+  cage/SDL (no EGL on its virtio GPU), so the panel pass is the unit. Known minor: emoji in YouTube titles are tofu.
+  Designs/plans: `docs/superpowers/specs/2026-11-04-bananatube-*`, `docs/superpowers/plans/2026-11-04-bananatube-*`.
 - [x] **Resume the last game at boot (0.5.8).** A clean shutdown while a game runs boots back into it (Quick resume
   loads the state); a shutdown in the menu boots the menu. The menu writes `/run/banana/game.path` at launch, `bananad`
   keeps it in `banana/resume` at shutdown, and the next menu start feeds the existing `/run/banana/launch` hook. The
