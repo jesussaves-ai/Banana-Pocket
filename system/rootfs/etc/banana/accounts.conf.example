@@ -1,5 +1,0 @@
-# The RetroAchievements account from the first-time setup (Settings > System > First-time setup): name and password,
-# one each line. RetroArch unlocks achievements with it; the password and the token RetroArch gets with it are handed
-# over in /run (never in retroarch.cfg, which file sharing shows).
-ra_user=
-ra_password=

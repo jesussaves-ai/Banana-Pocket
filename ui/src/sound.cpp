@@ -87,7 +87,7 @@ namespace banana
 	// stereo too, so a cue and the ambient loop can always share one stream.
 	static void to48k(std::vector<int16_t>& pcm, int& rate, int& channels)
 	{
-		if (rate == 48000) return;	// (channels are fixed up by loadWav below)
+		if (rate == 48000) return;	// (channels are fixed up by toStereo below)
 		if (channels < 1 || pcm.size() / channels < 2) return;
 		size_t frames = pcm.size() / channels, n = (size_t)((double)frames * 48000 / rate);
 		std::vector<int16_t> out(n * channels);

@@ -20,8 +20,8 @@ mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/nul
 # seat makes the kernel's VT switch on suspend wait for a VT that does not exist while bananad has the app's process
 # group SIGSTOPped (run-retroarch's note, the same seat).
 export SEATD_VTBOUND=0
-# SDL2 under cage draws through the Wayland video driver; audio stays ALSA "default" (bananad's asound.conf). There
-# is no PulseAudio/PipeWire here.
+# SDL2 under cage draws through the Wayland video driver; audio stays ALSA "default", which is PipeWire through
+# /run/banana/asound.conf (there is no PulseAudio).
 : "${SDL_VIDEODRIVER:=wayland}"; export SDL_VIDEODRIVER
 : "${SDL_AUDIODRIVER:=alsa}"; export SDL_AUDIODRIVER
 # The RPC's pad, mapped for SDL: one file, shared with run-port (Nintendo order: A is the east button, as banana-ui's

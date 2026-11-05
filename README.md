@@ -45,7 +45,7 @@ and virtio (so it can run in QEMU).
 
 ## 🎮 What it plays
 
-Twenty-two shelves, each with the emulator it needs already in the image — nothing to download, nowhere to sign in.
+Twenty-one shelves, each with the emulator it needs already in the image — nothing to download, nowhere to sign in.
 
 | | |
 |---|---|

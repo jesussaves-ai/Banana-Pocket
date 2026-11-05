@@ -15,7 +15,7 @@
 #
 # ui/ and system/bananad/ are Buildroot 'local' packages (built from this tree). Buildroot does not notice a source
 # change in them, so a plain `make retroid-pocket-classic` after editing them ships the old binary. The board
-# target below rebuilds them when any source in ui/src, ui/rnds or system/bananad is newer than the built binary,
+# target below rebuilds them when any source in ui/src, ui/rnds, ui/assets, system/bananad or app/bananatube is newer than the built binary,
 # so a source edit is never shipped in the old binary. `make local-rebuild` does the same by hand.
 BUILDROOT_VERSION = 2026.02.3
 BUILDROOT_DIR ?= $(CURDIR)/.buildroot
@@ -112,7 +112,7 @@ bench: ui
 local-rebuild:
 	$(MAKE) -C $(OUT)/retroid-pocket-classic $(LOCAL_PKGS)
 
-# the image's banana-ui must match a fresh host build. The CI's `checks` job asserts this hash; on a tree where the
+# the image's banana-ui must match a fresh host build. `make check-local-build` asserts this hash (CI does not run it); on a tree where the
 # image was never built it asks you to run `make retroid-pocket-classic` first.
 # the image's banana-ui must be newer than every in-tree source: a source edited after the image was built is the
 # stale-image footgun the stamp guard in the board target prevents, but this catches a tree where that step was

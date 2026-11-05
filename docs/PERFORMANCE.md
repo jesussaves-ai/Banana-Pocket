@@ -2,8 +2,8 @@
 
 A host-side measurement of `banana-ui`, so a change can be told from a regression. It is **not** the handheld's
 numbers: it runs on a PC, headless, with no panel and no GPU. What it is good for is (a) the *ratio* between the
-640×480 and 1024×768 canvases and (b) catching a change that makes the menu slower. The handheld's own costs are
-`docs/ARCHITECTURE.md`'s "What it costs", measured inside the VM (`tools/qemu-boot.sh`, `resources-*.txt`).
+640×480 and 1024×768 canvases and (b) catching a change that makes the menu slower. The handheld's own costs are measured there, not here:
+the unit's numbers live in `docs/ROADMAP.md` (the sleep drain) and in the logs `tools/qemu-boot.sh` writes.
 
 ## Running it
 

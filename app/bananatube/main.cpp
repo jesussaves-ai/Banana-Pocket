@@ -20,7 +20,7 @@
 //     intermittently here; the software output is stable and draws like banana-ui's own panel.
 //   * Decode: --hwdec=auto-copy (a copy-back hwdec like v4l2m2m-copy), so a supported codec decodes on the GPU and
 //     the frames come back to system memory for wlshm; it falls back to software on its own.
-//   * Audio: the second AudioReach frontend (MultiMedia2, hw:0,1) via the launcher's private $HOME/.asoundrc, S16,
+//   * Audio: ALSA "default" -> PipeWire -> the AudioReach frontend, S16,
 //     with an mpv audio buffer matched to the tiny AudioReach period (see run-bananatube).
 
 #include <SDL.h>

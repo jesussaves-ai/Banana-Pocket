@@ -2,7 +2,7 @@
         // The app's manifest: banana-ui scans /usr/share/banana/apps/*/ for one of these (a small JSON, or an
         // app.conf / a *.desktop) and shows each as a tile on the Apps shelf, so the app is seen without an entry
         // in /etc/banana/systems.conf. The keys are Library::scanApps's: id, name, maker, run (%ROM% is the marker
-        // file below), ext (the marker), perf (the clock profile run-bananatube applies), and, optionally, icon
+        // file below), ext (the marker), perf (the clock profile banana-ui applies before it forks the app), and, optionally, icon
         // (a picture in this folder) and accent (the tile's colour).
         "id": "bananatube",
         "name": "YouTube",

@@ -69,8 +69,8 @@ mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null; chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/nul
 export SEATD_VTBOUND=0
 # SDL2 under cage draws through the Wayland video driver (KMSDRM would fight cage for DRM master). SDL picks
 # Wayland when WAYLAND_DISPLAY is set, but a port's own script may set SDL_VIDEODRIVER: set here as the default,
-# so a port that insists on KMSDRM by hand keeps its own. Audio stays ALSA "default" (bananad's asound.conf);
-# there is no PulseAudio/PipeWire here.
+# so a port that insists on KMSDRM by hand keeps its own. Audio stays ALSA "default", which is PipeWire through
+# /run/banana/asound.conf (there is no PulseAudio).
 : "${SDL_VIDEODRIVER:=wayland}"; export SDL_VIDEODRIVER
 : "${SDL_AUDIODRIVER:=alsa}"; export SDL_AUDIODRIVER
 # the port in its own session (its process group = $C): a quit from the menu, and the port's end, reach everything it

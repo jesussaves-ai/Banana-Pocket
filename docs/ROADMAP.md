@@ -112,7 +112,7 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 ## Completed Baseline (0.4.9+)
 - **Core & CI:** End-to-end QEMU `virt` boot/update/test (`tools/qemu-boot.sh`), A/B OTA updates, first-time setup, `ksmbd`, `dropbear`, `ath10k_snoc`.
 - **Input & Library:** `rsinput` Nintendo layout (`A=east, B=south`). Single-screen RetroArch library only (no DS/3DS dual-screen launchers).
-- **Display & Graphics:** 90°-rotated 1240x1080 panel in `banana-ui`; games run upright via `cage` (`video_rotation = 0`, Wayland context; requires `SEATD_VTBOUND=0` so `bananad` `SIGSTOP` on suspend never deadlocks VT switch). Mesa **26.2.6** (freedreno GL + **Turnip Vulkan**) on the Adreno `a613` -- supported natively from Mesa 26.2.0, so the image carries no local a613 source patch (SwanStation 60 fps @ 5x).
+- **Display & Graphics:** 90°-rotated 1240x1080 panel in `banana-ui`; games run upright via `cage` (`video_rotation = 0`, Wayland context; requires `SEATD_VTBOUND=0` so `bananad` `SIGSTOP` on suspend never deadlocks VT switch). Mesa **26.2.6** (freedreno GL + **Turnip Vulkan**) on the Adreno `a613` -- supported natively from Mesa 26.2.0, so the image carries no local a613 source patch (SwanStation 60 fps @ 4x).
 - **Development access:** the USB-C port is an NCM Ethernet gadget with a DHCP server (`169.254.170.2`) plus SSH, and **adb** over an adb (FunctionFS) function on the same cable, with a TCP `5555` listener on its own **ADB debugging** switch (off by default, independent of SSH). The loopback interface is up, which the adbd control socket needs.
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 

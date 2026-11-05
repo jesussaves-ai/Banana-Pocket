@@ -4,11 +4,30 @@
   "instructions": [
     "AGENTS.md"
   ],
+  "plugins": [
+    "@dietrichgebert/ponytail",
+    "superpowers@git+https://github.com/obra/superpowers.git"
+  ],
   "permission": {
-    "edit": "allow",
-    "bash": "allow",
-    "git": {
-      "push": "ask"
+      "edit": "allow",
+      "webfetch": "allow",
+      "bash": {
+        "adb *": "allow",
+        "fastboot devices*": "allow",
+        "fastboot getvar*": "allow",
+        "avbtool*": "allow",
+        "strings*": "allow",
+        "grep*": "allow",
+        "make*": "allow",
+        "cmake*": "allow",
+        "ninja*": "allow",
+        "git*": "allow",
+        "ccache*": "allow",
+        "fastboot flashing*": "ask",
+        "fastboot oem*": "ask",
+        "fastboot flash*": "ask",
+        "fastboot erase*": "ask",
+        "*": "allow"
     }
   },
   "compaction": {

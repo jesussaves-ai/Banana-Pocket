@@ -17,8 +17,8 @@ The app is not a line in `/etc/banana/systems.conf`. `banana-ui` scans `/usr/sha
 /usr/bin/banana-tube                              the client (app/bananatube)
 ```
 
-The theme's `systems.cfg` has a line for `bananatube` (the `video.png` icon, the `[app]` mark), so the tile has its
-own look. Drop another folder with an `app.json` (or an `app.conf`, or a freedesktop `.desktop`) into any of the three
+The shelf draws the tile from the app folder itself: `app.json`'s `accent`, and the icon it names from the theme's
+icon set (`video.png`), so the tile has its own look. Drop another folder with an `app.json` (or an `app.conf`, or a freedesktop `.desktop`) into any of the three
 app folders and it appears on the shelf the same way, with no code change.
 
 The manifest keys are `id` (default: the folder name), `name`, `maker`, `run` (`%ROM%` is the marker file above),
@@ -88,8 +88,8 @@ only cuts segments out of downloads.) A skipped segment is not skipped again in 
 bind `wl_touch`, so under `cage` the app receives no `SDL_FINGER` and no emulated pointer — `banana-tube` therefore
 reads the touchscreen from **evdev** itself, with the same mapping `banana-ui` uses: scale the raw axes to the panel's
 native mode (1080x1240), then turn them by the panel's rotation into the app surface's upright 1240x1080 space. The
-turn defaults to 90 (the RPC's panel) and can be overridden on the card with `/data/banana/bananatube/touch-rot` (read
-once at start) or `BANANA_TUBE_TOUCH_ROT`, so a differently-mounted panel is fixed without a rebuild. Draw and
+turn defaults to 90 (the RPC's panel) and can be overridden on the card with `/data/banana/bananatube/touch.conf`
+(`rot=`, `flipx=`, `flipy=`; read once at start) or `BANANA_TUBE_TOUCH_ROT`, so a differently-mounted panel is fixed without a rebuild. Draw and
 hit-testing share one set of geometry functions (`keyRect`/`actRect`/`resultsTop`), so a tap lands on exactly what is
 drawn. `BANANA_TUBE_TOUCH_DEBUG=1` logs each tap's mapped coordinates.
 
@@ -134,7 +134,8 @@ own `quit` over IPC, then TERM).
 
 **Codec:** YouTube offers **AV1** first, and the `a613` has no AV1 decoder — mpv then renders no frames and the
 screen stays black. `banana-tube` therefore tells yt-dlp to prefer **H.264 (`avc1`)**, then **VP9**, and never
-`av01` (`--ytdl-format=…[vcodec^=avc1]…/[vcodec^=vp9]…/[vcodec!*=av01]…`). Both decode far faster than realtime
+`av01` (its `yt-dlp -f` prefers `[vcodec^=avc1]`, then `[vcodec^=vp9]`, and never `av01`, capped at the quality the
+player is set to). Both decode far faster than realtime
 here (measured ~120 fps for a 720p 120-frame decode); AV1 does not decode at all.
 
 ## Using it on the touchscreen
@@ -174,6 +175,6 @@ pinned in `buildroot/package/yt-dlp/yt-dlp.mk` and `yt-dlp.hash`.
 
 ## Tests
 
-`app/bananatube/tests/selftest.sh` builds the client and runs its logic pass under SDL's dummy driver (the harness has
+`system/tests/run-banana-tube-test.sh` builds the client and runs its logic pass under SDL's dummy driver (the harness has
 no display): the search-line parse, the keyboard navigation and the `back()`/`activate()` state machine. It runs from
 `make test`. Playback needs mpv, yt-dlp and a network and is not exercised there.

@@ -24,7 +24,7 @@ namespace banana
 	public:
 		// path: the theme's .json; fontDirs: where the built-in fonts are (rnds' Pixelify Sans, Banana's Inter).
 		// canvasW/canvasH: the screen's size in layout px (640x480; a single 1240x1080
-		// panel at the same scale is 551x480, which is what its theme is written for)
+		// panel at the same scale is 640x557, which is what its theme is written for)
 		LayoutMenu(rnds::Source* src, rnds::Backend* be, const std::string& path, float scale,
 			const std::string& pixelFonts, const std::string& interFonts, float canvasW = 640, float canvasH = 480);
 		~LayoutMenu();

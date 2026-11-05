@@ -27,7 +27,7 @@ internal Android is there.
 ## Sound
 
 - [ ] Menu sounds play (Settings > sounds on)
-- [ ] A game's music and effects come out of the speaker, both channels (the AW88166 fix)
+- [ ] A game's music and effects come out of the speaker (one mono AW88166 amp)
 - [ ] Headphones: plugging in mutes the speaker
 
 ## Buttons and sticks
