@@ -2,7 +2,7 @@
 
 **Target:** the Retroid Pocket Classic (Qualcomm Snapdragon G1 Gen 2 / SM4450, Rev Q): one 1240×1080 AMOLED panel,
 a 6×Cortex-A55 + 2×Cortex-A78 SoC, an Adreno a613, the AudioReach DSP with a WCD937x codec and one mono AW88166
-amplifier, a fan, and no lid. **Version:** 0.5.9. No submodules; the hardware layer is imported into
+amplifier, a fan, and no lid. **Version:** 0.5.10. No submodules; the hardware layer is imported into
 `buildroot/board/retroid-pocket-classic` (`docs/RPC-PORT.md` is the port's log).
 
 ## 1. Layout
