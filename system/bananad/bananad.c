@@ -250,8 +250,11 @@ static void hooks_run(const char *when)
 /* The pid file names a process, but a pid is reused: after a launcher is killed (or a game SIGKILLed) its file stays
  * with a pid that, later in the same boot, can belong to someone else -- and suspend SIGSTOPs that process's whole
  * group, shutdown SIGTERMs it and a wake SIGUSR1s it. So the file only counts when the process did not start *after*
- * the file was written: a reused pid always did. Ages come from /proc/uptime and the file's mtime, both relative, so
- * no clock conversion is needed; the 3 s slack covers the write/exec gap and the file's coarse timestamp. */
+ * the file was written: a reused pid always did. The process's age comes from /proc/uptime (monotonic); the file's is
+ * a wall-clock difference, which a step of the clock (ntpd at Wi-Fi, hwclock) inflates -- and an inflated age reads
+ * as a reused pid, so a running game would look gone. A pidfile cannot be older than the boot, so a file age beyond
+ * the uptime means the clock moved, not the file: it is ignored. The 3 s slack covers the write/exec gap and the
+ * file's coarse timestamp. */
 static unsigned long long proc_start_ticks(int pid)
 {
 	char path[64], buf[512];
@@ -284,6 +287,7 @@ static pid_t pid_of(const char *pidfile)
 		if (sscanf(b, "%lf", &up) != 1) up = 0;
 		double age = up - (double)start / (double)hz;	/* how long the process has run, seconds */
 		double file = (double)time(NULL) - (double)st.st_mtime;	/* how long ago the file was written */
+		if (up > 0 && file > up + 5.0) file = 0;	/* older than the boot: the clock stepped, so it says nothing */
 		if (up > 0 && age < file - 3.0) return 0;	/* it began after the file named it: a reused pid */
 	}
 	return p;
@@ -728,13 +732,20 @@ static void suspend_now(const char *why)
 		 * that asked for this sleep), so a wake with no real KEY_POWER press and no cable change is the panel lighting
 		 * up for nothing: go back to sleep, a bounded number of times, and only then stay awake. */
 		woke_key = wake_key_press();
-		woke_cable = charger_online() && !plugged0;
+		int cable = charger_online();
+		woke_cable = cable && !plugged0;
+		/* the cable going the other way is the charger's edge, not a phantom: nothing to stay awake for, and it is
+		 * not one of the three tries a real phantom gets */
+		if (plugged0 && !cable) {
+			sleep_log("the charger was unplugged: back to sleep");
+			continue;
+		}
 		if (spurious < 3 && !woke_key && !woke_cable) {
 			spurious++;
 			sleep_log("wake with no key or cable (spurious): back to sleep (%d/3)", spurious);
 			continue;
 		}
-		woke = "power button";
+		woke = woke_key ? "power button" : "charger";
 		break;
 	}
 	/* awake: the game and the menu first. A fallback (devices one at a time, or s2idle) was for this sleep: the

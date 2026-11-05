@@ -16,6 +16,9 @@ OUT=$DATA/banana/backups
 case ${1:-} in
 create)
     mkdir -p "$OUT" || { echo "error: can't make $OUT"; exit 1; }
+    # bananad must not idle-sleep through a whole-card tar
+    echo $$ > /run/banana/awake.pid
+    trap 'rm -f /run/banana/awake.pid' EXIT INT TERM
     name=banana-$(date +%Y%m%d-%H%M%S).tar.gz
     tmp=$OUT/.$name.part
     # the list is fixed: no logs, no updates, and never the backups themselves. A fresh card has no accounts.conf
@@ -51,6 +54,8 @@ list)
     done | sort -r
     ;;
 restore)
+    echo $$ > /run/banana/awake.pid
+    trap 'rm -f /run/banana/awake.pid' EXIT INT TERM
     f=${2:-}
     [ -n "$f" ] || f=$(ls -t "$OUT"/banana-*.tar.gz 2>/dev/null | head -n 1)
     [ -n "$f" ] && [ -f "$f" ] || { echo "error: no backup to restore"; exit 1; }

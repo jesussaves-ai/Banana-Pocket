@@ -63,6 +63,9 @@ switch)
 apply)
     P=$2
     [ -e "$P" ] || fail "no such package: $P"
+    # bananad must not idle-sleep through this: a 200 MB slot write and its verify, minutes of the card being written
+    echo $$ > /run/banana/awake.pid
+    trap 'rm -f /run/banana/awake.pid' EXIT INT TERM
     status "checking"
     DIR=$P
     if [ -f "$P" ]; then

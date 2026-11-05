@@ -14,7 +14,7 @@ BOARD=$(cat /etc/banana/board 2>/dev/null)
 CUR=$(cat /etc/banana/version 2>/dev/null)
 command -v python3 >/dev/null 2>&1 || { echo "failed: no python3" > /run/banana/update-status 2>/dev/null; exit 1; }
 exec python3 - "$BOARD" "$CUR" <<'PY'
-import json, os, sys, urllib.request
+import atexit, json, os, sys, urllib.request
 
 REPO = "jesussaves-ai/Banana-Pocket"
 board, cur = (sys.argv[1:3] + ["", ""])[:2]
@@ -32,6 +32,13 @@ def ver(v):                       # "0.10.2" -> (0,10,2); case aside, non-digits
 if not board:
     say("failed: this image has no /etc/banana/board"); sys.exit(1)
 os.makedirs(DEST, exist_ok=True)
+# bananad must not idle-sleep through the download: our pid in awake.pid, removed when this exits (the liveness
+# check covers the rest, so a killed download cannot block idle sleep)
+try:
+    with open("/run/banana/awake.pid", "w") as f: f.write(str(os.getpid()))
+    atexit.register(lambda: os.path.exists("/run/banana/awake.pid") and os.unlink("/run/banana/awake.pid"))
+except OSError:
+    pass
 say("checking for updates")
 try:
     req = urllib.request.Request("https://api.github.com/repos/%s/releases" % REPO,
