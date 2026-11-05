@@ -5,7 +5,7 @@
 - **Partitions:**
   - `p1` (`BANANA-BOOT`, FAT, 160MB): `a|b/{Image,<board>.dtb}`, `extlinux/extlinux.conf`.
   - `p2`/`p3` (`banana-root-a|b`, RO squashfs LZ4, 256MB): Active/inactive rootfs slots.
-  - `p4` (`BANANA`, RW exFAT, `/data`, init via `/usr/libexec/banana/firstboot`): `roms/`, `bios/`, `saves/`, `states/`, `banana/{settings.conf,bananad.conf,accounts.conf,wifi.conf,asound.state,setup-done,logs/,updates/,ssh/}`.
+  - `p4` (`BANANA`, RW exFAT, `/data`, init via `/usr/libexec/banana/firstboot`): `roms/`, `bios/`, `saves/`, `states/`, `banana/{settings.conf,bananad.conf,accounts.conf,wifi.conf,asound.state,volume,setup-done,logs/,updates/,ssh/}`.
 - **Update (`/usr/libexec/banana/update apply`):** Unpacks `/data/banana/updates/banana-<board>-<version>.update.tar` -> verifies `board` & `sha256sums` -> streams `rootfs.squashfs` (16MB chunks) to inactive slot -> verifies read-back SHA256 -> populates `a/` or `b/` boot slot -> atomic `mv` on `extlinux.conf`. Logs: `/data/banana/logs/updates.log`.
 
 ## 2. Boot & Init
@@ -27,7 +27,7 @@
 - **Input/Hotkeys:** Non-grabbing `evdev` + netlink `power_supply`. Slate capabilities (`EVIOCGBIT(EV_SW)`: power + headphone jack; NO `SW_LID`, no LEDs).
   - *Short Power:* Suspend (unless `/run/banana/screen-off` exists -> `banana-ui` consumes `KEY_POWER` as `Key::WAKE`).
   - *Hold Power (2s) / `<= 3%` battery:* Clean shutdown.
-  - *Vol / F+Vol:* HW gain (`/usr/libexec/banana/volume`) / PWM backlight.
+  - *Vol / F+Vol:* HW gain (`bananad`, ALSA C mixer) / PWM backlight.
 - **Idle/Burn-in:** Dims at 2m (`dim_minutes`/`dim_percent`), blanks at 90s/180s (writes `/run/banana/screen-off`, calls `Sound::setScreenOn(false)`). Disabled while `/run/banana/game.pid` active. Auto-suspend ONLY if `autosleep_minutes` set in `bananad.conf`.
 - **Suspend/Resume (`deep` -> `s2idle` -> backlight fallback):**
   1. `SIGSTOP` `/run/banana/game.pid` pgrp.
@@ -43,7 +43,7 @@
   2. *No Idle-Suspend:* Sink sets `session.suspend-timeout-seconds = 0` (stays `RUNNING` permanently across UI cues and games). q6apm buffering (`api.alsa.period-num`/`headroom`) is applied via `monitor.alsa.rules` node match (`monitor.alsa.properties` does not reach ACP nodes).
   3. *Jack Routing:* UCM `Headphones` device `JackControl "Headphone Jack"` (+ `JackHWMute "Speaker"`) drives switching via WirePlumber. Zero manual `hw:0` route writes.
 - **Tests:** the chain fails silently, so it has two: `make test` → `system/tests/sound-config-test.sh` (the rules above, plus the menu's client laws, no hardware), and `make sound-test` → `/usr/libexec/banana/sound-test` on the handheld (server, `default`, Speaker sink *and* default, AW88166 gain, frontend `RUNNING`/owned by pipewire, a real client stream, and the menu's `SIGHUP`→`closed`/`SIGUSR1`→`open` sleep handover). See `docs/SOUND-TEST.md`.
-- **Volume:** AW88166 HW gain (`Left PCM`/`Right PCM`, `0..511`, cached in `/run/banana/mixer`, persisted in `/data/banana/asound.state`), driven by `bananad`: the ALSA C mixer API (`snd_mixer_*`) for the sleep mute and the routing, and `/usr/libexec/banana/volume` (busybox `amixer`) for the volume keys and the Settings row. RetroArch SW gain = unity (`1.0`).
+- **Volume:** AW88166 HW gain (`Left PCM`/`Right PCM`, `0..511`, cached in `/run/banana/mixer`, persisted in `/data/banana/volume` as two raw values), driven by `bananad` through the ALSA C mixer API (`snd_mixer_*`): the keys read, clamp and set it with amixer's own percent arithmetic; `/usr/libexec/banana/volume` (busybox `amixer`) remains for the Settings row, which runs in `banana-ui`. The card's whole `asound.state` is no longer stored per change (only replayed once on the first boot after the update). ACP's UCM profile sets the amp when the sound server opens the card, so `bananad` puts the saved level back once, five seconds after start. RetroArch SW gain = unity (`1.0`).
 
 ## 6. Network & Services
 - **Wi-Fi:** `wpa_supplicant` + `wpa_cli` scan thread (`/data/banana/wifi.conf`, WPA3 `key_mgmt=SAE`). `udhcpc` triggered via `wpa_cli` action on connect. Disconnected scan backoff: 5m.

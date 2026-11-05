@@ -9,7 +9,7 @@
  *   - A battery about to run out shuts the handheld down before the data partition can be cut off mid-write.
  *   - The charger: bananad watches the power supplies and pulses the vibrator when the cable goes in. The handheld
  *     has no LEDs, so there is nothing else to drive.
- *   - Brightness and volume are kept across reboots (/data/banana/backlight, /data/banana/asound.state).
+ *   - Brightness and volume are kept across reboots (/data/banana/backlight, /data/banana/volume).
  *   - Sound is the server's (PipeWire + WirePlumber, brought up by rcS's sound-server): ACP loads the RPC's UCM2
  *     profile and owns the DSP's routing and levels. bananad keeps ALSA's default device pointed at it
  *     (/run/banana/asound.conf, which /etc/asound.conf reads) and changes the amplifier's level for the volume keys.
@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/input.h>
+#include <math.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -824,6 +825,7 @@ static void shutdown_now(const char *why)
 }
 
 static double save_volume_at, save_backlight_at;	/* debounced: written a moment after the last key */
+static double volume_reassert_at;	/* once, after the sound server has opened the card (it sets its own level) */
 
 /* ---- sound: the card that plays ----------------------------------------------------------------------------------- */
 static int card_play = -1;	/* the card sound plays on; -1: none yet (or none at all) */
@@ -844,6 +846,79 @@ static int mixer_open(int card, snd_mixer_t **mx)
 		return -1;
 	}
 	return 0;
+}
+
+/* A simple mixer element by its short name ("Left PCM"), the way `amixer` resolves one. */
+static snd_mixer_elem_t *selem(snd_mixer_t *mx, const char *name)
+{
+	snd_mixer_selem_id_t *sid;
+	snd_mixer_selem_id_alloca(&sid);
+	snd_mixer_selem_id_set_index(sid, 0);
+	snd_mixer_selem_id_set_name(sid, name);
+	return snd_mixer_find_selem(mx, sid);
+}
+
+/* The first channel's raw value: amixer's sget prints one percent per channel, and the menu has always shown the
+ * first. */
+static int selem_raw(snd_mixer_elem_t *e, long *v)
+{
+	for (int c = 0; c <= SND_MIXER_SCHN_LAST; c++)
+		if (snd_mixer_selem_has_playback_channel(e, (snd_mixer_selem_channel_id_t)c) &&
+		    snd_mixer_selem_get_playback_volume(e, (snd_mixer_selem_channel_id_t)c, v) == 0)
+			return 0;
+	return -1;
+}
+
+/* amixer's own arithmetic (convert_prange/convert_prange1): a level set by the keys and read by Settings > Volume
+ * must be the percent the script reported, or the two disagree by a step. */
+static int selem_percent(snd_mixer_elem_t *e)
+{
+	long min, max, v;
+	if (snd_mixer_selem_get_playback_volume_range(e, &min, &max) < 0 || max <= min) return -1;
+	if (selem_raw(e, &v) < 0) return -1;
+	return (int)rint((double)(v - min) / (double)(max - min) * 100.0);
+}
+
+static int selem_set_percent(snd_mixer_elem_t *e, int pct)
+{
+	long min, max;
+	if (snd_mixer_selem_get_playback_volume_range(e, &min, &max) < 0) return -1;
+	long v = (long)rint((double)pct * (double)(max - min) * 0.01);
+	if (v == 0 && pct > 0) v++;	/* amixer: a nonzero percent is never silence */
+	return snd_mixer_selem_set_playback_volume_all(e, min + v);	/* all channels, like sset */
+}
+
+/* The elements the volume keys drive. On the RPC that is the two AW88166 gains ("PCM" in the config, "Left PCM" and
+ * "Right PCM" in the mixer); a card that is the amplifier itself answers to the same pair. pct < 0 reads and returns
+ * the first element's percent, otherwise every element is set. */
+static int volume_apply(int pct)
+{
+	snd_mixer_t *mx = NULL;
+	snd_mixer_elem_t *el[2] = { NULL, NULL };
+	if (card_play < 0 || mixer_open(card_play, &mx) < 0) return -1;
+	const char *mix = cfg.mixer;
+	if (!strcmp(mix, "auto")) mix = card_ar >= 0 ? "PCM" : "Master";
+	if (!strcmp(mix, "PCM")) {
+		el[0] = selem(mx, "Left PCM");
+		el[1] = selem(mx, "Right PCM");
+	} else if (!(el[0] = selem(mx, mix))) {
+		el[0] = selem(mx, "Left PCM");
+		el[1] = selem(mx, "Right PCM");
+	}
+	int found = 0, bad = 0, out = -1;
+	for (int i = 0; i < 2; i++) {
+		if (!el[i]) continue;
+		found++;
+		if (pct < 0) {
+			int p = selem_percent(el[i]);
+			if (p >= 0 && out < 0) out = p;
+		} else if (selem_set_percent(el[i], pct) < 0) {
+			bad = 1;
+		}
+	}
+	snd_mixer_close(mx);
+	if (!found || bad) return -1;
+	return pct < 0 ? out : 0;
 }
 
 static void audio_find_cards(void)
@@ -867,6 +942,64 @@ static void audio_find_cards(void)
 		}
 		break;	/* the first card is the one sound plays on */
 	}
+	fclose(f);
+}
+
+/* The amplifier's level across reboots: the two raw values, one control per line. (The card's whole asound.state was
+ * 38 KB for the same two numbers, and `alsactl store` walked all 197 controls after every key press.) A rename, so a
+ * power cut leaves the old level, not half a file. */
+static void volume_save(void)
+{
+	FILE *f = fopen("/data/banana/volume.new", "w");
+	if (!f) return;
+	int n = 0;
+	snd_mixer_t *mx = NULL;
+	if (card_play >= 0 && mixer_open(card_play, &mx) == 0) {
+		static const char *names[] = { "Left PCM", "Right PCM" };
+		for (int i = 0; i < 2; i++) {
+			snd_mixer_elem_t *e = selem(mx, names[i]);
+			long v;
+			if (!e || selem_raw(e, &v) < 0) continue;
+			if (fprintf(f, "%s %ld\n", names[i], v) > 0) n++;
+		}
+		snd_mixer_close(mx);
+	}
+	int ok = n > 0 && fflush(f) == 0 && fsync(fileno(f)) == 0;
+	fclose(f);
+	if (ok) rename("/data/banana/volume.new", "/data/banana/volume");
+	else unlink("/data/banana/volume.new");
+}
+
+/* Put that level back. With no file -- the first boot after the update -- the card's asound.state is replayed once
+ * instead; from then on the small file above owns it. */
+static void volume_restore(void)
+{
+	if (card_play < 0) audio_find_cards();
+	FILE *f = fopen("/data/banana/volume", "r");
+	if (!f) {
+		/* The first boot after the update: the card's asound.state, replayed once. Writing the small file after it
+		 * is what ends the dependency (and keeps the +5 s reassert from forking alsactl a second time). */
+		if (access("/data/banana/asound.state", R_OK) == 0) {
+			char *argv[] = { "alsactl", "-f", "/data/banana/asound.state", "restore", NULL };
+			run(argv);
+		}
+		volume_save();
+		return;
+	}
+	snd_mixer_t *mx = NULL;
+	int have = card_play >= 0 && mixer_open(card_play, &mx) == 0;
+	char ln[96];
+	while (fgets(ln, sizeof ln, f)) {
+		char *sp = strrchr(ln, ' ');	/* the name has spaces in it ("Left PCM"), the value is after the last */
+		if (!sp) continue;
+		*sp++ = 0;
+		char *end = NULL;
+		long v = strtol(sp, &end, 10);
+		if (end == sp) continue;
+		snd_mixer_elem_t *e = have ? selem(mx, ln) : NULL;
+		if (e) snd_mixer_selem_set_playback_volume_all(e, v);
+	}
+	if (have) snd_mixer_close(mx);
 	fclose(f);
 }
 
@@ -1195,17 +1328,16 @@ static void audio_setup(void)
 		cset(card_ar, "HPHR Volume", "20");
 		cset(card_ar, "ADC2 Volume", "10");
 		/* The amplifiers' level is the user's volume (the volume keys and Settings > Volume own it, and
-		 * bananad's own restore_settings() has just put the card's saved state back). Only a card that has no
-		 * saved level -- a fresh one -- gets Banana's starting point; setting it here every boot was what made
-		 * the volume jump back to it. */
-		if (access("/data/banana/asound.state", R_OK) != 0) {
+		 * bananad's own restore_settings() has just put the saved level back). Only a card that has no saved
+		 * level -- a fresh one -- gets Banana's starting point; setting it here every boot was what made the
+		 * volume jump back to it. */
+		if (access("/data/banana/volume", R_OK) != 0 && access("/data/banana/asound.state", R_OK) != 0) {
 			cset(card_ar, "Left PCM Playback Volume", "460");
 			cset(card_ar, "Right PCM Playback Volume", "460");
 		}
-		/* The headphone path, set here rather than only in rcS: bananad's restore_settings() replays the card's
-		 * asound.state (saved by alsactl store when the volume changed) after rcS has run, which puts these back to
-		 * their reset state, so rcS's own copy is not enough. The speaker path (SENARY MI2S -> AW88166) is separate
-		 * and does not need them. */
+		/* The headphone path, set here rather than only in rcS: bananad's restore_settings() replays the saved
+		 * level after rcS has run, which puts these back to their reset state, so rcS's own copy is not enough.
+		 * The speaker path (SENARY MI2S -> AW88166) is separate and does not need them. */
 		cset(card_ar, "HPHL", "on");
 		cset(card_ar, "HPHR", "on");
 		cset(card_ar, "HPHL_RDAC", "on");
@@ -1230,18 +1362,14 @@ static void volume(int dir)
 	 * nothing for "in a game" to mean differently. The DSP's per-stream gain cannot be this (a frontend's graph
 	 * latches it at the open), and RetroArch's own volume is not the system's either: a game left at 150% would
 	 * come back there however quiet the menu had been. */
-	char step[16];
-	snprintf(step, sizeof step, "%d", cfg.volume_step);
-	char cmd[96];
-	snprintf(cmd, sizeof cmd, "/usr/libexec/banana/volume %s %s 2>/dev/null", dir > 0 ? "up" : "down", step);
-	save_volume_at = mono() + 2;
-	int pct = -1;
-	FILE *p = popen(cmd, "r");	/* (it prints the new level) */
-	if (p) {
-		if (fscanf(p, "%d", &pct) != 1) pct = -1;
-		pclose(p);
-	}
+	int pct = volume_apply(-1);
 	if (pct < 0) return;
+	pct += dir > 0 ? cfg.volume_step : -cfg.volume_step;
+	if (pct < 0) pct = 0;
+	if (pct > 100) pct = 100;
+	if (volume_apply(pct) < 0) return;
+	save_volume_at = mono() + 2;
+	volume_reassert_at = 0;	/* the user's level now, not the boot one */
 	/* The level is shown where the menu can draw it, and nowhere else: banana-ui's own OSD -- the pill at the top of
 	 * the panel -- in the menu, and nothing over a game. banana-ui is not drawing while cage and RetroArch own the
 	 * panel, and the only thing that could draw over a game is RetroArch's own message box ("Volume: N%"), a
@@ -1394,9 +1522,7 @@ static void save_settings(double now)
 	}
 	if (save_volume_at > 0 && now >= save_volume_at) {
 		save_volume_at = 0;
-		const char *path = "/data/banana/asound.state", *tmp = "/data/banana/asound.state.new";
-		char *argv[] = { "alsactl", "-f", (char *)tmp, "store", NULL };
-		if (run(argv) || rename(tmp, path)) unlink(tmp);	/* a power cut leaves the old state, not a short one */
+		volume_save();
 	}
 }
 
@@ -1407,10 +1533,7 @@ static void restore_settings(void)
 	/* started again while the panel was dimmed (/run/banana/dim: the level before): undimmed, as the last one would */
 	int dimmed_from = read_int("/run/banana/dim", -1);
 	if (dimmed_from > 0 && dimmed_from <= 1000) { backlight_set_permille(dimmed_from); unlink("/run/banana/dim"); }
-	if (access("/data/banana/asound.state", R_OK) == 0) {
-		char *argv[] = { "alsactl", "-f", "/data/banana/asound.state", "restore", NULL };
-		run(argv);
-	}
+	volume_restore();
 }
 
 /* the battery: its directory under /sys/class/power_supply, capacity and whether it charges */
@@ -1896,6 +2019,10 @@ int main(int argc, char **argv)
 	 * saved (off if headphones were in then), and the route sets it from the jack as it is now */
 	restore_settings();
 	audio_setup();
+	/* ACP's UCM2 profile sets the amplifier's level itself when the sound server opens the card, and rcS starts
+	 * the server behind us: once that has settled, put the saved level back. Five seconds is past the server's
+	 * start and before anyone has reached for a volume key; a key press cancels it. */
+	volume_reassert_at = mono() + 5;
 	int uev = uevent_open();
 	sd2_scan();	/* a card already in the second slot at boot */
 	load_drivers_present();
@@ -1930,6 +2057,7 @@ int main(int argc, char **argv)
 			if (cfg.dim_min > 0 && !dimmed) { double d = cfg.dim_min * 60.0 - (tnow - last_input); if (d > 0 && d < wait) wait = d; }
 		}
 		if ((save_volume_at > 0 || save_backlight_at > 0) && wait > 0.5) wait = 0.5;
+		if (volume_reassert_at > 0 && volume_reassert_at - tnow < wait) wait = volume_reassert_at - tnow;
 		if (power_down && wait > 0.1) wait = 0.1;
 		if (vib_off_at > 0 && vib_off_at - tnow < wait) wait = vib_off_at - tnow;	/* a pulse's stop */
 		if (jack_settle_at > 0 && jack_settle_at - tnow < wait) wait = jack_settle_at - tnow;	/* the jack's second look */
@@ -1938,6 +2066,7 @@ int main(int argc, char **argv)
 		double now = mono();
 		if (vib_off_at > 0 && now >= vib_off_at) { vib_stop(); vib_off_at = 0; }
 		if (jack_settle_at > 0 && now >= jack_settle_at) jack_settle_poll();
+		if (volume_reassert_at > 0 && now >= volume_reassert_at) { volume_reassert_at = 0; volume_restore(); }
 		if (reload) {
 			reload = 0;
 			cfg.autosleep_set = 0;

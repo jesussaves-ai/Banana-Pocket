@@ -1,7 +1,7 @@
 CC ?= gcc
 CFLAGS ?= -O2
 override CFLAGS += -Wall -Wextra -Wno-unused-parameter
-override LDLIBS += -lasound
+override LDLIBS += -lasound -lm
 all: bananad
 bananad: bananad.c
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)

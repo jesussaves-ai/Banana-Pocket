@@ -4,18 +4,14 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **bananad's volume path should use the ALSA C API.** `ARCHITECTURE.md` and `AGENTS.md` say the volume keys drive
-   the mixer through `snd_mixer_*`; the code forks `/usr/libexec/banana/volume` (busybox `amixer`) and `alsactl`, one
-   fork/exec per key and a whole-card store per change (the C API is used for the sleep mute and the routing only).
-   The docs now say what the code does; this item is the rewrite back to the law.
-2. **Wi-Fi management depth** -- 802.1X, static IP, hotspot. **Saved-network priority and WEP are done**: L/R on a
+1. **Wi-Fi management depth** -- 802.1X, static IP, hotspot. **Saved-network priority and WEP are done**: L/R on a
    network in Settings > Network moves a saved one up or down `wifi.conf`, and an old WEP network takes its 5/13-
    character (10/26-hex) key on the same keyboard and is written as `key_mgmt=NONE` + `wep_key0`. What is left:
    802.1X needs an identity/certificate screen, static IP needs address fields, hotspot needs hostapd (not in the
    image -- I would drop it).
-3. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a
+2. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a
    bespoke path (no BlueZ/DBus in the stack).
-4. **Store / app catalog** (the Apps shelf only scans local folders).
+3. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## In progress
 
@@ -126,6 +122,18 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **The volume keys use the ALSA C API (0.5.11).** `bananad` set the amplifier through
+  `/usr/libexec/banana/volume` (busybox `amixer`), one fork/exec per key press, and stored the result with
+  `alsactl store`, which walks all 197 controls of the card (38 KB) two seconds after every change. The keys are
+  `snd_mixer_*` now: `snd_mixer_selem_get_playback_volume` reads the amp, the step is clamped, and
+  `snd_mixer_selem_set_playback_volume_all` writes every channel. The percent arithmetic is amixer's own
+  (`convert_prange`/`convert_prange1`, including "a nonzero percent is never silence"), so the pill and Settings >
+  Volume still show the same numbers. The level is kept in `/data/banana/volume` (the two raw values, temp file +
+  fsync + rename); the card's `asound.state` is replayed once on the first boot after the update and never again.
+  `/usr/libexec/banana/volume` stays for the Settings row, which runs in the menu's process, not the daemon's. ACP's
+  UCM profile sets the amp itself when the sound server opens the card (rcS starts it behind bananad), so the saved
+  level is put back once, five seconds after start; a key press before then cancels it. `sound-config-test` guards
+  the no-fork rule (39 checks).
 - [x] **The hardening sweep (0.5.10, 2026-11-05).** A full read of the tree for bugs, dead weight and doc drift, then one
   pass over all of it. **Daemon:** `update`, `update-check` and `backup` write `/run/banana/awake.pid`, so a 200 MB
   slot write, a release download or a whole-card tar can no longer be idle-suspended; `rcK` runs `usb-msc off` so a

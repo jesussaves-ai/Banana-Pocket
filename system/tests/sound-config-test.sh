@@ -44,6 +44,10 @@ echo "2. bananad writes the pipewire default and waits for the handover"
 has "$ROOT/system/bananad/bananad.c" 'asound.conf' "writes /run/banana/asound.conf"
 has "$ROOT/system/bananad/bananad.c" 'type pipewire' "the default it writes is the pipewire plugin"
 has "$ROOT/system/bananad/bananad.c" 'sound-state' "waits for the menu's sound-state ack before sleeping"
+lack "$ROOT/system/bananad/bananad.c" '/usr/libexec/banana/volume' "the volume keys set the amp through the ALSA C API, not the script"
+has "$ROOT/system/bananad/bananad.c" 'snd_mixer_selem_set_playback_volume_all' "and every channel, the way amixer's sset does"
+has "$ROOT/system/bananad/bananad.c" '"/data/banana/volume"' "the level is kept in a small file of its own"
+lack "$ROOT/system/bananad/bananad.c" 'asound.state.new' "a key press no longer stores the whole card (197 controls)"
 
 echo "3. no client writes the DSP's mixer or hw:0"
 files=$(ls "$SRC"/*.cpp "$SRC"/*.h "$ROOT/app/bananatube"/*.cpp 2>/dev/null)
