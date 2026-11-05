@@ -37,7 +37,17 @@ jobs:
       - name: Sleep (bananad against a made-up /sys in its own namespaces)
         run: sudo system/bananad/tests/sleep-test.sh
       - name: Shell scripts parse
-        run: for f in system/rootfs/etc/init.d/* system/rootfs/usr/bin/* system/rootfs/usr/libexec/banana/* system/rootfs/etc/banana/sleep.d/* system/tests/*.sh system/bananad/tests/*.sh buildroot/board/retroid-pocket-classic/*.sh tools/*.sh; do sh -n "$f" || exit 1; done
+        run: |
+          # /usr/bin and the sleep.d hooks hold only scripts; usr/libexec/banana holds data too, so it is *.sh there
+          for f in system/rootfs/etc/init.d/* system/rootfs/usr/bin/* system/rootfs/usr/libexec/banana/*.sh \
+                   system/rootfs/etc/banana/sleep.d/* system/tests/*.sh system/bananad/tests/*.sh \
+                   buildroot/board/retroid-pocket-classic/*.sh tools/*.sh; do
+            sh -n "$f" || exit 1
+          done
+          # not .sh: the helpers there have no extension, so parse them by name
+          for f in system/rootfs/usr/libexec/banana/update system/rootfs/usr/libexec/banana/update-check; do
+            sh -n "$f" || exit 1
+          done
       - name: Buildroot defconfigs keep every option
         run: |
           # Buildroot itself is patched (buildroot/buildroot-patches: the Mesa freedreno Vulkan option the defconfig
@@ -85,7 +95,8 @@ jobs:
             if printf '%s\n' "$files" | grep -qE 'buildroot/(external\.mk|Config\.in|configs/|package/retroarch/)'; then
               pkgs=all
             else
-              pkgs=$(printf '%s\n' "$files" | sed -n 's#^buildroot/package/\(libretro-[^/]*\)/.*#\1#p' | sort -u | tr '\n' ' ')
+              # ... and a core's own patch dir (patches/libretro-<name>/) is part of how it is built
+              pkgs=$(printf '%s\n' "$files" | sed -n -e 's#^buildroot/package/\(libretro-[^/]*\)/.*#\1#p' -e 's#^buildroot/patches/\(libretro-[^/]*\)/.*#\1#p' | sort -u | tr '\n' ' ')
             fi
           fi
           echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"

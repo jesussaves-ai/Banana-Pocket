@@ -79,9 +79,17 @@ endef
 $(foreach b,$(BOARDS),$(eval $(call board,$(b))))
 
 ui:
-	$(MAKE) -C ui host
+	$(MAKE) -C ui
 
-test: ui
+# bananad, here and not only in CI: `make test` used to pass with a broken daemon. Needs libasound's headers;
+# without them the rules still parse and the build is skipped with a word to say so.
+bananad:
+	@if [ -f /usr/include/alsa/asoundlib.h ]; then \
+	    $(MAKE) -s -C system/bananad >/dev/null || { echo "FAIL bananad build"; $(MAKE) -C system/bananad; exit 1; }; \
+	    echo "bananad: OK"; \
+	 else echo "bananad: skipped (no libasound headers)"; fi
+
+test: ui bananad
 	tools/check-systems.py
 	tools/check-themes.py --selftest
 	tools/check-themes.py

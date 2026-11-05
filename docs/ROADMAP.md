@@ -4,14 +4,18 @@ Refs: `docs/RPC-PORT.md` (port log), `docs/RPC-TEST.md` (hardware checklist). Or
 ## Recommended next (in order)
 The 0.5.0 sound server and its leftovers, the library-UX additions (multi-disc `.m3u`, shoulder-button jump-to-letter)
 and OTA updates over Wi-Fi are done (see *Done*). Next:
-1. **Wi-Fi management depth** -- 802.1X, static IP, hotspot. **Saved-network priority and WEP are done**: L/R on a
+1. **bananad's volume path should use the ALSA C API.** `ARCHITECTURE.md` and `AGENTS.md` say the volume keys drive
+   the mixer through `snd_mixer_*`; the code forks `/usr/libexec/banana/volume` (busybox `amixer`) and `alsactl`, one
+   fork/exec per key and a whole-card store per change (the C API is used for the sleep mute and the routing only).
+   The docs now say what the code does; this item is the rewrite back to the law.
+2. **Wi-Fi management depth** -- 802.1X, static IP, hotspot. **Saved-network priority and WEP are done**: L/R on a
    network in Settings > Network moves a saved one up or down `wifi.conf`, and an old WEP network takes its 5/13-
    character (10/26-hex) key on the same keyboard and is written as `key_mgmt=NONE` + `wep_key0`. What is left:
    802.1X needs an identity/certificate screen, static IP needs address fields, hotspot needs hostapd (not in the
    image -- I would drop it).
-2. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a
+3. **Bluetooth** -- the kernel is stripped of it and the QCA BT firmware is unused; BT audio/controllers would need a
    bespoke path (no BlueZ/DBus in the stack).
-3. **Store / app catalog** (the Apps shelf only scans local folders).
+4. **Store / app catalog** (the Apps shelf only scans local folders).
 
 ## In progress
 
@@ -117,6 +121,31 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **The hardening sweep (2026-11-05).** A full read of the tree for bugs, dead weight and doc drift, then one
+  pass over all of it. **Daemon:** `update`, `update-check` and `backup` write `/run/banana/awake.pid`, so a 200 MB
+  slot write, a release download or a whole-card tar can no longer be idle-suspended; `rcK` runs `usb-msc off` so a
+  card handed to a computer comes back before shutdown unmounts it; the wake reason distinguishes a real cable plug
+  from an unplug, which no longer burns one of the three phantom-wake retries; `pid_of` clamps a pidfile whose
+  wall-clock age exceeds the uptime, so a clock step (ntpd at Wi-Fi) cannot make a running game look gone. **The
+  sleep.d hooks are now exercised**: `sleep-test.sh` provides stand-in `wifi`/`sound-server`/`usb-gadget` helpers and
+  asserts the pre hooks ran in name order and the post hooks brought all three back (46 checks, was 41) -- until now
+  every hook took its `[ -x ... ] || exit 0` guard and no-oped, which is what let a broken one ship. **BananaTube:**
+  every write to the shared `results` now takes the thumbnail worker's lock, `qualitySave` writes a temp file with
+  fsync and renames it (a power cut cannot truncate the saved cap), the per-tap log lines are behind
+  `BANANA_TUBE_TOUCH_DEBUG`, a panel that reports only `ABS_MT_TRACKING_ID` still registers taps, `resolveStream`
+  takes the first video and audio URL instead of rejecting three, and `ipcSend` writes the rest of a command on a
+  non-blocking socket. **UI:** X offers a game's options for every system (it worked, only NDS advertised it),
+  `readGamelist` no longer matches the root `<gameList>`, the library rescans a newly copied ROM without waiting for
+  a keypress, and `wifi::Job`'s `active` is atomic. **i18n:** the update and box-art row values are catalog keys
+  (es/de 129/129) and `tools/check-lang.py` now fails on a literal passed to `tr()` that is not a key -- the rule
+  that was missing when they shipped English-only. **Dead weight:** `etc/fstab`, `accounts.conf.example`,
+  `tools/make-console.py`, `tools/qemu-e2e.sh`, `docs/img/readme/`, `docs/img/boot-animation.gif` and the stray
+  `bgm.wav` are gone; `autosleep_minutes` ships 0 (the slate default), `sleep_debug` is commented out as card-only.
+  **CI:** a core's own patch triggers the cores job, the `sh -n` glob no longer trips on a non-shell file, and
+  `make test` builds bananad. ~20 docs corrected to the code (the mono amp, SwanStation at 4x, the lease/blend/test
+  list/volume law, the Makefile inputs, BANANATUBE's touch.conf and harness). Deferred, with the reasoning in
+  `docs/superpowers/specs/2026-11-05-hardening-sweep-design.md`: the second canvas and the bottom-screen path are the
+  headless dual-mode renderer's tested path, not dead code.
 - [x] **The on-device self-test: dropped, the pieces already exist (2026-11-05).** A `tools/rpc-selftest.sh` that
   walks the `docs/RPC-TEST.md` checklist was going to be the next thing built; looking at the checklist against what
   is already in the tree, it would be mostly a driver around existing parts, so it is closed instead. The audio route
