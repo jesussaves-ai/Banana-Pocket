@@ -84,12 +84,6 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
   and the `tools/rpc-*.sh` probes.
 - **Offline update cache.** Keep the last good update package on the card until the new slot boots once, so a failed
   update can be reapplied without Wi-Fi.
-- **Banana Bridge (next).** The menu owns the panel, so a game owns it alone: the volume OSD is suppressed
-  (`bananad` skips `osd()` while `game.pid` lives), achievements are queued and toasted only on quit, a headphone
-  unplug keeps playing out loud, and a low-battery sleep arrives unwarned. A `system/bridge/` helper started by the
-  launchers reads `/run/banana/hud` and speaks each app's own text surface (RetroArch `SHOW_MSG`/`PAUSE_TOGGLE` on
-  the loopback command port, mpv `show-text` over the socket BananaTube already uses), so the OS keeps a voice in
-  game. One event format, rendered by the menu's own toast code when the menu holds the screen.
 - **Sessions that survive a hang.** Quick resume writes a state only on a clean quit (`savestate_auto_save`), so the
   2026-11-02 overnight hang and any forced power-off lose everything since the last manual save. The bridge can save
   into two alternating hidden slots on a timer, with a one-line fsynced journal in `/data/banana/sessions.tsv`;
@@ -145,6 +139,11 @@ accessibility / in-menu log viewer / battery-time item (2026-11-04).)*
 - **Hardware Validation (`docs/RPC-TEST.md`):** In progress on physical units.
 
 ## Done
+- [x] **Banana Bridge (0.5.11).** While a game runs, `bananad` speaks through RetroArch's own message line: volume and
+  brightness keys, a low battery (10 % and 5 %) and the shutdown at the floor, the unplugged headphones pausing the
+  game, and achievements as they unlock (an inotify watch on `/run/banana/cheevos`, with `/run/banana/hud-live` so the
+  menu does not toast them again). Four strings in three languages, one Settings row (`hud`, default on), and no new
+  process or socket: the FIFO the daemon already writes was the whole channel.
 - [x] **The volume keys use the ALSA C API (0.5.11).** `bananad` set the amplifier through
   `/usr/libexec/banana/volume` (busybox `amixer`), one fork/exec per key press, and stored the result with
   `alsactl store`, which walks all 197 controls of the card (38 KB) two seconds after every change. The keys are
