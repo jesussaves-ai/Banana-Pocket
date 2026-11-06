@@ -27,5 +27,7 @@ want 'cheevos 6 fields: 0'
 want 'cheevos no points: Sonic'
 has() { grep -qF "$2" "$1" || { echo "FAIL: $1 lacks $2" >&2; fail=1; }; }
 has "$HERE/bananad.c" 'signal(SIGPIPE, SIG_IGN);'
+has "$HERE/bananad.c" 'else osd("volume", pct);'
+has "$HERE/bananad.c" 'ra_cmd("PAUSE_TOGGLE")'
 [ "$fail" = 0 ] && echo "hud-test: all checks passed"
 exit "$fail"

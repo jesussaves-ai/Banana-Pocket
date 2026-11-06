@@ -1475,14 +1475,11 @@ static void volume(int dir)
 	if (volume_apply(pct) < 0) return;
 	save_volume_at = mono() + 2;
 	volume_reassert_at = 0;	/* the user's level now, not the boot one */
-	/* The level is shown where the menu can draw it, and nowhere else: banana-ui's own OSD -- the pill at the top of
-	 * the panel -- in the menu, and nothing over a game. banana-ui is not drawing while cage and RetroArch own the
-	 * panel, and the only thing that could draw over a game is RetroArch's own message box ("Volume: N%"), a
-	 * different look entirely, so a game gets no indicator rather than a jarring one. (Writing /run/banana/osd during
-	 * a game would only surface, stale, when the menu came back.) The volume itself still works in a game: this is
-	 * the same amplifier level the menu's pill shows. */
-	if (pid_of("/run/banana/game.pid") <= 0)
-		osd("volume", pct);
+	/* The level is shown by whoever owns the panel: the menu gets its pill (banana-ui's OSD, which it is drawing),
+	 * a game gets the same number in RetroArch's message box, written to the FIFO the launcher already hears. The
+	 * volume itself is one amplifier level either way. */
+	if (pid_of("/run/banana/game.pid") > 0) { char b[96]; hud_fmt(HUD_VOLUME, pct, b, sizeof b); hud_show(b); }
+	else osd("volume", pct);
 }
 
 static void brightness(int dir, int step_pct)
@@ -1507,7 +1504,14 @@ static void brightness(int dir, int step_pct)
 		if (max > 0) pct = nv * 100 / max;
 	}
 	save_backlight_at = mono() + 2;
-	if (pct >= 0) osd("brightness", pct);
+	if (pct >= 0) {
+		if (pid_of("/run/banana/game.pid") > 0) {
+			char b[96];
+			hud_fmt(HUD_BRIGHT, pct, b, sizeof b);
+			hud_show(b);
+		} else
+			osd("brightness", pct);
+	}
 }
 
 /* both backlights at a fraction of their maximum */
@@ -1932,7 +1936,13 @@ static void handle(const struct input_event *e)
 	double now = mono();
 	if (e->type == EV_KEY) { last_input = now; undim(); if (panel_blanked) { panel_blanked = 0; backlights_power(1); } }
 	if (e->type == EV_SW && e->code == SW_HEADPHONE_INSERT) {
-		if (headphones != e->value) { headphones = e->value; audio_route(); }
+		if (headphones != e->value) {
+			/* unplugged while a game runs: it would blast the speaker, so pause it; plugging back in does not
+			 * resume -- the player decides */
+			if (!e->value && hud_on()) ra_cmd("PAUSE_TOGGLE");
+			headphones = e->value;
+			audio_route();
+		}
 		return;
 	}
 	if (e->type != EV_KEY) return;
@@ -2232,6 +2242,24 @@ int main(int argc, char **argv)
 			next_battery = now + 60;
 			power_update();	/* a capacity change has no uevent on every gauge */
 			int pct = battery_discharging_pct();
+			/* two thresholds, once each, and only while a game is on top (the menu has the charge icon) */
+			static int warned = 1000;
+			if (pct >= 0 && pct <= 10) {
+				int band = pct <= 5 ? 5 : 10;
+				if (band != warned) {
+					char b[96];
+					warned = band;
+					hud_fmt(HUD_LOW, pct, b, sizeof b);
+					hud_show(b);
+				}
+			} else if (pct > 10) warned = 1000;
+			/* the first reading at or under the floor warns while the second shuts down (a load spike is not a
+			 * shutdown), so the line is on screen for the whole of that minute */
+			if (pct >= 0 && pct <= cfg.battery_off_pct && low_count == 0) {
+				char b[96];
+				hud_fmt(HUD_EMPTY, 0, b, sizeof b);
+				hud_show(b);
+			}
 			low_count = pct >= 0 && pct <= cfg.battery_off_pct ? low_count + 1 : 0;
 			if (low_count >= 2) shutdown_now("battery empty");	/* two readings in a row: not a load spike */
 		}
