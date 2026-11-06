@@ -70,7 +70,9 @@ static struct {
 	int vibrate_ms;			/* the plug-in pulse length; the motor's drive is already the driver's maximum */
 	char sleep_skip[64];		/* debug: comma list of suspend steps to skip (stop, ui, mute, hooks, sync) */
 	int autosleep_set;		/* autosleep_minutes was written down somewhere: it is asked for, not defaulted */
-} cfg = { "auto", 5, 8, 10, 2000, 3, "deep", 4, 5, 15, 2, 30, 600, "", 0 };
+	int hud;			/* the bridge: text inside a game, and the unplug pause */
+	char lang[8];			/* the bridge's language, from settings.conf (the menu's own choice) */
+} cfg = { "auto", 5, 8, 10, 2000, 3, "deep", 4, 5, 15, 2, 30, 600, "", 0, 1, "en" };
 
 /* a suspend step named in sleep_skip: only ever set by hand (banana/bananad.conf), to bisect a sleep that comes straight
  * back on the handheld without rebuilding bananad */
@@ -148,6 +150,8 @@ static void load_conf(const char *path, int asked)
 		else if (!strcmp(k, "dim_percent")) cfg.dim_pct = atoi(v);
 		else if (!strcmp(k, "vibrate_ms")) cfg.vibrate_ms = atoi(v);
 		else if (!strcmp(k, "sleep_skip")) snprintf(cfg.sleep_skip, sizeof cfg.sleep_skip, "%s", v);
+		else if (!strcmp(k, "hud")) cfg.hud = strcmp(v, "off") && strcmp(v, "0") ? 1 : 0;
+		else if (!strcmp(k, "lang")) snprintf(cfg.lang, sizeof cfg.lang, "%s", v);
 	}
 	fclose(f);
 }
@@ -165,6 +169,23 @@ static void load_timezone(void)
 		char *k = ln, *v = eq + 1;
 		trim(k); trim(v);
 		if (!strcmp(k, "timezone") && *v) { setenv("TZ", v, 1); tzset(); }
+	}
+	fclose(f);
+}
+
+/* the language banana-ui keeps in its settings.conf, for the bridge's few strings (the menu owns the choice) */
+static void load_lang(void)
+{
+	FILE *f = fopen("/data/banana/settings.conf", "r");
+	if (!f) return;
+	char ln[256];
+	while (fgets(ln, sizeof ln, f)) {
+		char *eq = strchr(ln, '=');
+		if (ln[0] == '#' || !eq) continue;
+		*eq = 0;
+		char *k = ln, *v = eq + 1;
+		trim(k); trim(v);
+		if (!strcmp(k, "lang") && *v) snprintf(cfg.lang, sizeof cfg.lang, "%s", v);
 	}
 	fclose(f);
 }
@@ -1355,6 +1376,90 @@ static void audio_setup(void)
 	}
 }
 
+/* ---- the bridge: one line into a running game (docs/superpowers/specs/2026-11-05-banana-bridge-design.md) ---- */
+
+/* shortcut: the bridge carries its own three-language table instead of the JSON catalogs; when a fourth language
+ * lands, fold these four strings into the catalogs and generate the table at boot. */
+enum { HUD_VOLUME, HUD_BRIGHT, HUD_LOW, HUD_EMPTY, HUD_NKEYS };
+static const char *const hud_strings[3][HUD_NKEYS] = {
+	{ "Volume %d %%", "Brightness %d %%", "Battery low: %d %%", "Battery empty, shutting down" },
+	{ "Volumen %d %%", "Brillo %d %%", "Batería baja: %d %%", "Batería vacía, apagando" },
+	{ "Lautstärke %d %%", "Helligkeit %d %%", "Akku schwach: %d %%", "Akku leer, fährt herunter" },
+};
+
+static void hud_fmt(int key, int value, char *buf, size_t n)
+{
+	int l = !strcmp(cfg.lang, "es") ? 1 : !strcmp(cfg.lang, "de") ? 2 : 0;
+	if (key == HUD_EMPTY) snprintf(buf, n, "%s", hud_strings[l][key]);
+	else snprintf(buf, n, hud_strings[l][key], value);
+}
+
+/* the bridge speaks only to a game: in the menu banana-ui draws the pill, and nothing here writes /run/banana/osd */
+static int hud_on(void) { return cfg.hud && pid_of("/run/banana/game.pid") > 0; }
+
+static void hud_show(const char *text)
+{
+	if (!hud_on()) return;
+	char line[256];
+	snprintf(line, sizeof line, "SHOW_MSG %s", text);
+	ra_cmd(line);
+}
+
+/* one line of /run/banana/cheevos: unlocked, total, title, description, points, rarity, badge. Fills out with what
+ * the bridge shows ("Sonic (+15)") and returns 1; 0 when the line is not one (fewer than 7 fields, no title).
+ * A title cannot carry a tab or a newline (they are the record's own separators), so nothing is escaped here. */
+static int cheevos_line(const char *line, char *out, size_t n)
+{
+	char c[1024];
+	snprintf(c, sizeof c, "%s", line);
+	size_t len = strlen(c);
+	while (len && (c[len - 1] == '\n' || c[len - 1] == '\r')) c[--len] = 0;
+	char *f[7];
+	int nf = 0;
+	f[nf++] = c;
+	for (char *p = c; *p && nf < 7; ++p)
+		if (*p == '\t') { *p = 0; f[nf++] = p + 1; }
+	if (nf != 7 || !f[2][0]) return 0;
+	const char *pts = f[4];
+	if (*pts && strspn(pts, "0") != strlen(pts)) snprintf(out, n, "%s (+%s)", f[2], pts);
+	else snprintf(out, n, "%s", f[2]);	/* no points known: the title alone, never "(+0)" */
+	hud_show(out);
+	return 1;
+}
+
+/* --selftest hud: runs no daemon and touches nothing; only the formatter and the achievement parser, so the bridge's
+ * text can be checked on a workstation */
+static int selftest_hud(void)
+{
+	char b[160];
+	hud_fmt(HUD_VOLUME, 62, b, sizeof b); printf("hud en: %s\n", b);
+	hud_fmt(HUD_BRIGHT, 80, b, sizeof b); printf("hud en: %s\n", b);
+	hud_fmt(HUD_LOW, 9, b, sizeof b); printf("hud en: %s\n", b);
+	hud_fmt(HUD_EMPTY, 0, b, sizeof b); printf("hud en: %s\n", b);
+	snprintf(cfg.lang, sizeof cfg.lang, "es");
+	hud_fmt(HUD_VOLUME, 62, b, sizeof b); printf("hud es: %s\n", b);
+	snprintf(cfg.lang, sizeof cfg.lang, "de");
+	hud_fmt(HUD_LOW, 9, b, sizeof b); printf("hud de: %s\n", b);
+	snprintf(cfg.lang, sizeof cfg.lang, "en");
+	int hud = cfg.hud;
+	cfg.hud = 0; printf("hud off: %d\n", hud_on());
+	cfg.hud = 1; printf("hud no game: %d\n", hud_on());
+	cfg.hud = hud;
+	char o[160];
+	int r;
+	r = cheevos_line("1\t10\tSonic\tSpin fast\t15\t5\t/b.png", o, sizeof o);
+	printf("cheevos: %s\n", r ? o : "0");
+	r = cheevos_line("1\t10\t100% Fun\tFast\t15\t5\t/b.png", o, sizeof o);
+	printf("cheevos odd: %s\n", r ? o : "0");
+	r = cheevos_line("1\t2\tSonic\tDesc", o, sizeof o);
+	printf("cheevos 4 fields: %d\n", r);
+	r = cheevos_line("1\t10\tSonic\tSpin fast\t15\t5", o, sizeof o);
+	printf("cheevos 6 fields: %d\n", r);
+	r = cheevos_line("1\t10\tSonic\tSpin fast\t0\t5\t/b.png", o, sizeof o);
+	printf("cheevos no points: %s\n", r ? o : "0");
+	return 0;
+}
+
 static void volume(int dir)
 {
 	/* One volume, and it is the amplifiers' -- the system's, the way ROCKNIX's keys drive the default sink. The
@@ -1990,11 +2095,15 @@ static void usb_housekeeping(double now)
 int main(int argc, char **argv)
 {
 	(void)argc; (void)argv;
+	if (argc > 1 && !strcmp(argv[1], "--selftest")) return selftest_hud();
 	openlog("bananad", LOG_PID, LOG_DAEMON);
 	load_conf("/etc/banana/bananad.conf", 0);
 	load_conf("/data/banana/bananad.conf", 1);
 	load_timezone();
+	load_lang();
 	signal(SIGCHLD, SIG_DFL);
+	/* a game that closes its stdin between the FIFO open and the write must not kill the daemon */
+	signal(SIGPIPE, SIG_IGN);
 	struct sigaction sa = { 0 };
 	sa.sa_handler = on_hup;		/* no SA_RESTART: poll() returns, and the loop reloads */
 	sigaction(SIGHUP, &sa, NULL);

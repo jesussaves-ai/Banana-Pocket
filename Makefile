@@ -99,6 +99,7 @@ test: ui bananad
 	system/tests/run-banana-tube-test.sh
 	system/tests/run-backup-test.sh
 	system/tests/sound-config-test.sh
+	system/bananad/tests/hud-test.sh
 	ui/tests/run.sh
 
 # The sound chain on the handheld, end to end: the server, ALSA's default, the sink, the amp's gain, the AudioReach
