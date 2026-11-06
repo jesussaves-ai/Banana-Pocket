@@ -25,9 +25,11 @@ and OTA updates over Wi-Fi are done (see *Done*). Next:
     baseline: 3.3 h at 29 mA, 8.0 h at **26 mA** (206 mAh), 2.0 h at 27 mA. The AudioReach graph pinned by
     `session.suspend-timeout-seconds = 0` was keeping the ADSP awake. `make sound-test` after the wake: all 14 checks
     pass (DSP graph RUNNING, amp at 81 %), so the chain comes back on its own.
-  - **Running:** test 2 — the USB gadget is unbound for the sleep (`sleep.d/30-usb`: `usb-gadget down` in `pre`, back
-    in the background in `post`), to see whether a bound UDC keeps the controller and its PHY clocks alive. Read
-    against test 1's 25–29 mA.
+  - **Done — test 2, the USB gadget (no win).** `sleep.d/30-usb` unbinds the gadget for the sleep (`usb-gadget down`
+    in `pre`, back in the background in `post`; verified on the unit: `a600000.usb` -> empty -> rebound). Six sleeps
+    measured against test 1's 25–29 mA: the two clean half-hour windows held **26 mA** (11 and 12 mAh), a 2.2 h window
+    **29 mA** with two spurious wakes in it, and the short ones 32–36 mA (too brief to read). A bound UDC is **not**
+    what keeps the controller or its PHY clocks alive -- the hook earns nothing and is a candidate to drop.
   - **Queued, one variable per sleep:** (3) a `s2idle` sleep for comparison, to know what `deep` is worth. If none
     moves it, the floor is the platform's S2R depth (firmware) and the remaining wins are on the wake side.
     (Unbinding `ath10k_snoc`/WPSS was tried and rejected: 69 mA over 0.4 h, no win.)
