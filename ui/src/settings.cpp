@@ -340,6 +340,9 @@ namespace banana
 			menu, "usb_mass_storage", { "Off", "Read-only", "Read-write" }, { "off", "ro", "rw" });
 		if (access("/run/banana/sd2/slot", F_OK) == 0)	// a second card slot (bananad's sd2 script)
 		add(S, "gear", "Second SD card", "Games on the card in the second slot (its roms folder, with the same system folders as this card) show up in the library with the others while it's in. exFAT or FAT32.", menu, "sd2_roms", { "Show its games", "Off" }, { "on", "off" });
+		add(S, "picture", "On-screen info while playing",
+			"While a game runs, a change of volume or brightness and a low battery show as a line inside the game, achievements appear as they unlock, and pulling the headphones pauses it. Off: the screen is the game's alone; the menu's own cards are unchanged.",
+			power, "hud", { "On", "Off" }, { "1", "0" });
 		add(S, "gear", "First-time setup", "The steps from the first boot again: Wi-Fi, the time zone and the RetroAchievements account.", "", "setup", {}, {}, Item::PAGE);
 		add(S, "gear", "Reset system settings", "Puts the menu, display, sound, power and network settings back to their defaults (banana/settings.conf and bananad's sleep rows; your games and card are untouched). Press A twice.",
 			"", "reset_system", { "" }, { "" }, Item::ACTION);
