@@ -1429,7 +1429,7 @@ static void cheevos_poll(void)
 	char ln[1024], buf[160];
 	while (fgets(ln, sizeof ln, f)) {
 		cheevos_off += (long)strlen(ln);
-		if (cheevos_line(ln, buf, sizeof buf)) {
+		if (cheevos_line(ln, buf, sizeof buf) && hud_on()) {
 			FILE *m = fopen("/run/banana/hud-live", "w");	/* the menu must not toast it again */
 			if (m) fclose(m);
 		}

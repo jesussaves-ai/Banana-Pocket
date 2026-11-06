@@ -31,6 +31,7 @@ has "$HERE/bananad.c" 'else osd("volume", pct);'
 has "$HERE/bananad.c" 'ra_cmd("PAUSE_TOGGLE")'
 has "$HERE/bananad.c" 'IN_CLOSE_WRITE'
 has "$HERE/bananad.c" '/run/banana/hud-live'
+has "$HERE/bananad.c" 'cheevos_line(ln, buf, sizeof buf) && hud_on()'   # never mark a line the game did not get
 has "$HERE/../../ui/src/main.cpp" 'unlink("/run/banana/hud-live");'
 [ "$fail" = 0 ] && echo "hud-test: all checks passed"
 exit "$fail"
