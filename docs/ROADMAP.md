@@ -84,6 +84,27 @@ Not commitments: sketches to weigh against the list above. Each one builds on so
   and the `tools/rpc-*.sh` probes.
 - **Offline update cache.** Keep the last good update package on the card until the new slot boots once, so a failed
   update can be reapplied without Wi-Fi.
+- **Banana Bridge (next).** The menu owns the panel, so a game owns it alone: the volume OSD is suppressed
+  (`bananad` skips `osd()` while `game.pid` lives), achievements are queued and toasted only on quit, a headphone
+  unplug keeps playing out loud, and a low-battery sleep arrives unwarned. A `system/bridge/` helper started by the
+  launchers reads `/run/banana/hud` and speaks each app's own text surface (RetroArch `SHOW_MSG`/`PAUSE_TOGGLE` on
+  the loopback command port, mpv `show-text` over the socket BananaTube already uses), so the OS keeps a voice in
+  game. One event format, rendered by the menu's own toast code when the menu holds the screen.
+- **Sessions that survive a hang.** Quick resume writes a state only on a clean quit (`savestate_auto_save`), so the
+  2026-11-02 overnight hang and any forced power-off lose everything since the last manual save. The bridge can save
+  into two alternating hidden slots on a timer, with a one-line fsynced journal in `/data/banana/sessions.tsv`;
+  the menu offers the survivor on the home card. The save-RAM `autosave_interval` does not cover states.
+- **Saves you can see, and boot into.** `savestate_thumbnail_enable` is off and the state browser is text-only; the
+  launcher never sets `savestate_slot`, so quick resume always loads whatever RetroArch last used. Enable state
+  thumbnails, index the sibling PNGs through the existing art cache, and let A start a state (a per-launch
+  `savestate_slot`). The browser can delete and back up today, but it cannot start.
+- **Per-core latency profiles.** Runahead is compiled in and off; one frame removes most of the lag on 8/16-bit cores,
+  and nobody will dig through RetroArch's quick menu on this screen. A curated core table in `run-retroarch` plus one
+  Settings row (Off/Auto/2), with a per-game override in `pergame.conf`.
+- **The game page.** The shelf shows a title and "genre · year". The scraper receives description, developer,
+  publisher, players and rating and throws them away (`scrape.cpp` writes only genre and date); `playstats.tsv` holds
+  plays, seconds and achievements that no shipped theme renders. One X page per game: art, description, facts,
+  playtime and achievements, with play/states/saves/reset actions.
 
 ## Field notes (open questions, from working on the unit)
 
