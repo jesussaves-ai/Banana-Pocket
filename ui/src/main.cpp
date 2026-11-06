@@ -1625,14 +1625,20 @@ int main(int argc, char** argv)
 			// what the game unlocked, one line per achievement: the menu's toast is built from these, and the badge PNG
 			// is drawn in the tile. A game that unlocked nothing wrote nothing; a line that is short is a line that was
 			// not written at all (the patch always writes all seven fields), so the defaults stand.
-			std::ifstream ch(CHEEVOS);
-			std::string line;
-			while (std::getline(ch, line))
+			// Bananad showed these as they unlocked (the marker), so the menu only clears it; without the marker
+			// (HUD off, or a daemon that predates it) the menu's own toasts are the only place they appear.
+			if (access("/run/banana/hud-live", F_OK) != 0)
 			{
-				std::vector<std::string> f = tsv(line, 7);
-				if (f[0].empty() || f[1].empty()) continue;
-				settingsView.notify(f[2], f[3], 0, f[6]);
+				std::ifstream ch(CHEEVOS);
+				std::string line;
+				while (std::getline(ch, line))
+				{
+					std::vector<std::string> f = tsv(line, 7);
+					if (f[0].empty() || f[1].empty()) continue;
+					settingsView.notify(f[2], f[3], 0, f[6]);
+				}
 			}
+			unlink("/run/banana/hud-live");
 		}
 		ui->dataChanged();
 		ui->setLibrary(lib.currentShelf(), game);

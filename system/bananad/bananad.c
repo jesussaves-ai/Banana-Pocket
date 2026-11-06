@@ -1408,6 +1408,35 @@ static void hud_show(const char *text)
 /* one line of /run/banana/cheevos: unlocked, total, title, description, points, rarity, badge. Fills out with what
  * the bridge shows ("Sonic (+15)") and returns 1; 0 when the line is not one (fewer than 7 fields, no title).
  * A title cannot carry a tab or a newline (they are the record's own separators), so nothing is escaped here. */
+static int cheevos_line(const char *line, char *out, size_t n);
+
+static int ino_cheev = -1;	/* the achievement file's own watch: the directory only reports its creation */
+static long cheevos_off;	/* where the last read stopped; a shrunken file means a new game */
+
+static void cheevos_watch(int ino)
+{
+	if (ino < 0) return;
+	if (ino_cheev >= 0) inotify_rm_watch(ino, ino_cheev);
+	ino_cheev = inotify_add_watch(ino, "/run/banana/cheevos", IN_MODIFY | IN_CLOSE_WRITE);
+}
+
+static void cheevos_poll(void)
+{
+	FILE *f = fopen("/run/banana/cheevos", "r");
+	if (!f) { cheevos_off = 0; return; }
+	if (fseek(f, 0, SEEK_END) || ftell(f) < cheevos_off) cheevos_off = 0;	/* a new game's file starts empty */
+	fseek(f, cheevos_off, SEEK_SET);
+	char ln[1024], buf[160];
+	while (fgets(ln, sizeof ln, f)) {
+		cheevos_off += (long)strlen(ln);
+		if (cheevos_line(ln, buf, sizeof buf)) {
+			FILE *m = fopen("/run/banana/hud-live", "w");	/* the menu must not toast it again */
+			if (m) fclose(m);
+		}
+	}
+	fclose(f);
+}
+
 static int cheevos_line(const char *line, char *out, size_t n)
 {
 	char c[1024];
@@ -2129,6 +2158,7 @@ int main(int argc, char **argv)
 	if (ino >= 0) {
 		ino_in = inotify_add_watch(ino, "/dev/input", IN_CREATE | IN_DELETE);
 		ino_run = inotify_add_watch(ino, "/run/banana", IN_CREATE | IN_MOVED_TO);	/* the /run/banana/vibrate test trigger */
+		cheevos_watch(ino);
 	}
 	open_inputs();
 	headphones = headphones_in();	/* the codec's first answer; the loop confirms (and corrects) it (see jack_settle) */
@@ -2210,14 +2240,17 @@ int main(int argc, char **argv)
 		if (ino_at >= 0 && (pf[ino_at].revents & POLLIN)) {
 			char buf[4096];
 			ssize_t r;
-			int inputs_changed = 0, vibrate_req = 0;
+			int inputs_changed = 0, vibrate_req = 0, cheevos_changed = 0;
 			while ((r = read(ino, buf, sizeof buf)) > 0)
 				for (char *p = buf; p < buf + r; ) {
 					struct inotify_event *e = (struct inotify_event *)p;
 					if (e->len && e->wd == ino_run && !strcmp(e->name, "vibrate")) vibrate_req = 1;
+					if (e->len && e->wd == ino_run && !strcmp(e->name, "cheevos")) cheevos_changed = 1;
+					if (e->wd == ino_cheev) cheevos_changed = 1;
 					if ((e->mask & (IN_CREATE | IN_DELETE)) && e->wd == ino_in) inputs_changed = 1;
 					p += sizeof(struct inotify_event) + e->len;
 				}
+			if (cheevos_changed) { cheevos_watch(ino); cheevos_poll(); }	/* the re-add catches the file's re-creation between games */
 			if (vibrate_req) { unlink("/run/banana/vibrate"); vibrate(cfg.vibrate_ms); }	/* a test trigger: `touch /run/banana/vibrate` */
 			if (inputs_changed) {
 				sleep_us(200000);	/* udev/mdev sets the node's permissions */
