@@ -28,7 +28,7 @@
   - *Short Power:* Suspend (unless `/run/banana/screen-off` exists -> `banana-ui` consumes `KEY_POWER` as `Key::WAKE`).
   - *Hold Power (2s) / `<= 3%` battery:* Clean shutdown.
   - *Vol / F+Vol:* HW gain (`bananad`, ALSA C mixer) / PWM backlight.
-- **In-game line (Banana Bridge):** volume/brightness/battery/achievement text goes to a running game as `SHOW_MSG` on `/run/banana/retroarch.cmd` (RetroArch's stdin FIFO); `hud = 0` in `bananad.conf` turns it and the headphone-unplug pause off. The menu's `/run/banana/osd` card is untouched, and achievements shown live leave `/run/banana/hud-live` so the menu does not toast them again.
+- **In-game line (Banana Bridge):** volume/brightness/battery/achievement text goes to a running game as `SHOW_MSG` on `/run/banana/retroarch.cmd` (RetroArch's stdin FIFO); `hud = 0` in `bananad.conf` turns it and the headphone-unplug pause off. The menu's `/run/banana/osd` card is untouched, and achievements *handed to RetroArch* (the write succeeded) leave `/run/banana/hud-live` so the menu does not toast them again; if the write fails the menu still does. Unplugging pauses with `PAUSE_TOGGLE` because the channel has no state query, so a game the player had already paused resumes on the speaker — accepted, one audio burst until the next pause. `run-retroarch` sets `cheevos_visibility_unlock false` so RetroArch's own card does not repeat the line.
 - **Idle/Burn-in:** Dims at 2m (`dim_minutes`/`dim_percent`), blanks at 90s/180s (writes `/run/banana/screen-off`, calls `Sound::setScreenOn(false)`). Disabled while `/run/banana/game.pid` active. Auto-suspend ONLY if `autosleep_minutes` set in `bananad.conf`.
 - **Suspend/Resume (`deep` -> `s2idle` -> backlight fallback):**
   1. `SIGSTOP` `/run/banana/game.pid` pgrp.

@@ -141,6 +141,7 @@ run gba gpsp
 [ "$(cfg cheevos_enable)" = true ] && ok "cheevos on" || bad "cheevos=$(cfg cheevos_enable)"
 [ "$(cfg cheevos_username)" = someone ] && ok "the account's name" || bad "cheevos_username=$(cfg cheevos_username)"
 [ "$(cfg cheevos_badges_enable)" = true ] && ok "badges on" || bad "cheevos_badges_enable=$(cfg cheevos_badges_enable)"
+[ "$(cfg cheevos_visibility_unlock)" = false ] && ok "the unlock widget is off: bananad's line is the one the player sees" || bad "cheevos_visibility_unlock=$(cfg cheevos_visibility_unlock)"
 has "$W/account.passed" 'cheevos_password = "secret"' && ok "the password was passed to the game" || bad "the password was not passed"
 has "$W/account.passed" 'cheevos_token = "tok"' && ok "the token was passed to the game" || bad "the token was not passed"
 has "$W/data/retroarch/retroarch.cfg" 'cheevos_password' && bad "the password was left in retroarch.cfg" || ok "the password never reached retroarch.cfg"

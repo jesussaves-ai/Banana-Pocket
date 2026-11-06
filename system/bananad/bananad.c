@@ -84,7 +84,7 @@ static void audio_route(void);
 static void jack_settle_begin(void);
 static void jack_settle_poll(void);
 static void jack_log(void);
-static void ra_cmd(const char *cmd);
+static int ra_cmd(const char *cmd);
 static void undim(void);
 static void find_panel_bl(void);
 static char panel_bl[64];	/* the panel's backlight name; banana-ui's idle dim owns it while it runs */
@@ -1394,15 +1394,21 @@ static void hud_fmt(int key, int value, char *buf, size_t n)
 	else snprintf(buf, n, hud_strings[l][key], value);
 }
 
-/* the bridge speaks only to a game: in the menu banana-ui draws the pill, and nothing here writes /run/banana/osd */
-static int hud_on(void) { return cfg.hud && pid_of("/run/banana/game.pid") > 0; }
+/* the bridge speaks only to a game: in the menu banana-ui draws the pill, and nothing here writes /run/banana/osd.
+ * The four paths are static so --selftest cheevos can point them at a scratch directory. */
+static const char *game_pid_path = "/run/banana/game.pid";
+static const char *cheevos_path = "/run/banana/cheevos";
+static const char *hud_live_path = "/run/banana/hud-live";
+static const char *ra_path = "/run/banana/retroarch.cmd";
 
-static void hud_show(const char *text)
+static int hud_on(void) { return cfg.hud && pid_of(game_pid_path) > 0; }
+
+static int hud_show(const char *text)
 {
-	if (!hud_on()) return;
+	if (!hud_on()) return 0;
 	char line[256];
 	snprintf(line, sizeof line, "SHOW_MSG %s", text);
-	ra_cmd(line);
+	return ra_cmd(line);
 }
 
 /* one line of /run/banana/cheevos: unlocked, total, title, description, points, rarity, badge. Fills out with what
@@ -1417,24 +1423,29 @@ static void cheevos_watch(int ino)
 {
 	if (ino < 0) return;
 	if (ino_cheev >= 0) inotify_rm_watch(ino, ino_cheev);
-	ino_cheev = inotify_add_watch(ino, "/run/banana/cheevos", IN_MODIFY | IN_CLOSE_WRITE);
+	ino_cheev = inotify_add_watch(ino, cheevos_path, IN_MODIFY | IN_CLOSE_WRITE);
 }
 
-static void cheevos_poll(void)
+/* Shows every line appended since the last call and returns how many the game was actually sent: the menu skips its
+ * own toasts only for those, so a line that could not be delivered still reaches the player after the game. */
+static int cheevos_poll(void)
 {
-	FILE *f = fopen("/run/banana/cheevos", "r");
-	if (!f) { cheevos_off = 0; return; }
+	int shown = 0;
+	FILE *f = fopen(cheevos_path, "r");
+	if (!f) { cheevos_off = 0; return 0; }
 	if (fseek(f, 0, SEEK_END) || ftell(f) < cheevos_off) cheevos_off = 0;	/* a new game's file starts empty */
 	fseek(f, cheevos_off, SEEK_SET);
 	char ln[1024], buf[160];
 	while (fgets(ln, sizeof ln, f)) {
 		cheevos_off += (long)strlen(ln);
-		if (cheevos_line(ln, buf, sizeof buf) && hud_on()) {
-			FILE *m = fopen("/run/banana/hud-live", "w");	/* the menu must not toast it again */
+		if (hud_on() && cheevos_line(ln, buf, sizeof buf) && hud_show(buf)) {
+			shown++;
+			FILE *m = fopen(hud_live_path, "w");	/* the menu must not toast it again */
 			if (m) fclose(m);
 		}
 	}
 	fclose(f);
+	return shown;
 }
 
 static int cheevos_line(const char *line, char *out, size_t n)
@@ -1452,7 +1463,6 @@ static int cheevos_line(const char *line, char *out, size_t n)
 	const char *pts = f[4];
 	if (*pts && strspn(pts, "0") != strlen(pts)) snprintf(out, n, "%s (+%s)", f[2], pts);
 	else snprintf(out, n, "%s", f[2]);	/* no points known: the title alone, never "(+0)" */
-	hud_show(out);
 	return 1;
 }
 
@@ -1486,6 +1496,58 @@ static int selftest_hud(void)
 	printf("cheevos 6 fields: %d\n", r);
 	r = cheevos_line("1\t10\tSonic\tSpin fast\t0\t5\t/b.png", o, sizeof o);
 	printf("cheevos no points: %s\n", r ? o : "0");
+	return 0;
+}
+
+/* --selftest cheevos DIR: the poll's own state machine over a scratch directory -- a new game's empty file, an
+ * append, a shorter file, and the two ways a line must not be marked as shown. */
+static int selftest_cheevos(const char *dir)
+{
+	char pid[512], ce[512], hl[512], cmd[512];
+	snprintf(pid, sizeof pid, "%s/game.pid", dir);
+	snprintf(ce, sizeof ce, "%s/cheevos", dir);
+	snprintf(hl, sizeof hl, "%s/hud-live", dir);
+	snprintf(cmd, sizeof cmd, "%s/cmd", dir);
+	game_pid_path = pid; cheevos_path = ce; hud_live_path = hl; ra_path = cmd;
+	FILE *f = fopen(pid, "w");
+	if (f) { fprintf(f, "%d\n", (int)getpid()); fclose(f); }
+	f = fopen(cmd, "w");	/* a regular file stands in for the FIFO: opening it is all ra_cmd asks of it */
+	if (f) fclose(f);
+
+	unlink(ce); unlink(hl);
+	printf("cheevos absent: %d %d\n", cheevos_poll(), access(hl, F_OK) == 0);
+
+	f = fopen(ce, "w");
+	if (f) { fputs("1\t2\tOne\tFirst\t10\t0\t\n1\t2\tTwo\tSecond\t5\t0\t\n", f); fclose(f); }
+	int n = cheevos_poll();
+	printf("cheevos two: %d %d\n", n, access(hl, F_OK) == 0);
+
+	unlink(hl);
+	f = fopen(ce, "a");
+	if (f) { fputs("1\t2\tThree\tThird\t1\t0\t\n", f); fclose(f); }
+	n = cheevos_poll();
+	printf("cheevos append: %d %d\n", n, access(hl, F_OK) == 0);
+
+	unlink(hl);
+	f = fopen(ce, "w");	/* the next game's file replaces it and is shorter than the offset was */
+	if (f) { fputs("1\t2\tFour\tFourth\t1\t0\t\n", f); fclose(f); }
+	n = cheevos_poll();
+	printf("cheevos shrink: %d %d\n", n, access(hl, F_OK) == 0);
+
+	cfg.hud = 0;
+	unlink(hl);
+	f = fopen(ce, "a");
+	if (f) { fputs("1\t2\tFive\tFifth\t1\t0\t\n", f); fclose(f); }
+	n = cheevos_poll();
+	printf("cheevos off: %d %d\n", n, access(hl, F_OK) == 0);
+	cfg.hud = 1;
+
+	ra_path = "/nonexistent-banana/cmd";	/* the reader is gone: nothing was shown, so nothing is marked */
+	unlink(hl);
+	f = fopen(ce, "a");
+	if (f) { fputs("1\t2\tSix\tSixth\t1\t0\t\n", f); fclose(f); }
+	n = cheevos_poll();
+	printf("cheevos no reader: %d %d\n", n, access(hl, F_OK) == 0);
 	return 0;
 }
 
@@ -1950,14 +2012,16 @@ static void open_inputs(void)
 }
 
 /* A command to a running RetroArch game: its stdin command interface, through the FIFO run-retroarch holds open
- * (bananad's volume keys already write to it). Nothing happens when no game runs -- the FIFO is not there. */
-static void ra_cmd(const char *cmd)
+ * (bananad's volume keys already write to it). Returns 1 when the line was handed over; 0 when no game runs or the
+ * reader closed between the check and the write, which is what keeps the menu's own toasts alive. */
+static int ra_cmd(const char *cmd)
 {
-	int fd = open("/run/banana/retroarch.cmd", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
-	if (fd < 0) return;
-	if (write(fd, cmd, strlen(cmd)) < 0) {}
-	if (write(fd, "\n", 1) < 0) {}
+	int fd = open(ra_path, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0) return 0;
+	size_t len = strlen(cmd);
+	int ok = write(fd, cmd, len) == (ssize_t)len && write(fd, "\n", 1) == 1;
 	close(fd);
+	return ok;
 }
 
 static void handle(const struct input_event *e)
@@ -2134,6 +2198,8 @@ static void usb_housekeeping(double now)
 int main(int argc, char **argv)
 {
 	(void)argc; (void)argv;
+	if (argc > 2 && !strcmp(argv[1], "--selftest") && !strcmp(argv[2], "cheevos"))
+		return selftest_cheevos(argc > 3 ? argv[3] : "/tmp");
 	if (argc > 1 && !strcmp(argv[1], "--selftest")) return selftest_hud();
 	openlog("bananad", LOG_PID, LOG_DAEMON);
 	load_conf("/etc/banana/bananad.conf", 0);
@@ -2223,6 +2289,7 @@ int main(int argc, char **argv)
 			load_conf("/data/banana/bananad.conf", 1);
 			slate_sleep_default();	/* the settings screen may have just written a timer, or taken it away */
 			load_timezone();
+			load_lang();	/* the settings screen may have just changed the language */
 			save_volume_at = mono() + 2;	/* the settings screen may have set the volume: keep it as the keys' is kept */
 			power_update();
 			say("settings read again: auto-sleep %d min", cfg.autosleep_min);

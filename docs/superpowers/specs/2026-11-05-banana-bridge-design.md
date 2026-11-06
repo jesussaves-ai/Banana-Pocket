@@ -99,13 +99,22 @@ needed beyond the battery thresholds.
 fields, and shows the newest line. Offset resets to 0 when the file shrinks or a game starts.
 
 To avoid a duplicate toast when the game quits, `bananad` touches `/run/banana/hud-live` when it takes over
-the achievement file and removes it at shutdown/sleep. `ui/src/main.cpp` skips its cheevos toast replay when
-that marker exists; progress recording (`ra-progress` → `recordPlay`) is unaffected.
+the achievement file — and only when the line was actually handed to RetroArch (the FIFO write succeeded), so
+a failed delivery still reaches the player as the menu's toast. `ui/src/main.cpp` skips its cheevos toast
+replay when that marker exists and unlinks it afterwards; `/run` is tmpfs, so no stale marker survives a boot.
+Progress recording (`ra-progress` → `recordPlay`) is unaffected.
+
+`run-retroarch` turns RetroArch's own unlock card (`cheevos_visibility_unlock`) off: the bridge's line and the
+menu's toast are the single voice, and the badge still reaches the toast.
+
+**Known limitation:** the command channel has no state query, only `PAUSE_TOGGLE`, so unplugging headphones
+pauses a running game but also *resumes* one the player had already paused. Accepted for now; a real fix needs
+RetroArch-side support.
 
 ### Settings
 
-One row, "On-screen info while playing", in Settings > System, `hud = 1` in `settings.conf` (default on).
-`bananad` reads `settings.conf` already (`:158`); `hud = 0` disables both the text and the pause.
+One row, "On-screen info while playing", in Settings > System, `hud = 1` in `bananad.conf` (default on).
+`bananad` reloads on SIGHUP, so the row applies at once; `hud = 0` disables both the text and the pause.
 
 ## Files
 
